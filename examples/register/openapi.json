@@ -1,0 +1,5448 @@
+{
+  "components": {
+    "schemas": {
+      "Attachment": {
+        "additionalProperties": false,
+        "properties": {
+          "bytes": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "contentType": {
+            "type": "string"
+          },
+          "filename": {
+            "type": "string"
+          },
+          "sha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "filename",
+          "contentType",
+          "bytes",
+          "sha256"
+        ],
+        "type": "object"
+      },
+      "Attachments": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/Attachment"
+            },
+            "type": "array"
+          },
+          "note": {
+            "type": "string"
+          },
+          "user": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "user",
+          "items"
+        ],
+        "type": "object"
+      },
+      "Avatar": {
+        "additionalProperties": false,
+        "properties": {
+          "bytes": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "caption": {
+            "maxLength": 140,
+            "type": "string"
+          },
+          "contentType": {
+            "type": "string"
+          },
+          "filename": {
+            "type": "string"
+          },
+          "sha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "user": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "user",
+          "filename",
+          "contentType",
+          "bytes",
+          "sha256"
+        ],
+        "type": "object"
+      },
+      "Batch": {
+        "additionalProperties": false,
+        "properties": {
+          "users": {
+            "items": {
+              "$ref": "#/components/schemas/User-Input"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        "required": [
+          "users"
+        ],
+        "type": "object"
+      },
+      "Caller": {
+        "additionalProperties": false,
+        "properties": {
+          "admin": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "admin"
+        ],
+        "type": "object"
+      },
+      "Imported": {
+        "additionalProperties": false,
+        "properties": {
+          "created": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "created"
+        ],
+        "type": "object"
+      },
+      "NewTeam": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "maxLength": 500,
+            "type": "string"
+          },
+          "id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^[a-z0-9-]+$",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 100,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "type": "object"
+      },
+      "Pong": {
+        "additionalProperties": false,
+        "properties": {
+          "pong": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "pong"
+        ],
+        "type": "object"
+      },
+      "Problem": {
+        "properties": {
+          "detail": {
+            "type": "string"
+          },
+          "errors": {
+            "items": {
+              "properties": {
+                "in": {
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                },
+                "path": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "in",
+                "path",
+                "message"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "instance": {
+            "format": "uri-reference",
+            "type": "string"
+          },
+          "status": {
+            "type": "integer"
+          },
+          "title": {
+            "type": "string"
+          },
+          "type": {
+            "format": "uri-reference",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "title",
+          "status"
+        ],
+        "type": "object"
+      },
+      "RoleChange": {
+        "additionalProperties": false,
+        "properties": {
+          "role": {
+            "enum": [
+              "admin",
+              "member"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "role"
+        ],
+        "type": "object"
+      },
+      "Status": {
+        "additionalProperties": false,
+        "properties": {
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "type": "object"
+      },
+      "Tag": {
+        "additionalProperties": false,
+        "properties": {
+          "tag": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "tag"
+        ],
+        "type": "object"
+      },
+      "Team": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "description": "What the team is for; absent when it has none",
+            "maxLength": 500,
+            "type": "string"
+          },
+          "id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^[a-z0-9-]+$",
+            "type": "string"
+          },
+          "members": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "name": {
+            "maxLength": 100,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "members"
+        ],
+        "type": "object"
+      },
+      "TeamFields": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "maxLength": 500,
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 100,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      },
+      "TeamList": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/Team"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
+      "TeamPatch": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "description": "The new description; null removes it, left out it is kept",
+            "maxLength": 500,
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "description": "The new name; left out, the name is kept",
+            "maxLength": 100,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "User": {
+        "additionalProperties": false,
+        "properties": {
+          "active": {
+            "type": "boolean"
+          },
+          "age": {
+            "format": "int64",
+            "maximum": 150,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "balance": {
+            "maxLength": 32,
+            "pattern": "^-?[0-9]+(\\.[0-9]+)?$",
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}[Tt][0-9]{2}:[0-9]{2}:[0-5]",
+            "type": "string"
+          },
+          "id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9_-]+$",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 100,
+            "minLength": 1,
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "admin",
+              "member"
+            ],
+            "type": "string"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 16,
+            "type": "array",
+            "uniqueItems": true
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "role",
+          "tags"
+        ],
+        "type": "object"
+      },
+      "User-Input": {
+        "additionalProperties": false,
+        "properties": {
+          "active": {
+            "type": "boolean"
+          },
+          "age": {
+            "format": "int64",
+            "maximum": 150,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "balance": {
+            "maxLength": 32,
+            "pattern": "^-?[0-9]+(\\.[0-9]+)?$",
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "maxLength": 4096,
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}[Tt][0-9]{2}:[0-9]{2}:[0-5]",
+            "type": "string"
+          },
+          "id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9_-]+$",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 100,
+            "minLength": 1,
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "admin",
+              "member"
+            ],
+            "type": "string"
+          },
+          "tags": {
+            "items": {
+              "maxLength": 4096,
+              "type": "string"
+            },
+            "maxItems": 16,
+            "type": "array",
+            "uniqueItems": true
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "role",
+          "tags"
+        ],
+        "type": "object"
+      },
+      "UserEvent": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "created",
+              "updated",
+              "deleted"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "id"
+        ],
+        "type": "object"
+      },
+      "UserList": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/User"
+            },
+            "type": "array"
+          },
+          "total": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total"
+        ],
+        "type": "object"
+      },
+      "UserStats": {
+        "additionalProperties": false,
+        "properties": {
+          "admins": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "total": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total",
+          "admins"
+        ],
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "bearer": {
+        "scheme": "bearer",
+        "type": "http"
+      }
+    }
+  },
+  "info": {
+    "title": "geta register example",
+    "version": "0.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/admin/ping": {
+      "get": {
+        "operationId": "getAdminPing",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Pong"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthenticated",
+            "headers": {
+              "WWW-Authenticate": {
+                "description": "A challenge for each scheme that refused the request, sent with the gate's 401 (RFC 9110 section 11.6.1)",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not an administrator"
+          },
+          "415": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request has content, which the operation does not take"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "A defect in the server, such as an error no failure row matches, output that cannot be encoded, or a panic"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The credential source is unavailable"
+          },
+          "504": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The deadline passed before a response"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Admin-only liveness check"
+      },
+      "options": {
+        "operationId": "optionsAdminPing",
+        "responses": {
+          "204": {
+            "description": "No Content",
+            "headers": {
+              "Allow": {
+                "description": "The methods this URL serves",
+                "required": true,
+                "schema": {
+                  "const": "GET, HEAD, OPTIONS",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthenticated",
+            "headers": {
+              "WWW-Authenticate": {
+                "description": "A challenge for each scheme that refused the request, sent with the gate's 401 (RFC 9110 section 11.6.1)",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "415": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request has content, which the operation does not take"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "A defect in the server, such as a root middleware that replaced the request context, or a panic"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The credential source is unavailable"
+          },
+          "504": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The deadline passed before a response"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The methods this URL serves"
+      }
+    },
+    "/admin/users/{id}/role": {
+      "options": {
+        "operationId": "optionsAdminUsersIdRole",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content",
+            "headers": {
+              "Allow": {
+                "description": "The methods this URL serves",
+                "required": true,
+                "schema": {
+                  "const": "OPTIONS, PUT",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthenticated",
+            "headers": {
+              "WWW-Authenticate": {
+                "description": "A challenge for each scheme that refused the request, sent with the gate's 401 (RFC 9110 section 11.6.1)",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "415": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request has content, which the operation does not take"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "A defect in the server, such as a root middleware that replaced the request context, or a panic"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The credential source is unavailable"
+          },
+          "504": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The deadline passed before a response"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The methods this URL serves"
+      },
+      "put": {
+        "operationId": "putAdminUsersIdRole",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RoleChange"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/User"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request does not match its contract"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthenticated",
+            "headers": {
+              "WWW-Authenticate": {
+                "description": "A challenge for each scheme that refused the request, sent with the gate's 401 (RFC 9110 section 11.6.1)",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not an administrator"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "user not found"
+          },
+          "408": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request body did not arrive before the deadline"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "the last admin cannot be demoted or deleted (type /problems/last-admin)"
+          },
+          "413": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request body is larger than 1048576 bytes (Limits.MaxBodyBytes)"
+          },
+          "415": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request has content of a media type the operation does not take, or no Content-Type, or content in a content coding (Content-Encoding)",
+            "headers": {
+              "Accept": {
+                "description": "The media type the operation takes, sent with geta's own 415 for content of another media type (RFC 9110 section 15.5.16)",
+                "schema": {
+                  "enum": [
+                    "application/json"
+                  ],
+                  "type": "string"
+                }
+              },
+              "Accept-Encoding": {
+                "description": "identity: geta decodes no content coding; sent with geta's own 415 for content in one, and only with that 415 (RFC 9110 section 12.5.3)",
+                "schema": {
+                  "enum": [
+                    "identity"
+                  ],
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "A defect in the server, such as an error no failure row matches, output that cannot be encoded, or a panic"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "the store is unavailable; the store asks to retry; The credential source is unavailable"
+          },
+          "504": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The deadline passed before a response"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Change a user's role"
+      }
+    },
+    "/health": {
+      "get": {
+        "operationId": "getHealth",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "415": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request has content, which the operation does not take"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "A defect in the server, such as an error no failure row matches, output that cannot be encoded, or a panic"
+          },
+          "504": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The deadline passed before a response"
+          }
+        },
+        "security": [],
+        "summary": "Liveness probe"
+      },
+      "options": {
+        "operationId": "optionsHealth",
+        "responses": {
+          "204": {
+            "description": "No Content",
+            "headers": {
+              "Allow": {
+                "description": "The methods this URL serves",
+                "required": true,
+                "schema": {
+                  "const": "GET, HEAD, OPTIONS",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthenticated",
+            "headers": {
+              "WWW-Authenticate": {
+                "description": "A challenge for each scheme that refused the request, sent with the gate's 401 (RFC 9110 section 11.6.1)",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "415": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request has content, which the operation does not take"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "A defect in the server, such as a root middleware that replaced the request context, or a panic"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The credential source is unavailable"
+          },
+          "504": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The deadline passed before a response"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The methods this URL serves"
+      }
+    },
+    "/stats/users": {
+      "get": {
+        "operationId": "getStatsUsers",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserStats"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthenticated",
+            "headers": {
+              "WWW-Authenticate": {
+                "description": "A challenge for each scheme that refused the request, sent with the gate's 401 (RFC 9110 section 11.6.1)",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "415": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request has content, which the operation does not take"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "A defect in the server, such as an error no failure row matches, output that cannot be encoded, or a panic"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "the store is unavailable; the store asks to retry; The credential source is unavailable"
+          },
+          "504": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The deadline passed before a response"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Count users and admins"
+      },
+      "options": {
+        "operationId": "optionsStatsUsers",
+        "responses": {
+          "204": {
+            "description": "No Content",
+            "headers": {
+              "Allow": {
+                "description": "The methods this URL serves",
+                "required": true,
+                "schema": {
+                  "const": "GET, HEAD, OPTIONS",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthenticated",
+            "headers": {
+              "WWW-Authenticate": {
+                "description": "A challenge for each scheme that refused the request, sent with the gate's 401 (RFC 9110 section 11.6.1)",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "415": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request has content, which the operation does not take"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "A defect in the server, such as a root middleware that replaced the request context, or a panic"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The credential source is unavailable"
+          },
+          "504": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The deadline passed before a response"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The methods this URL serves"
+      }
+    },
+    "/teams": {
+      "get": {
+        "operationId": "getTeams",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TeamList"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthenticated",
+            "headers": {
+              "WWW-Authenticate": {
+                "description": "A challenge for each scheme that refused the request, sent with the gate's 401 (RFC 9110 section 11.6.1)",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "415": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request has content, which the operation does not take"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "A defect in the server, such as an error no failure row matches, output that cannot be encoded, or a panic"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The credential source is unavailable"
+          },
+          "504": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The deadline passed before a response"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List teams"
+      },
+      "options": {
+        "operationId": "optionsTeams",
+        "responses": {
+          "204": {
+            "description": "No Content",
+            "headers": {
+              "Allow": {
+                "description": "The methods this URL serves",
+                "required": true,
+                "schema": {
+                  "const": "GET, HEAD, OPTIONS, POST",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthenticated",
+            "headers": {
+              "WWW-Authenticate": {
+                "description": "A challenge for each scheme that refused the request, sent with the gate's 401 (RFC 9110 section 11.6.1)",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "415": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request has content, which the operation does not take"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "A defect in the server, such as a root middleware that replaced the request context, or a panic"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The credential source is unavailable"
+          },
+          "504": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The deadline passed before a response"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The methods this URL serves"
+      },
+      "post": {
+        "operationId": "postTeams",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewTeam"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "headers": {
+              "Location": {
+                "required": true,
+                "schema": {
+                  "pattern": "^(?:[^\\x00-\\x20\\x7F](?:[^\\x00-\\x08\\x0A-\\x1F\\x7F]*[^\\x00-\\x20\\x7F])?)?$",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request does not match its contract"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthenticated",
+            "headers": {
+              "WWW-Authenticate": {
+                "description": "A challenge for each scheme that refused the request, sent with the gate's 401 (RFC 9110 section 11.6.1)",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not an administrator"
+          },
+          "408": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request body did not arrive before the deadline"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "a team with this id exists"
+          },
+          "413": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request body is larger than 1048576 bytes (Limits.MaxBodyBytes)"
+          },
+          "415": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request has content of a media type the operation does not take, or no Content-Type, or content in a content coding (Content-Encoding)",
+            "headers": {
+              "Accept": {
+                "description": "The media type the operation takes, sent with geta's own 415 for content of another media type (RFC 9110 section 15.5.16)",
+                "schema": {
+                  "enum": [
+                    "application/json"
+                  ],
+                  "type": "string"
+                }
+              },
+              "Accept-Encoding": {
+                "description": "identity: geta decodes no content coding; sent with geta's own 415 for content in one, and only with that 415 (RFC 9110 section 12.5.3)",
+                "schema": {
+                  "enum": [
+                    "identity"
+                  ],
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "A defect in the server, such as an error no failure row matches, output that cannot be encoded, or a panic"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The credential source is unavailable"
+          },
+          "504": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The deadline passed before a response"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Create a team"
+      }
+    },
+    "/teams/{team}": {
+      "delete": {
+        "operationId": "deleteTeamsTeam",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "team",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "pattern": "^[a-z0-9-]+$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request does not match its contract"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthenticated",
+            "headers": {
+              "WWW-Authenticate": {
+                "description": "A challenge for each scheme that refused the request, sent with the gate's 401 (RFC 9110 section 11.6.1)",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not an administrator"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "team not found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "the team still has members"
+          },
+          "415": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request has content, which the operation does not take"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "A defect in the server, such as an error no failure row matches, output that cannot be encoded, or a panic"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The credential source is unavailable"
+          },
+          "504": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The deadline passed before a response"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Delete an empty team"
+      },
+      "get": {
+        "operationId": "getTeamsTeam",
+        "parameters": [
+          {
+            "description": "\"*\" or a list of one or more entity tags (RFC 9110 §13.1.1), compared strongly; a failed match answers 412",
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "pattern": "^(?:[^\\x00-\\x20\\x7F](?:[^\\x00-\\x08\\x0A-\\x1F\\x7F]*[^\\x00-\\x20\\x7F])?)?$",
+              "type": "string"
+            }
+          },
+          {
+            "description": "\"*\" or a list of one or more entity tags (RFC 9110 §13.1.2), compared weakly; a match answers 304 to a GET or HEAD and 412 otherwise",
+            "in": "header",
+            "name": "If-None-Match",
+            "required": false,
+            "schema": {
+              "pattern": "^(?:[^\\x00-\\x20\\x7F](?:[^\\x00-\\x08\\x0A-\\x1F\\x7F]*[^\\x00-\\x20\\x7F])?)?$",
+              "type": "string"
+            }
+          },
+          {
+            "description": "An HTTP-date (RFC 9110 §13.1.3), read on a GET or HEAD without If-None-Match; an unmodified representation answers 304. A value that is not one HTTP-date is ignored",
+            "in": "header",
+            "name": "If-Modified-Since",
+            "required": false,
+            "schema": {
+              "pattern": "^(?:[^\\x00-\\x20\\x7F](?:[^\\x00-\\x08\\x0A-\\x1F\\x7F]*[^\\x00-\\x20\\x7F])?)?$",
+              "type": "string"
+            }
+          },
+          {
+            "description": "An HTTP-date (RFC 9110 §13.1.4), read without If-Match; a representation modified since answers 412. A value that is not one HTTP-date is ignored",
+            "in": "header",
+            "name": "If-Unmodified-Since",
+            "required": false,
+            "schema": {
+              "pattern": "^(?:[^\\x00-\\x20\\x7F](?:[^\\x00-\\x08\\x0A-\\x1F\\x7F]*[^\\x00-\\x20\\x7F])?)?$",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "team",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "pattern": "^[a-z0-9-]+$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Team"
+                }
+              }
+            },
+            "description": "OK",
+            "headers": {
+              "ETag": {
+                "description": "The team's version; send it in If-Match to write only that version",
+                "required": true,
+                "schema": {
+                  "pattern": "^(?:[^\\x00-\\x20\\x7F](?:[^\\x00-\\x08\\x0A-\\x1F\\x7F]*[^\\x00-\\x20\\x7F])?)?$",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "The representation has not changed"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request does not match its contract"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthenticated",
+            "headers": {
+              "WWW-Authenticate": {
+                "description": "A challenge for each scheme that refused the request, sent with the gate's 401 (RFC 9110 section 11.6.1)",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "team not found"
+          },
+          "412": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "A precondition failed: If-Match, or If-Unmodified-Since"
+          },
+          "415": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request has content, which the operation does not take"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "A defect in the server, such as an error no failure row matches, output that cannot be encoded, or a panic"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The credential source is unavailable"
+          },
+          "504": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The deadline passed before a response"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Fetch a team"
+      },
+      "options": {
+        "operationId": "optionsTeamsTeam",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "team",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content",
+            "headers": {
+              "Allow": {
+                "description": "The methods this URL serves",
+                "required": true,
+                "schema": {
+                  "const": "DELETE, GET, HEAD, OPTIONS, PATCH, PUT",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthenticated",
+            "headers": {
+              "WWW-Authenticate": {
+                "description": "A challenge for each scheme that refused the request, sent with the gate's 401 (RFC 9110 section 11.6.1)",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "415": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request has content, which the operation does not take"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "A defect in the server, such as a root middleware that replaced the request context, or a panic"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The credential source is unavailable"
+          },
+          "504": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The deadline passed before a response"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The methods this URL serves"
+      },
+      "patch": {
+        "description": "A JSON Merge Patch: a member left out is kept, null clears it, a value sets it.",
+        "operationId": "patchTeamsTeam",
+        "parameters": [
+          {
+            "description": "\"*\" or a list of one or more entity tags (RFC 9110 §13.1.1), compared strongly; a failed match answers 412",
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "pattern": "^(?:[^\\x00-\\x20\\x7F](?:[^\\x00-\\x08\\x0A-\\x1F\\x7F]*[^\\x00-\\x20\\x7F])?)?$",
+              "type": "string"
+            }
+          },
+          {
+            "description": "\"*\" or a list of one or more entity tags (RFC 9110 §13.1.2), compared weakly; a match answers 304 to a GET or HEAD and 412 otherwise",
+            "in": "header",
+            "name": "If-None-Match",
+            "required": false,
+            "schema": {
+              "pattern": "^(?:[^\\x00-\\x20\\x7F](?:[^\\x00-\\x08\\x0A-\\x1F\\x7F]*[^\\x00-\\x20\\x7F])?)?$",
+              "type": "string"
+            }
+          },
+          {
+            "description": "An HTTP-date (RFC 9110 §13.1.3), read on a GET or HEAD without If-None-Match; an unmodified representation answers 304. A value that is not one HTTP-date is ignored",
+            "in": "header",
+            "name": "If-Modified-Since",
+            "required": false,
+            "schema": {
+              "pattern": "^(?:[^\\x00-\\x20\\x7F](?:[^\\x00-\\x08\\x0A-\\x1F\\x7F]*[^\\x00-\\x20\\x7F])?)?$",
+              "type": "string"
+            }
+          },
+          {
+            "description": "An HTTP-date (RFC 9110 §13.1.4), read without If-Match; a representation modified since answers 412. A value that is not one HTTP-date is ignored",
+            "in": "header",
+            "name": "If-Unmodified-Since",
+            "required": false,
+            "schema": {
+              "pattern": "^(?:[^\\x00-\\x20\\x7F](?:[^\\x00-\\x08\\x0A-\\x1F\\x7F]*[^\\x00-\\x20\\x7F])?)?$",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "team",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "pattern": "^[a-z0-9-]+$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TeamPatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Team"
+                }
+              }
+            },
+            "description": "OK",
+            "headers": {
+              "ETag": {
+                "description": "The team's version; send it in If-Match to write only that version",
+                "required": true,
+                "schema": {
+                  "pattern": "^(?:[^\\x00-\\x20\\x7F](?:[^\\x00-\\x08\\x0A-\\x1F\\x7F]*[^\\x00-\\x20\\x7F])?)?$",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request does not match its contract"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthenticated",
+            "headers": {
+              "WWW-Authenticate": {
+                "description": "A challenge for each scheme that refused the request, sent with the gate's 401 (RFC 9110 section 11.6.1)",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not an administrator"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "team not found"
+          },
+          "408": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request body did not arrive before the deadline"
+          },
+          "412": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "A precondition failed: If-Match, If-Unmodified-Since, or If-None-Match"
+          },
+          "413": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request body is larger than 1048576 bytes (Limits.MaxBodyBytes)"
+          },
+          "415": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request has content of a media type the operation does not take, or no Content-Type, or content in a content coding (Content-Encoding)",
+            "headers": {
+              "Accept": {
+                "description": "The media type the operation takes, sent with geta's own 415 for content of another media type (RFC 9110 section 15.5.16)",
+                "schema": {
+                  "enum": [
+                    "application/json"
+                  ],
+                  "type": "string"
+                }
+              },
+              "Accept-Encoding": {
+                "description": "identity: geta decodes no content coding; sent with geta's own 415 for content in one, and only with that 415 (RFC 9110 section 12.5.3)",
+                "schema": {
+                  "enum": [
+                    "identity"
+                  ],
+                  "type": "string"
+                }
+              },
+              "Accept-Patch": {
+                "description": "The media type the operation takes, sent with geta's own 415 for content of another media type (RFC 5789 section 2.2)",
+                "schema": {
+                  "enum": [
+                    "application/json"
+                  ],
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "A defect in the server, such as an error no failure row matches, output that cannot be encoded, or a panic"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The credential source is unavailable"
+          },
+          "504": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The deadline passed before a response"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Change a team"
+      },
+      "put": {
+        "description": "Creates the team when there is none and replaces its name and description when there is; its members are kept. Send If-None-Match: * to create only, or If-Match: <ETag> to replace only the version you hold.",
+        "operationId": "putTeamsTeam",
+        "parameters": [
+          {
+            "description": "\"*\" or a list of one or more entity tags (RFC 9110 §13.1.1), compared strongly; a failed match answers 412",
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "pattern": "^(?:[^\\x00-\\x20\\x7F](?:[^\\x00-\\x08\\x0A-\\x1F\\x7F]*[^\\x00-\\x20\\x7F])?)?$",
+              "type": "string"
+            }
+          },
+          {
+            "description": "\"*\" or a list of one or more entity tags (RFC 9110 §13.1.2), compared weakly; a match answers 304 to a GET or HEAD and 412 otherwise",
+            "in": "header",
+            "name": "If-None-Match",
+            "required": false,
+            "schema": {
+              "pattern": "^(?:[^\\x00-\\x20\\x7F](?:[^\\x00-\\x08\\x0A-\\x1F\\x7F]*[^\\x00-\\x20\\x7F])?)?$",
+              "type": "string"
+            }
+          },
+          {
+            "description": "An HTTP-date (RFC 9110 §13.1.3), read on a GET or HEAD without If-None-Match; an unmodified representation answers 304. A value that is not one HTTP-date is ignored",
+            "in": "header",
+            "name": "If-Modified-Since",
+            "required": false,
+            "schema": {
+              "pattern": "^(?:[^\\x00-\\x20\\x7F](?:[^\\x00-\\x08\\x0A-\\x1F\\x7F]*[^\\x00-\\x20\\x7F])?)?$",
+              "type": "string"
+            }
+          },
+          {
+            "description": "An HTTP-date (RFC 9110 §13.1.4), read without If-Match; a representation modified since answers 412. A value that is not one HTTP-date is ignored",
+            "in": "header",
+            "name": "If-Unmodified-Since",
+            "required": false,
+            "schema": {
+              "pattern": "^(?:[^\\x00-\\x20\\x7F](?:[^\\x00-\\x08\\x0A-\\x1F\\x7F]*[^\\x00-\\x20\\x7F])?)?$",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "team",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "pattern": "^[a-z0-9-]+$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TeamFields"
+              }
+            }
+          },
+          "description": "The team as it is to be; a description left out is none",
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Team"
+                }
+              }
+            },
+            "description": "OK",
+            "headers": {
+              "ETag": {
+                "description": "The team's version; send it in If-Match to write only that version",
+                "required": true,
+                "schema": {
+                  "pattern": "^(?:[^\\x00-\\x20\\x7F](?:[^\\x00-\\x08\\x0A-\\x1F\\x7F]*[^\\x00-\\x20\\x7F])?)?$",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request does not match its contract"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthenticated",
+            "headers": {
+              "WWW-Authenticate": {
+                "description": "A challenge for each scheme that refused the request, sent with the gate's 401 (RFC 9110 section 11.6.1)",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not an administrator"
+          },
+          "408": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request body did not arrive before the deadline"
+          },
+          "412": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "A precondition failed: If-Match, If-Unmodified-Since, or If-None-Match"
+          },
+          "413": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request body is larger than 1048576 bytes (Limits.MaxBodyBytes)"
+          },
+          "415": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request has content of a media type the operation does not take, or no Content-Type, or content in a content coding (Content-Encoding)",
+            "headers": {
+              "Accept": {
+                "description": "The media type the operation takes, sent with geta's own 415 for content of another media type (RFC 9110 section 15.5.16)",
+                "schema": {
+                  "enum": [
+                    "application/json"
+                  ],
+                  "type": "string"
+                }
+              },
+              "Accept-Encoding": {
+                "description": "identity: geta decodes no content coding; sent with geta's own 415 for content in one, and only with that 415 (RFC 9110 section 12.5.3)",
+                "schema": {
+                  "enum": [
+                    "identity"
+                  ],
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "A defect in the server, such as an error no failure row matches, output that cannot be encoded, or a panic"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The credential source is unavailable"
+          },
+          "504": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The deadline passed before a response"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Create or replace a team"
+      }
+    },
+    "/teams/{team}/members/{user}": {
+      "delete": {
+        "operationId": "deleteTeamsTeamMembersUser",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "team",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "user",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request does not match its contract"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthenticated",
+            "headers": {
+              "WWW-Authenticate": {
+                "description": "A challenge for each scheme that refused the request, sent with the gate's 401 (RFC 9110 section 11.6.1)",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not an administrator"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "team not found; the user is not a member"
+          },
+          "415": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request has content, which the operation does not take"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "A defect in the server, such as an error no failure row matches, output that cannot be encoded, or a panic"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The credential source is unavailable"
+          },
+          "504": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The deadline passed before a response"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Remove a user from a team"
+      },
+      "options": {
+        "operationId": "optionsTeamsTeamMembersUser",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "team",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "user",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content",
+            "headers": {
+              "Allow": {
+                "description": "The methods this URL serves",
+                "required": true,
+                "schema": {
+                  "const": "DELETE, OPTIONS, PUT",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthenticated",
+            "headers": {
+              "WWW-Authenticate": {
+                "description": "A challenge for each scheme that refused the request, sent with the gate's 401 (RFC 9110 section 11.6.1)",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "415": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request has content, which the operation does not take"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "A defect in the server, such as a root middleware that replaced the request context, or a panic"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The credential source is unavailable"
+          },
+          "504": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The deadline passed before a response"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The methods this URL serves"
+      },
+      "put": {
+        "operationId": "putTeamsTeamMembersUser",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "team",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "user",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request does not match its contract"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthenticated",
+            "headers": {
+              "WWW-Authenticate": {
+                "description": "A challenge for each scheme that refused the request, sent with the gate's 401 (RFC 9110 section 11.6.1)",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not an administrator"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "team not found; user not found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "the user is already a member"
+          },
+          "415": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request has content, which the operation does not take"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "A defect in the server, such as an error no failure row matches, output that cannot be encoded, or a panic"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "the store is unavailable; the store asks to retry; The credential source is unavailable"
+          },
+          "504": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The deadline passed before a response"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Add a user to a team"
+      }
+    },
+    "/users": {
+      "get": {
+        "operationId": "getUsers",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int64",
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "format": "int64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "role",
+            "required": false,
+            "schema": {
+              "enum": [
+                "admin",
+                "member"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserList"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request does not match its contract"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthenticated",
+            "headers": {
+              "WWW-Authenticate": {
+                "description": "A challenge for each scheme that refused the request, sent with the gate's 401 (RFC 9110 section 11.6.1)",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "415": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request has content, which the operation does not take"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "A defect in the server, such as an error no failure row matches, output that cannot be encoded, or a panic"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "the store is unavailable; the store asks to retry; The credential source is unavailable"
+          },
+          "504": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The deadline passed before a response"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List users"
+      },
+      "options": {
+        "operationId": "optionsUsers",
+        "responses": {
+          "204": {
+            "description": "No Content",
+            "headers": {
+              "Allow": {
+                "description": "The methods this URL serves",
+                "required": true,
+                "schema": {
+                  "const": "GET, HEAD, OPTIONS, POST",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthenticated",
+            "headers": {
+              "WWW-Authenticate": {
+                "description": "A challenge for each scheme that refused the request, sent with the gate's 401 (RFC 9110 section 11.6.1)",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "415": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request has content, which the operation does not take"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "A defect in the server, such as a root middleware that replaced the request context, or a panic"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The credential source is unavailable"
+          },
+          "504": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The deadline passed before a response"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The methods this URL serves"
+      },
+      "post": {
+        "operationId": "postUsers",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/User-Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "headers": {
+              "Location": {
+                "required": true,
+                "schema": {
+                  "pattern": "^(?:[^\\x00-\\x20\\x7F](?:[^\\x00-\\x08\\x0A-\\x1F\\x7F]*[^\\x00-\\x20\\x7F])?)?$",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request does not match its contract"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthenticated",
+            "headers": {
+              "WWW-Authenticate": {
+                "description": "A challenge for each scheme that refused the request, sent with the gate's 401 (RFC 9110 section 11.6.1)",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "a role is set only through /admin/users/{id}/role (type /problems/role-change); Not an administrator"
+          },
+          "408": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request body did not arrive before the deadline"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "a user with this id exists (type /problems/user-exists)"
+          },
+          "413": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request body is larger than 1048576 bytes (Limits.MaxBodyBytes)"
+          },
+          "415": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request has content of a media type the operation does not take, or no Content-Type, or content in a content coding (Content-Encoding)",
+            "headers": {
+              "Accept": {
+                "description": "The media type the operation takes, sent with geta's own 415 for content of another media type (RFC 9110 section 15.5.16)",
+                "schema": {
+                  "enum": [
+                    "application/json"
+                  ],
+                  "type": "string"
+                }
+              },
+              "Accept-Encoding": {
+                "description": "identity: geta decodes no content coding; sent with geta's own 415 for content in one, and only with that 415 (RFC 9110 section 12.5.3)",
+                "schema": {
+                  "enum": [
+                    "identity"
+                  ],
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "A defect in the server, such as an error no failure row matches, output that cannot be encoded, or a panic"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "the store is unavailable; the store asks to retry; The credential source is unavailable"
+          },
+          "504": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The deadline passed before a response"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Create a user"
+      }
+    },
+    "/users/by-role/{role}": {
+      "get": {
+        "operationId": "getUsersByRoleRole",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "role",
+            "required": true,
+            "schema": {
+              "enum": [
+                "admin",
+                "member"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int64",
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "format": "int64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserList"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request does not match its contract"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthenticated",
+            "headers": {
+              "WWW-Authenticate": {
+                "description": "A challenge for each scheme that refused the request, sent with the gate's 401 (RFC 9110 section 11.6.1)",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "415": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request has content, which the operation does not take"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "A defect in the server, such as an error no failure row matches, output that cannot be encoded, or a panic"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "the store is unavailable; the store asks to retry; The credential source is unavailable"
+          },
+          "504": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The deadline passed before a response"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List users of a role"
+      },
+      "options": {
+        "operationId": "optionsUsersByRoleRole",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "role",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content",
+            "headers": {
+              "Allow": {
+                "description": "The methods this URL serves",
+                "required": true,
+                "schema": {
+                  "enum": [
+                    "GET, HEAD, OPTIONS",
+                    "GET, HEAD, OPTIONS, POST",
+                    "GET, HEAD, OPTIONS, PUT"
+                  ],
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthenticated",
+            "headers": {
+              "WWW-Authenticate": {
+                "description": "A challenge for each scheme that refused the request, sent with the gate's 401 (RFC 9110 section 11.6.1)",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "415": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request has content, which the operation does not take"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "A defect in the server, such as a root middleware that replaced the request context, or a panic"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The credential source is unavailable"
+          },
+          "504": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The deadline passed before a response"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The methods this URL serves"
+      }
+    },
+    "/users/events": {
+      "get": {
+        "operationId": "streamUserEvents",
+        "responses": {
+          "200": {
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserEvent"
+                }
+              }
+            },
+            "description": "An event stream; each event's data is one JSON value"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthenticated",
+            "headers": {
+              "WWW-Authenticate": {
+                "description": "A challenge for each scheme that refused the request, sent with the gate's 401 (RFC 9110 section 11.6.1)",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "415": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request has content, which the operation does not take"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "A defect in the server, such as an error no failure row matches, output that cannot be encoded, or a panic"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The credential source is unavailable"
+          },
+          "504": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The deadline passed before a response"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Live feed of user create/update/delete events",
+        "tags": [
+          "users",
+          "events"
+        ]
+      },
+      "options": {
+        "operationId": "optionsUsersEvents",
+        "responses": {
+          "204": {
+            "description": "No Content",
+            "headers": {
+              "Allow": {
+                "description": "The methods this URL serves",
+                "required": true,
+                "schema": {
+                  "const": "DELETE, GET, HEAD, OPTIONS, PUT",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthenticated",
+            "headers": {
+              "WWW-Authenticate": {
+                "description": "A challenge for each scheme that refused the request, sent with the gate's 401 (RFC 9110 section 11.6.1)",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "415": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request has content, which the operation does not take"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "A defect in the server, such as a root middleware that replaced the request context, or a panic"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The credential source is unavailable"
+          },
+          "504": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The deadline passed before a response"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The methods this URL serves"
+      }
+    },
+    "/users/import": {
+      "options": {
+        "operationId": "optionsUsersImport",
+        "responses": {
+          "204": {
+            "description": "No Content",
+            "headers": {
+              "Allow": {
+                "description": "The methods this URL serves",
+                "required": true,
+                "schema": {
+                  "const": "DELETE, GET, HEAD, OPTIONS, POST, PUT",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthenticated",
+            "headers": {
+              "WWW-Authenticate": {
+                "description": "A challenge for each scheme that refused the request, sent with the gate's 401 (RFC 9110 section 11.6.1)",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "415": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request has content, which the operation does not take"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "A defect in the server, such as a root middleware that replaced the request context, or a panic"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The credential source is unavailable"
+          },
+          "504": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The deadline passed before a response"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The methods this URL serves"
+      },
+      "post": {
+        "operationId": "postUsersImport",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Batch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Imported"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request does not match its contract"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthenticated",
+            "headers": {
+              "WWW-Authenticate": {
+                "description": "A challenge for each scheme that refused the request, sent with the gate's 401 (RFC 9110 section 11.6.1)",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "a role is set only through /admin/users/{id}/role (type /problems/role-change); Not an administrator"
+          },
+          "408": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request body did not arrive before the deadline"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "a user in the batch already exists, or appears twice (type /problems/user-exists)"
+          },
+          "413": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request body is larger than 1048576 bytes (Limits.MaxBodyBytes)"
+          },
+          "415": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request has content of a media type the operation does not take, or no Content-Type, or content in a content coding (Content-Encoding)",
+            "headers": {
+              "Accept": {
+                "description": "The media type the operation takes, sent with geta's own 415 for content of another media type (RFC 9110 section 15.5.16)",
+                "schema": {
+                  "enum": [
+                    "application/json"
+                  ],
+                  "type": "string"
+                }
+              },
+              "Accept-Encoding": {
+                "description": "identity: geta decodes no content coding; sent with geta's own 415 for content in one, and only with that 415 (RFC 9110 section 12.5.3)",
+                "schema": {
+                  "enum": [
+                    "identity"
+                  ],
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "A defect in the server, such as an error no failure row matches, output that cannot be encoded, or a panic"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "the store is unavailable; the store asks to retry; The credential source is unavailable"
+          },
+          "504": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The deadline passed before a response"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Create many users at once, all or none"
+      }
+    },
+    "/users/{id}": {
+      "delete": {
+        "operationId": "deleteUsersId",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request does not match its contract"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthenticated",
+            "headers": {
+              "WWW-Authenticate": {
+                "description": "A challenge for each scheme that refused the request, sent with the gate's 401 (RFC 9110 section 11.6.1)",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not an administrator"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "user not found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "the last admin cannot be demoted or deleted (type /problems/last-admin)"
+          },
+          "415": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request has content, which the operation does not take"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "A defect in the server, such as an error no failure row matches, output that cannot be encoded, or a panic"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "the store is unavailable; the store asks to retry; The credential source is unavailable"
+          },
+          "504": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The deadline passed before a response"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Delete a user"
+      },
+      "get": {
+        "operationId": "getUsersId",
+        "parameters": [
+          {
+            "description": "\"*\" or a list of one or more entity tags (RFC 9110 §13.1.1), compared strongly; a failed match answers 412",
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "pattern": "^(?:[^\\x00-\\x20\\x7F](?:[^\\x00-\\x08\\x0A-\\x1F\\x7F]*[^\\x00-\\x20\\x7F])?)?$",
+              "type": "string"
+            }
+          },
+          {
+            "description": "\"*\" or a list of one or more entity tags (RFC 9110 §13.1.2), compared weakly; a match answers 304 to a GET or HEAD and 412 otherwise",
+            "in": "header",
+            "name": "If-None-Match",
+            "required": false,
+            "schema": {
+              "pattern": "^(?:[^\\x00-\\x20\\x7F](?:[^\\x00-\\x08\\x0A-\\x1F\\x7F]*[^\\x00-\\x20\\x7F])?)?$",
+              "type": "string"
+            }
+          },
+          {
+            "description": "An HTTP-date (RFC 9110 §13.1.3), read on a GET or HEAD without If-None-Match; an unmodified representation answers 304. A value that is not one HTTP-date is ignored",
+            "in": "header",
+            "name": "If-Modified-Since",
+            "required": false,
+            "schema": {
+              "pattern": "^(?:[^\\x00-\\x20\\x7F](?:[^\\x00-\\x08\\x0A-\\x1F\\x7F]*[^\\x00-\\x20\\x7F])?)?$",
+              "type": "string"
+            }
+          },
+          {
+            "description": "An HTTP-date (RFC 9110 §13.1.4), read without If-Match; a representation modified since answers 412. A value that is not one HTTP-date is ignored",
+            "in": "header",
+            "name": "If-Unmodified-Since",
+            "required": false,
+            "schema": {
+              "pattern": "^(?:[^\\x00-\\x20\\x7F](?:[^\\x00-\\x08\\x0A-\\x1F\\x7F]*[^\\x00-\\x20\\x7F])?)?$",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/User"
+                }
+              }
+            },
+            "description": "OK",
+            "headers": {
+              "ETag": {
+                "required": true,
+                "schema": {
+                  "pattern": "^(?:[^\\x00-\\x20\\x7F](?:[^\\x00-\\x08\\x0A-\\x1F\\x7F]*[^\\x00-\\x20\\x7F])?)?$",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "The representation has not changed"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request does not match its contract"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthenticated",
+            "headers": {
+              "WWW-Authenticate": {
+                "description": "A challenge for each scheme that refused the request, sent with the gate's 401 (RFC 9110 section 11.6.1)",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "user not found"
+          },
+          "412": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "A precondition failed: If-Match, or If-Unmodified-Since"
+          },
+          "415": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request has content, which the operation does not take"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "A defect in the server, such as an error no failure row matches, output that cannot be encoded, or a panic"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "the store is unavailable; the store asks to retry; The credential source is unavailable"
+          },
+          "504": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The deadline passed before a response"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Fetch a user"
+      },
+      "options": {
+        "operationId": "optionsUsersId",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content",
+            "headers": {
+              "Allow": {
+                "description": "The methods this URL serves",
+                "required": true,
+                "schema": {
+                  "const": "DELETE, GET, HEAD, OPTIONS, PUT",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthenticated",
+            "headers": {
+              "WWW-Authenticate": {
+                "description": "A challenge for each scheme that refused the request, sent with the gate's 401 (RFC 9110 section 11.6.1)",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "415": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request has content, which the operation does not take"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "A defect in the server, such as a root middleware that replaced the request context, or a panic"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The credential source is unavailable"
+          },
+          "504": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The deadline passed before a response"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The methods this URL serves"
+      },
+      "put": {
+        "operationId": "putUsersId",
+        "parameters": [
+          {
+            "description": "\"*\" or a list of one or more entity tags (RFC 9110 §13.1.1), compared strongly; a failed match answers 412",
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "pattern": "^(?:[^\\x00-\\x20\\x7F](?:[^\\x00-\\x08\\x0A-\\x1F\\x7F]*[^\\x00-\\x20\\x7F])?)?$",
+              "type": "string"
+            }
+          },
+          {
+            "description": "\"*\" or a list of one or more entity tags (RFC 9110 §13.1.2), compared weakly; a match answers 304 to a GET or HEAD and 412 otherwise",
+            "in": "header",
+            "name": "If-None-Match",
+            "required": false,
+            "schema": {
+              "pattern": "^(?:[^\\x00-\\x20\\x7F](?:[^\\x00-\\x08\\x0A-\\x1F\\x7F]*[^\\x00-\\x20\\x7F])?)?$",
+              "type": "string"
+            }
+          },
+          {
+            "description": "An HTTP-date (RFC 9110 §13.1.3), read on a GET or HEAD without If-None-Match; an unmodified representation answers 304. A value that is not one HTTP-date is ignored",
+            "in": "header",
+            "name": "If-Modified-Since",
+            "required": false,
+            "schema": {
+              "pattern": "^(?:[^\\x00-\\x20\\x7F](?:[^\\x00-\\x08\\x0A-\\x1F\\x7F]*[^\\x00-\\x20\\x7F])?)?$",
+              "type": "string"
+            }
+          },
+          {
+            "description": "An HTTP-date (RFC 9110 §13.1.4), read without If-Match; a representation modified since answers 412. A value that is not one HTTP-date is ignored",
+            "in": "header",
+            "name": "If-Unmodified-Since",
+            "required": false,
+            "schema": {
+              "pattern": "^(?:[^\\x00-\\x20\\x7F](?:[^\\x00-\\x08\\x0A-\\x1F\\x7F]*[^\\x00-\\x20\\x7F])?)?$",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/User-Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/User"
+                }
+              }
+            },
+            "description": "OK",
+            "headers": {
+              "ETag": {
+                "required": true,
+                "schema": {
+                  "pattern": "^(?:[^\\x00-\\x20\\x7F](?:[^\\x00-\\x08\\x0A-\\x1F\\x7F]*[^\\x00-\\x20\\x7F])?)?$",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "body id does not match path id; The request does not match its contract"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthenticated",
+            "headers": {
+              "WWW-Authenticate": {
+                "description": "A challenge for each scheme that refused the request, sent with the gate's 401 (RFC 9110 section 11.6.1)",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "a role is set only through /admin/users/{id}/role (type /problems/role-change); Not an administrator"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "user not found"
+          },
+          "408": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request body did not arrive before the deadline"
+          },
+          "412": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "A precondition failed: If-Match, If-Unmodified-Since, or If-None-Match"
+          },
+          "413": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request body is larger than 1048576 bytes (Limits.MaxBodyBytes)"
+          },
+          "415": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request has content of a media type the operation does not take, or no Content-Type, or content in a content coding (Content-Encoding)",
+            "headers": {
+              "Accept": {
+                "description": "The media type the operation takes, sent with geta's own 415 for content of another media type (RFC 9110 section 15.5.16)",
+                "schema": {
+                  "enum": [
+                    "application/json"
+                  ],
+                  "type": "string"
+                }
+              },
+              "Accept-Encoding": {
+                "description": "identity: geta decodes no content coding; sent with geta's own 415 for content in one, and only with that 415 (RFC 9110 section 12.5.3)",
+                "schema": {
+                  "enum": [
+                    "identity"
+                  ],
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "A defect in the server, such as an error no failure row matches, output that cannot be encoded, or a panic"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "the store is unavailable; the store asks to retry; The credential source is unavailable"
+          },
+          "504": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The deadline passed before a response"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Replace a user"
+      }
+    },
+    "/users/{id}/attachments": {
+      "options": {
+        "operationId": "optionsUsersIdAttachments",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content",
+            "headers": {
+              "Allow": {
+                "description": "The methods this URL serves",
+                "required": true,
+                "schema": {
+                  "const": "OPTIONS, POST",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthenticated",
+            "headers": {
+              "WWW-Authenticate": {
+                "description": "A challenge for each scheme that refused the request, sent with the gate's 401 (RFC 9110 section 11.6.1)",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "415": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request has content, which the operation does not take"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "A defect in the server, such as a root middleware that replaced the request context, or a panic"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The credential source is unavailable"
+          },
+          "504": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The deadline passed before a response"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The methods this URL serves"
+      },
+      "post": {
+        "operationId": "postUsersIdAttachments",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "file": {
+                    "description": "The files, one part each",
+                    "items": {
+                      "contentMediaType": "application/octet-stream",
+                      "type": "string"
+                    },
+                    "maxItems": 5,
+                    "type": "array"
+                  },
+                  "note": {
+                    "description": "A note on the whole upload",
+                    "maxLength": 200,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "file"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Attachments"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request does not match its contract"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthenticated",
+            "headers": {
+              "WWW-Authenticate": {
+                "description": "A challenge for each scheme that refused the request, sent with the gate's 401 (RFC 9110 section 11.6.1)",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not an administrator"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "user not found"
+          },
+          "408": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request body did not arrive before the deadline"
+          },
+          "413": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request body is larger than 1048576 bytes (Limits.MaxBodyBytes)"
+          },
+          "415": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request has content of a media type the operation does not take, or no Content-Type, or content in a content coding (Content-Encoding)",
+            "headers": {
+              "Accept": {
+                "description": "The media type the operation takes, sent with geta's own 415 for content of another media type (RFC 9110 section 15.5.16)",
+                "schema": {
+                  "enum": [
+                    "multipart/form-data"
+                  ],
+                  "type": "string"
+                }
+              },
+              "Accept-Encoding": {
+                "description": "identity: geta decodes no content coding; sent with geta's own 415 for content in one, and only with that 415 (RFC 9110 section 12.5.3)",
+                "schema": {
+                  "enum": [
+                    "identity"
+                  ],
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "an attachment is empty"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "A defect in the server, such as an error no failure row matches, output that cannot be encoded, or a panic"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "the store is unavailable; the store asks to retry; The credential source is unavailable"
+          },
+          "504": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The deadline passed before a response"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Upload a user's attachments"
+      }
+    },
+    "/users/{id}/avatar": {
+      "options": {
+        "operationId": "optionsUsersIdAvatar",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content",
+            "headers": {
+              "Allow": {
+                "description": "The methods this URL serves",
+                "required": true,
+                "schema": {
+                  "const": "OPTIONS, PUT",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthenticated",
+            "headers": {
+              "WWW-Authenticate": {
+                "description": "A challenge for each scheme that refused the request, sent with the gate's 401 (RFC 9110 section 11.6.1)",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "415": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request has content, which the operation does not take"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "A defect in the server, such as a root middleware that replaced the request context, or a panic"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The credential source is unavailable"
+          },
+          "504": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The deadline passed before a response"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The methods this URL serves"
+      },
+      "put": {
+        "operationId": "putUsersIdAvatar",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "caption": {
+                    "maxLength": 140,
+                    "type": "string"
+                  },
+                  "image": {
+                    "contentMediaType": "application/octet-stream",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "image"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Avatar"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request does not match its contract"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthenticated",
+            "headers": {
+              "WWW-Authenticate": {
+                "description": "A challenge for each scheme that refused the request, sent with the gate's 401 (RFC 9110 section 11.6.1)",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not an administrator"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "user not found"
+          },
+          "408": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request body did not arrive before the deadline"
+          },
+          "413": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request body is larger than 1048576 bytes (Limits.MaxBodyBytes)"
+          },
+          "415": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request has content of a media type the operation does not take, or no Content-Type, or content in a content coding (Content-Encoding)",
+            "headers": {
+              "Accept": {
+                "description": "The media type the operation takes, sent with geta's own 415 for content of another media type (RFC 9110 section 15.5.16)",
+                "schema": {
+                  "enum": [
+                    "multipart/form-data"
+                  ],
+                  "type": "string"
+                }
+              },
+              "Accept-Encoding": {
+                "description": "identity: geta decodes no content coding; sent with geta's own 415 for content in one, and only with that 415 (RFC 9110 section 12.5.3)",
+                "schema": {
+                  "enum": [
+                    "identity"
+                  ],
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "A defect in the server, such as an error no failure row matches, output that cannot be encoded, or a panic"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "the store is unavailable; the store asks to retry; The credential source is unavailable"
+          },
+          "504": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The deadline passed before a response"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Upload a user's avatar"
+      }
+    },
+    "/users/{id}/tags/{index}": {
+      "get": {
+        "operationId": "getUsersIdTagsIndex",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "index",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Tag"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request does not match its contract"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthenticated",
+            "headers": {
+              "WWW-Authenticate": {
+                "description": "A challenge for each scheme that refused the request, sent with the gate's 401 (RFC 9110 section 11.6.1)",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "user not found; tag index out of range"
+          },
+          "415": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request has content, which the operation does not take"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "A defect in the server, such as an error no failure row matches, output that cannot be encoded, or a panic"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "the store is unavailable; the store asks to retry; The credential source is unavailable"
+          },
+          "504": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The deadline passed before a response"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Read one tag by index"
+      },
+      "options": {
+        "operationId": "optionsUsersIdTagsIndex",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "index",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content",
+            "headers": {
+              "Allow": {
+                "description": "The methods this URL serves",
+                "required": true,
+                "schema": {
+                  "const": "GET, HEAD, OPTIONS",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthenticated",
+            "headers": {
+              "WWW-Authenticate": {
+                "description": "A challenge for each scheme that refused the request, sent with the gate's 401 (RFC 9110 section 11.6.1)",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "415": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request has content, which the operation does not take"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "A defect in the server, such as a root middleware that replaced the request context, or a panic"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The credential source is unavailable"
+          },
+          "504": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The deadline passed before a response"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The methods this URL serves"
+      }
+    },
+    "/whoami": {
+      "get": {
+        "operationId": "getWhoami",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Caller"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthenticated",
+            "headers": {
+              "WWW-Authenticate": {
+                "description": "A challenge for each scheme that refused the request, sent with the gate's 401 (RFC 9110 section 11.6.1)",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "415": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request has content, which the operation does not take"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "A defect in the server, such as an error no failure row matches, output that cannot be encoded, or a panic"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The credential source is unavailable"
+          },
+          "504": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The deadline passed before a response"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The authenticated caller"
+      },
+      "options": {
+        "operationId": "optionsWhoami",
+        "responses": {
+          "204": {
+            "description": "No Content",
+            "headers": {
+              "Allow": {
+                "description": "The methods this URL serves",
+                "required": true,
+                "schema": {
+                  "const": "GET, HEAD, OPTIONS",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthenticated",
+            "headers": {
+              "WWW-Authenticate": {
+                "description": "A challenge for each scheme that refused the request, sent with the gate's 401 (RFC 9110 section 11.6.1)",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "415": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request has content, which the operation does not take"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "A defect in the server, such as a root middleware that replaced the request context, or a panic"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The credential source is unavailable"
+          },
+          "504": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The deadline passed before a response"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The methods this URL serves"
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "events"
+    },
+    {
+      "name": "users"
+    }
+  ]
+}
