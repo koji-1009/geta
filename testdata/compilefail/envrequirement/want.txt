@@ -1,0 +1,2 @@
+main.go:28:
+does not implement Store (missing method Delete)

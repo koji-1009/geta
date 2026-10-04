@@ -1,0 +1,2 @@
+main.go:14:
+not enough arguments in call to geta.Op

@@ -1,0 +1,133 @@
+package geta
+
+import (
+	"crypto/sha256"
+	"encoding/base64"
+	"maps"
+	"net/http"
+	"strings"
+)
+
+// ETag tags a 200 response to GET or HEAD with a strong validator over its
+// body, and answers 304 with no body when If-None-Match matches it, comparing
+// weakly (RFC 9110 §13.1.2). A tag the handler set is kept. Behind
+// [Compress] or [Gzip], a client holding a coded form's tag gets its 304
+// too. Other methods and streams pass through untouched.
+//
+// If-None-Match is read as [Conditional.Check] reads it. A value that is
+// neither "*" nor a list of one or more entity tags, an empty one included,
+// answers 400 in place of the 200; the document lists it beside the 304.
+func ETag() Middleware {
+	m := Ordered(OrderValidate, func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != http.MethodGet && r.Method != http.MethodHead {
+				next.ServeHTTP(w, r)
+				return
+			}
+			inm := r.Header.Values("If-None-Match")
+			var before http.Header // the header a 400 restores
+			if len(inm) > 0 {
+				before = w.Header().Clone()
+			}
+			b := newBuffer(w)
+			next.ServeHTTP(b, r)
+			if !b.held() || b.status == 0 {
+				return
+			}
+			h := b.header
+			if b.status != http.StatusOK {
+				b.send(r, b.status, b.body.Bytes())
+				return
+			}
+			tag := h.Get("ETag")
+			if tag == "" {
+				sum := sha256.Sum256(b.body.Bytes())
+				tag = `"` + base64.RawURLEncoding.EncodeToString(sum[:18]) + `"`
+				h.Set("ETag", tag)
+			}
+			if len(inm) > 0 {
+				tags, star, ok := conditionTags(*conditionField(inm))
+				if !ok {
+					clear(h)
+					maps.Copy(h, before)
+					writeProblem(w, r, http.StatusBadRequest, "the request does not match its contract",
+						[]Violation{{In: "header", Path: "If-None-Match", Message: malformedTags}})
+					return
+				}
+				if star || matches(tags, strings.TrimSpace(tag), weakEqual) {
+					for _, k := range []string{"Content-Type", "Content-Length", "Content-Encoding", "Content-Language", "Content-Range"} {
+						h.Del(k)
+					}
+					b.send(r, http.StatusNotModified, nil)
+					return
+				}
+			}
+			b.send(r, b.status, b.body.Bytes())
+		})
+	})
+	m.name = "etag"
+	m.answers = []answer{
+		{status: http.StatusNotModified, reason: "The representation has not changed", getOnly: true},
+		{status: http.StatusBadRequest, reason: "If-None-Match is neither \"*\" nor a list of one or more entity tags", getOnly: true},
+	}
+	m.exposes = []string{"ETag"}
+	return m
+}
+
+// etagList parses If-None-Match values into their entity tags, "*" included.
+// Tags may hold commas inside their quotes.
+func etagList(values []string) []string {
+	var tags []string
+	for _, v := range values {
+		if strings.Trim(v, " \t") == "*" {
+			tags = append(tags, "*")
+			continue
+		}
+		tags, _ = appendETags(tags, v)
+	}
+	return tags
+}
+
+// appendETags appends the entity tags of the list v to tags, stopping at the
+// first element that is not one (its end cannot be known). ok reports
+// whether all of v is an entity-tag list (RFC 9110 §8.8.3).
+func appendETags(tags []string, v string) (_ []string, ok bool) {
+	ows := func(i int) int {
+		for i < len(v) && (v[i] == ' ' || v[i] == '\t') {
+			i++
+		}
+		return i
+	}
+	i := 0
+	for {
+		for i = ows(i); i < len(v) && v[i] == ','; i = ows(i + 1) {
+		}
+		if i == len(v) {
+			return tags, true
+		}
+		start := i
+		if strings.HasPrefix(v[i:], "W/") {
+			i += 2
+		}
+		if i == len(v) || v[i] != '"' {
+			return tags, false
+		}
+		for i++; i < len(v) && etagc(v[i]); i++ {
+		}
+		if i == len(v) || v[i] != '"' {
+			return tags, false
+		}
+		i++
+		end := i
+		if i = ows(i); i < len(v) && v[i] != ',' {
+			return tags, false
+		}
+		tags = append(tags, v[start:end])
+	}
+}
+
+// etagc reports whether b may appear inside an entity tag's quotes:
+// %x21 / %x23-7E / obs-text.
+func etagc(b byte) bool {
+	return b == 0x21 || b >= 0x23 && b != 0x7F
+}

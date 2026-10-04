@@ -1,0 +1,12 @@
+go test fuzz v1
+string("0")
+string("0")
+string("0")
+byte('\x00')
+[]byte("0")
+string("\xcd")
+string("0")
+byte('\x01')
+uint16(100)
+byte('@')
+uint16(300)

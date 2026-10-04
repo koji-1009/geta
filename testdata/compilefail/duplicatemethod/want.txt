@@ -1,0 +1,2 @@
+main.go:18:
+duplicate field name Get
