@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"reflect"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -145,28 +146,76 @@ func runSinglePass[T any](tb testing.TB, data []byte) bool {
 	return singlePassIn(r, c, c.use(), data, linLimits, reflect.ValueOf(new(T)).Elem())
 }
 
-// timeOf returns the least time of a few runs of f.
-func timeOf(f func()) time.Duration {
+// timeOf returns the least time of a few timings of reps runs of f, each
+// timing after a collection, so that a pause or a busy neighbour inflates
+// only some of them.
+func timeOf(f func(), reps int) time.Duration {
 	best := time.Duration(1 << 62)
-	for range 3 {
+	for range 5 {
+		runtime.GC()
 		start := time.Now()
-		f()
+		for range reps {
+			f()
+		}
 		best = min(best, time.Since(start))
 	}
 	return best
 }
 
-// linear fails unless 4× the size takes about 4× the time: quadratic work
-// takes 16×.
+// allocOf returns the bytes one run of f allocates.
+func allocOf(f func()) uint64 {
+	var before, after runtime.MemStats
+	runtime.GC()
+	runtime.ReadMemStats(&before)
+	f()
+	runtime.ReadMemStats(&after)
+	return after.TotalAlloc - before.TotalAlloc
+}
+
+// repsFor returns how many runs of f take at least linMinTime, so that the
+// smaller body is timed over milliseconds rather than microseconds.
+func repsFor(f func()) int {
+	for reps := 1; ; reps *= 2 {
+		if timeOf(f, reps) >= linMinTime || reps >= 1<<16 {
+			return reps
+		}
+	}
+}
+
+const (
+	// linMinTime is the least time a timing of the smaller body takes.
+	linMinTime = 5 * time.Millisecond
+	// linBound is the ratio 4× the body may cost: linear work costs 4×,
+	// quadratic 16×.
+	linBound = 10
+)
+
+// linear fails unless 4× the size costs about 4× as much, in bytes allocated
+// and in time: quadratic work costs 16×. The bytes are counted exactly; the
+// time is the least of several timings over the same number of runs, and a
+// ratio past the bound is timed again, as quadratic work exceeds it every
+// time and a shared machine only some of the time.
 func linear(t *testing.T, name string, run func(n int) func()) {
 	t.Helper()
 	const n = 256 << 10
-	small, large := timeOf(run(n)), timeOf(run(4*n))
-	ratio := float64(large) / float64(small)
-	t.Logf("%s: %v at %d bytes, %v at %d bytes (×%.1f)", name, small, n, large, 4*n, ratio)
-	if ratio > 10 {
-		t.Errorf("%s: 4× the body took %.1f× the time", name, ratio)
+	small, large := run(n), run(4*n)
+	as, al := allocOf(small), allocOf(large)
+	if ar := float64(al) / float64(max(as, 1)); ar > linBound {
+		t.Errorf("%s: 4× the body allocated %.1f× the bytes (%d at %d bytes, %d at %d bytes)", name, ar, as, n, al, 4*n)
 	}
+	reps := repsFor(small)
+	var ratios []string
+	for range 3 {
+		ts, tl := timeOf(small, reps), timeOf(large, reps)
+		ratio := float64(tl) / float64(ts)
+		ratios = append(ratios, fmt.Sprintf("×%.1f", ratio))
+		if ratio <= linBound {
+			t.Logf("%s: %d runs took %v at %d bytes, %v at %d bytes (%s); %d and %d bytes allocated per run",
+				name, reps, ts, n, tl, 4*n, strings.Join(ratios, ", "), as, al)
+			return
+		}
+	}
+	t.Errorf("%s: 4× the body took %s the time, over %d runs", name, strings.Join(ratios, ", "), reps)
 }
 
 type linWide struct {
