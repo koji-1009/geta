@@ -100,7 +100,8 @@ func TestMethodNotAllowedUnionsTheBranches(t *testing.T) {
 // does, keeping the query, with no body. A byte a browser reads otherwise
 // than the server (a backslash it takes for '/', a tab or line break it
 // drops) goes out escaped, so Location never names another host; an escape
-// the client sent stays.
+// the client sent stays. In the query, a '#' (which would begin a fragment)
+// and a '%' that begins no escape go out escaped, so Location is a URI.
 func TestUncleanPathsRedirect(t *testing.T) {
 	c := getatest.New(t, one("/a/b", get(okHandler)))
 	for _, tc := range []struct{ target, want string }{
@@ -115,6 +116,8 @@ func TestUncleanPathsRedirect(t *testing.T) {
 		{"/.//evil.example/", "/evil.example/"},
 		{"//%2F%2Fevil.example/a%2Fb", "/%2F%2Fevil.example/a%2Fb"},
 		{"//café?q=café", "/caf%C3%A9?q=caf%c3%a9"},
+		{"//?#%", "/?%23%25"},
+		{"//a?q=%41%zz#x%4", "/a?q=%41%25zz%23x%254"},
 		{"//a/\"<x>^`{|}", "/a/%22%3Cx%3E%5E%60%7B%7C%7D"},
 		{"//a/!$&'()*+,;=:@[]~", "/a/!$&'()*+,;=:@[]~"},
 	} {
