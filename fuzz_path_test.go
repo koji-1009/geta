@@ -58,7 +58,8 @@ func refDate(s string) bool {
 // in the segment, %2E is no dot segment), binds the reference's value (an
 // integer as JSON writes one in range, a 36-character uuid, a real
 // full-date, a UTF-8 string within its maxLength) or is a 400 problem whose
-// one violation is the parameter's, in path.
+// one violation is the parameter's, in path. The segment is cut to 128
+// bytes (fzCut), past the longest value any parameter takes.
 func FuzzPathValues(f *testing.F) {
 	var got string
 	echo := func(v fmt.Stringer) { got = v.String() }
@@ -89,6 +90,7 @@ func FuzzPathValues(f *testing.F) {
 		}
 	}
 	f.Fuzz(func(t *testing.T, route uint8, seg string, raw bool) {
+		seg = fzCut(seg, 128)
 		prefix := []string{"/i/", "/u/", "/d/", "/s/"}[route%4]
 		escaped := seg
 		if !raw || strings.ContainsAny(seg, "/?#") || strings.ContainsFunc(seg, func(r rune) bool { return r <= 0x20 || r == 0x7F }) {

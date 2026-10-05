@@ -280,10 +280,15 @@ func fzVariants(raw any, v fzShape, path string) string {
 // It answers 200, 400, or 413, never 500, and never panics. On 200 every
 // value is the variant its discriminator names, and the echoed response is
 // the input, canonicalised.
+//
+// The limits are low enough to reach within a few hundred bytes, the body
+// limit (a 413) and the nesting ceiling, and a body is cut to twice the body
+// limit (fzCut), a 413 as one just past the limit is.
 func FuzzSealed(f *testing.F) {
 	var got *fzPicture
 	limits := geta.DefaultLimits
-	limits.MaxBodyBytes = 4096
+	limits.MaxBodyBytes = 256
+	limits.MaxDepth = 16
 	app, err := geta.New(one("/s", geta.Route{Post: geta.Op(http.StatusOK, func(_ context.Context, in *fzPictureIn) (*fzPicture, error) {
 		got = &in.Body
 		return &in.Body, nil
@@ -314,6 +319,7 @@ func FuzzSealed(f *testing.F) {
 		f.Add([]byte(s))
 	}
 	f.Fuzz(func(t *testing.T, body []byte) {
+		body = fzCut(body, 2*int(limits.MaxBodyBytes))
 		got = nil
 		req := httptest.NewRequest(http.MethodPost, "/s", bytes.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")

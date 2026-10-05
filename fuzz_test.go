@@ -44,10 +44,19 @@ type fuzzIn struct {
 // FuzzBinding feeds arbitrary input to a contract with every kind of field.
 // Whatever arrives, binding answers 200, 400, or 413: an input can never
 // reach the author's posture (500), and it never panics.
+//
+// The limits are low enough to reach within a few hundred bytes: the body
+// limit (a 413), and the ceilings on a string's length, an array's items,
+// and nesting. Each text is cut to fuzzTextMax bytes and the body to twice
+// the body limit (fzCut), a 413 as one just past the limit is.
 func FuzzBinding(f *testing.F) {
+	const fuzzTextMax = 128
 	h := func(ctx context.Context, in *fuzzIn) (*ok, error) { return &ok{true}, nil }
 	limits := geta.DefaultLimits
-	limits.MaxBodyBytes = 4096
+	limits.MaxBodyBytes = 192
+	limits.MaxStringLength = 64
+	limits.MaxItems = 16
+	limits.MaxDepth = 16
 	app, err := geta.New(one("/x/{seg}", geta.Route{Post: geta.Op(http.StatusOK, h, geta.Doc{})}), geta.WithLimits(limits))
 	if err != nil {
 		f.Fatal(err)
@@ -59,6 +68,8 @@ func FuzzBinding(f *testing.F) {
 	f.Add("1", "", "", []byte(`[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[`))
 	f.Add("1", "", "", []byte(`{"name":"a","raw":"!!","when":"2020-13-01T00:00:00Z","others":[null]}`))
 	f.Fuzz(func(t *testing.T, seg, query, trace string, body []byte) {
+		seg, query, trace = fzCut(seg, fuzzTextMax), fzCut(query, fuzzTextMax), fzCut(trace, fuzzTextMax)
+		body = fzCut(body, 2*int(limits.MaxBodyBytes))
 		u := "/x/" + url.PathEscape(seg) + "?" + query
 		req, err := http.NewRequest(http.MethodPost, "http://example.com"+u, bytes.NewReader(body))
 		if err != nil {
