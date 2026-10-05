@@ -71,7 +71,10 @@ type fieldCodec struct {
 
 // registry analyses types once per App and keeps component names unique.
 type registry struct {
-	codecs   map[reflect.Type]*codec
+	codecs map[reflect.Type]*codec
+	// making holds the codecs being made, outermost first. A codec is in
+	// codecs once made (a sealed type's, once begun).
+	making   []*codec
 	names    map[string]reflect.Type
 	declared map[reflect.Type]*schema // WithSchema declarations
 	unions   map[reflect.Type]Union   // WithUnion declarations
@@ -256,10 +259,35 @@ func (c *codec) use() *schema {
 	return c.schema
 }
 
+// begin puts c on making and returns the func that takes it off.
+func (r *registry) begin(c *codec) func() {
+	r.making = append(r.making, c)
+	return func() { r.making = r.making[:len(r.making)-1] }
+}
+
 // codecFor analyses t. Errors name the type and the field path.
 func (r *registry) codecFor(t reflect.Type) (*codec, error) {
 	if c, ok := r.codecs[t]; ok {
 		return c, nil
+	}
+	// t met again while it is being made holds itself. A named struct on the
+	// cycle is referred to by its component; with none, t's schema would
+	// contain itself. CheckSelfHolding is shared with getavet.
+	for i := len(r.making) - 1; i >= 0; i-- {
+		c := r.making[i]
+		if c.t != t {
+			continue
+		}
+		through := slices.ContainsFunc(r.making[i:], func(m *codec) bool { return m.name != "" })
+		if err := CheckSelfHolding(t.String(), through); err != nil {
+			return nil, err
+		}
+		if c.name != "" {
+			return c, nil
+		}
+		// Any other type is made again inside the named struct, which ends
+		// the cycle there, so every use of t has its whole schema.
+		break
 	}
 	// A Nullable has JSON methods, but its schema is its value's plus null.
 	if et, ok := nullableOf(t); ok {
@@ -335,7 +363,7 @@ func (r *registry) codecFor(t reflect.Type) (*codec, error) {
 			break
 		}
 		c.kind = kSlice
-		r.codecs[t] = c
+		defer r.begin(c)()
 		el, err := r.codecFor(t.Elem())
 		if err != nil {
 			delete(r.codecs, t)
@@ -346,7 +374,7 @@ func (r *registry) codecFor(t reflect.Type) (*codec, error) {
 	case reflect.Map:
 		c.kind = kMap
 		c.keyMethods = v2Reads(t.Key())
-		r.codecs[t] = c
+		defer r.begin(c)()
 		// A key type is judged as a value of that type is.
 		kc, err := r.codecFor(t.Key())
 		if err != nil {
@@ -381,7 +409,7 @@ func (r *registry) codecFor(t reflect.Type) (*codec, error) {
 			}
 			r.names[c.name] = t
 		}
-		r.codecs[t] = c // before the fields, so a recursive type resolves
+		defer r.begin(c)() // before the fields, so a recursive type resolves
 		if err := r.structFields(c); err != nil {
 			delete(r.codecs, t)
 			if c.name != "" {

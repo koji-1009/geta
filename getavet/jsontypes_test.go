@@ -327,6 +327,162 @@ func Build() (*geta.App, error) {
 	})
 }
 
+// A type that holds itself other than through a named struct type is
+// reported as geta.New refuses it, in an output and an input; one that
+// holds itself through a named struct is not.
+func TestSelfHoldingTypesMatchGetaNew(t *testing.T) {
+	diagnostics, built := vetAndNew(t, `package lib
+
+import (
+	"context"
+	"net/http"
+
+	"github.com/koji-1009/geta"
+)
+
+type Tree map[string]Tree
+
+type Chain []Chain
+
+type Anon map[string]struct {
+	M Anon `+"`json:\"m\"`"+`
+}
+
+type Node struct {
+	Kids map[string]Node `+"`json:\"kids\"`"+`
+	Next []Node          `+"`json:\"next\"`"+`
+}
+
+type TreeIn struct {
+	Body Tree `+"`body:\"json\"`"+`
+}
+
+func Build() (*geta.App, error) {
+	return geta.New(geta.Table{Routes: []geta.Entry{
+		{Path: "/a", Route: geta.Route{Get: geta.Op(http.StatusOK, func(context.Context, *struct{}) (*Tree, error) { return nil, nil }, geta.Doc{})}},
+		{Path: "/b", Route: geta.Route{Get: geta.Op(http.StatusOK, func(context.Context, *struct{}) (*Chain, error) { return nil, nil }, geta.Doc{})}},
+		{Path: "/c", Route: geta.Route{Get: geta.Op(http.StatusOK, func(context.Context, *struct{}) (*Anon, error) { return nil, nil }, geta.Doc{})}},
+		{Path: "/d", Route: geta.Route{Get: geta.Op(http.StatusOK, func(context.Context, *struct{}) (*Node, error) { return nil, nil }, geta.Doc{})}},
+		{Path: "/e", Route: geta.Route{Post: geta.Op(http.StatusOK, func(context.Context, *TreeIn) (*Node, error) { return nil, nil }, geta.Doc{})}},
+	}})
+}
+`)
+	checkSame(t, diagnostics, built, []string{
+		"lib.Tree: lib.Tree holds itself other than through a named struct type",
+		"lib.Chain: lib.Chain holds itself other than through a named struct type",
+		"M: lib.Anon holds itself other than through a named struct type",
+		"Body: lib.Tree: lib.Tree holds itself other than through a named struct type",
+	})
+}
+
+// getavet judges a type that holds itself by the cycle, as geta.New does,
+// whichever type of the cycle is met first and in whatever route order:
+// recursion through a named struct, by a slice, a map, a pointer, an
+// embedded struct, or a Nullable, is reported nowhere; mutual recursion of
+// two named types other than structs, a generic type, and a type holding
+// itself through a Nullable are. An element's refusal carries the slice or
+// map, as geta.New words it.
+func TestSelfHoldingTypesInAnyOrderMatchGetaNew(t *testing.T) {
+	op := func(typ string) string {
+		return "{Path: \"/" + strings.ToLower(strings.NewReplacer("[", "", "]", "").Replace(typ)) + "\", Route: geta.Route{Get: geta.Op(http.StatusOK, func(context.Context, *struct{}) (*" + typ + ", error) { return nil, nil }, geta.Doc{})}},\n"
+	}
+	tables := ""
+	for _, routes := range [][]string{
+		{"Kids"}, {"Node"}, {"Forest"},
+		{"Kids", "Node"}, {"Node", "Kids"}, {"Forest", "Node"}, {"Node", "Forest"},
+		{"KidMap"}, {"MNode"}, {"PKids"}, {"PNode"}, {"EKids"}, {"ENode"}, {"NKids"}, {"NNode"},
+		{"MutualA"}, {"MutualB"}, {"GTree[string]"}, {"NullSelf"}, {"Chans"}, {"ChanLists"},
+	} {
+		tables += "{\n"
+		for _, r := range routes {
+			tables += op(r)
+		}
+		tables += "},\n"
+	}
+	diagnostics, built := vetAndNew(t, strings.ReplaceAll(`package lib
+
+import (
+	"context"
+	"errors"
+	"net/http"
+
+	"github.com/koji-1009/geta"
+)
+
+type Kids []Node
+
+type Node struct {
+	Name string 'json:"name"'
+	Kids Kids   'json:"kids"'
+}
+
+type Forest struct {
+	Roots Kids 'json:"roots"'
+}
+
+type KidMap map[string]MNode
+
+type MNode struct {
+	Kids KidMap 'json:"kids"'
+}
+
+type PKids []PNode
+
+type PNode struct {
+	Kids *PKids 'json:"kids,omitzero"'
+}
+
+type EKids []ENode
+
+type ENode struct{ EBase }
+
+type EBase struct {
+	Kids EKids 'json:"kids"'
+}
+
+type NKids []NNode
+
+type NNode struct {
+	Kids geta.Nullable[NKids] 'json:"kids,omitzero"'
+}
+
+type MutualA []MutualB
+
+type MutualB map[string]MutualA
+
+type GTree[T any] map[string]GTree[T]
+
+type NullSelf map[string]geta.Nullable[NullSelf]
+
+type Chans struct {
+	M map[string]chan int 'json:"m"'
+}
+
+type ChanLists struct {
+	L []map[string]chan int 'json:"l"'
+}
+
+func Build() (*geta.App, error) {
+	var errs []error
+	for _, routes := range [][]geta.Entry{
+`+tables+`	} {
+		_, err := geta.New(geta.Table{Routes: routes})
+		errs = append(errs, err)
+	}
+	return nil, errors.Join(errs...)
+}
+`, "'", "`"))
+	const why = " holds itself other than through a named struct type"
+	checkSame(t, diagnostics, built, []string{
+		"lib.MutualA: lib.MutualB: lib.MutualA" + why,
+		"lib.MutualB: lib.MutualA: lib.MutualB" + why,
+		"lib.GTree[string]: lib.GTree[string]" + why,
+		"lib.NullSelf: lib.NullSelf" + why,
+		"M: map[string]chan int: type chan int has no JSON form",
+		"L: []map[string]chan int: map[string]chan int: type chan int has no JSON form",
+	})
+}
+
 // An operation built in a generic function is judged where it is
 // instantiated, by geta.New: an input or a problem description that is a
 // type parameter, and a member of a type parameter's type, are not judged.

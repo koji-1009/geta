@@ -1113,6 +1113,18 @@ func CheckSchemaName(typ string) error {
 	return nil
 }
 
+// CheckSelfHolding reports whether geta.New accepts typ, met again inside
+// its own elements or members: a type may hold itself only through a named
+// struct type, which its component refers to. throughNamedStruct reports
+// that a named struct type (typ itself included) lies on the cycle from typ
+// back to typ. It applies geta.New's rule and is exported for getavet.
+func CheckSelfHolding(typ string, throughNamedStruct bool) error {
+	if throughNamedStruct {
+		return nil
+	}
+	return fmt.Errorf("%s holds itself other than through a named struct type", typ)
+}
+
 // VetType describes a type for CheckJSONType. geta.New builds it by
 // reflection, getavet from source.
 type VetType struct {

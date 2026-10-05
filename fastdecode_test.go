@@ -460,6 +460,89 @@ func TestSinglePassAgreesWithTheReference(t *testing.T) {
 	agree[float32](t, []byte(`3.4028235e38`), DefaultLimits)
 }
 
+// fastKids holds itself through fastKid, a named struct, by a slice, a map,
+// and a Nullable.
+type (
+	fastKids []fastKid
+	fastKid  struct {
+		Name  string              `json:"name"`
+		Kids  fastKids            `json:"kids"`
+		ByKey *map[string]fastKid `json:"byKey,omitzero"`
+		Maybe Nullable[fastKids]  `json:"maybe,omitzero"`
+	}
+	fastGrove struct {
+		Roots fastKids `json:"roots"`
+	}
+)
+
+// A type that holds itself through a named struct is read at depth by both
+// paths alike, whichever type of the cycle the registry made first.
+func TestSinglePassReadsTypesHoldingThemselvesAtDepth(t *testing.T) {
+	const depth = 12
+	nest := func(leaf string) string {
+		kid := leaf
+		for i := range depth {
+			switch i % 3 {
+			case 0:
+				kid = `{"name":"n","kids":[` + kid + `]}`
+			case 1:
+				kid = `{"name":"n","kids":[],"byKey":{"k":` + kid + `}}`
+			default:
+				kid = `{"name":"n","kids":[],"maybe":[` + kid + `]}`
+			}
+		}
+		return kid
+	}
+	valid, invalid := nest(`{"name":"leaf","kids":[],"maybe":null}`), nest(`{"name":1,"kids":[]}`)
+	for name, check := range map[string]func(r *registry, body string) bool{
+		"slice": func(r *registry, body string) bool {
+			return agreeIn[fastKids](t, r, []byte("["+body+"]"), DefaultLimits)
+		},
+		"struct": func(r *registry, body string) bool {
+			return agreeIn[fastKid](t, r, []byte(body), DefaultLimits)
+		},
+		"field": func(r *registry, body string) bool {
+			return agreeIn[fastGrove](t, r, []byte(`{"roots":[`+body+`]}`), DefaultLimits)
+		},
+	} {
+		for _, first := range []reflect.Type{reflect.TypeFor[fastKids](), reflect.TypeFor[fastKid](), reflect.TypeFor[fastGrove]()} {
+			r := newRegistry()
+			if _, err := r.codecFor(first); err != nil {
+				t.Fatal(err)
+			}
+			if !check(r, valid) {
+				t.Errorf("%s, %s made first: refused at depth", name, first)
+			}
+			if check(r, invalid) {
+				t.Errorf("%s, %s made first: a wrong member at depth accepted", name, first)
+			}
+		}
+	}
+	// The value read holds every level.
+	r := newRegistry()
+	c, err := r.codecFor(reflect.TypeFor[fastKids]())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got fastKids
+	if !singlePassIn(r, c, c.use(), []byte("["+valid+"]"), DefaultLimits, reflect.ValueOf(&got).Elem()) {
+		t.Fatal("refused")
+	}
+	levels, k := 0, got[0]
+	for ; k.Name == "n"; levels++ {
+		if v, ok := k.Maybe.Get(); ok {
+			k = v[0]
+		} else if k.ByKey != nil {
+			k = (*k.ByKey)["k"]
+		} else {
+			k = k.Kids[0]
+		}
+	}
+	if k.Name != "leaf" || !k.Maybe.IsNull() || levels != depth {
+		t.Fatalf("%d levels, want %d, then %#v", levels, depth, k)
+	}
+}
+
 // A map key whose type reads or writes itself by a method is read as
 // encoding/json/v2 reads it, by that method: the single pass once took the
 // member name as it was, so it built {"a":1} where the reference built
