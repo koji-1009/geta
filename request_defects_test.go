@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -157,19 +158,160 @@ func TestAtMostFiftyViolationsPerResponse(t *testing.T) {
 		members = append(members, fmt.Sprintf(`"m%02d":1`, i))
 		form.Set(fmt.Sprintf("m%02d", i), "1")
 	}
+	// omitted counts the rest: 62 found, then 61, then 60.
 	p := c.Post("/j", "{"+strings.Join(members, ",")+`,"a":"x"}`).Problem()
 	if p.Status != 400 || len(p.Errors) != 50 || p.Errors[0].Path != "p" || p.Errors[1].Path != "q" || p.Errors[2].Path != "$.m00" ||
-		p.Errors[49].Path != "$.m47" {
-		t.Fatal(p.Status, len(p.Errors), listed(p))
+		p.Errors[49].Path != "$.m47" || p.Omitted != 12 {
+		t.Fatal(p.Status, len(p.Errors), p.Omitted, listed(p))
 	}
 	p = c.Form(http.MethodPost, "/f", form).Problem()
-	if p.Status != 400 || len(p.Errors) != 50 || p.Errors[0].Path != "p" || p.Errors[1].Path != "$.m00" {
-		t.Fatal(p.Status, len(p.Errors), listed(p))
+	if p.Status != 400 || len(p.Errors) != 50 || p.Errors[0].Path != "p" || p.Errors[1].Path != "$.m00" || p.Omitted != 11 {
+		t.Fatal(p.Status, len(p.Errors), p.Omitted, listed(p))
 	}
 	// Fifty at most in one place, too.
 	p = c.Post("/j?p=1&q=2", "{"+strings.Join(members, ",")+`,"a":"x"}`).Problem()
-	if len(p.Errors) != 50 || p.Errors[0].Path != "$.m00" {
-		t.Fatal(len(p.Errors), listed(p))
+	if len(p.Errors) != 50 || p.Errors[0].Path != "$.m00" || p.Omitted != 10 {
+		t.Fatal(len(p.Errors), p.Omitted, listed(p))
+	}
+}
+
+// rqTree nests in itself through a map, so a body chooses both the depth
+// and the member names of a violation's path.
+type rqTree struct {
+	K map[string]rqTree `json:"k"`
+}
+
+type rqTreeIn struct {
+	Body rqTree `body:"json"`
+}
+
+type rqLongIn struct {
+	Body struct {
+		Picks []string `json:"picks" schema:"items.enum=a|b"`
+	} `body:"json"`
+}
+
+// A violation's path is cut to 256 bytes, keeping its end after "…", a
+// value its message quotes to 128 bytes, then "…", and the violations listed
+// to 16 KiB, always the first; omitted counts the rest. A short path and a
+// problem under both caps are as before, byte for byte.
+func TestViolationListsAreBounded(t *testing.T) {
+	tbl := geta.Table{Routes: []geta.Entry{
+		{Path: "/t", Route: geta.Route{Post: geta.Op(http.StatusOK, func(context.Context, *rqTreeIn) (*ok, error) { return &ok{true}, nil }, geta.Doc{})}},
+		{Path: "/l", Route: geta.Route{Post: geta.Op(http.StatusOK, func(context.Context, *rqLongIn) (*ok, error) { return &ok{true}, nil }, geta.Doc{})}},
+		{Path: "/j", Route: geta.Route{Post: geta.Op(http.StatusOK, func(context.Context, *rqManyIn) (*ok, error) { return &ok{true}, nil }, geta.Doc{})}},
+	}}
+	c := getatest.New(t, tbl)
+
+	// About 1 MB: 230 levels of 4000-byte names, then 60 values that are no
+	// object. Unbounded, the 50 paths listed would be some 46 MB.
+	key := strings.Repeat("k", 4000)
+	var b strings.Builder
+	for range 230 {
+		b.WriteString(`{"k":{"` + key + `":`)
+	}
+	b.WriteString(`{"k":{`)
+	for i := range 60 {
+		if i > 0 {
+			b.WriteString(",")
+		}
+		fmt.Fprintf(&b, `"v%02d":1`, i)
+	}
+	b.WriteString("}}" + strings.Repeat("}}", 230))
+	res := c.Post("/t", b.String())
+	p := res.Problem()
+	if res.Status != 400 || len(res.Body) >= 32<<10 || len(p.Errors) != 50 || p.Omitted != 10 {
+		t.Fatalf("%d, %d bytes, %d listed, %d omitted", res.Status, len(res.Body), len(p.Errors), p.Omitted)
+	}
+	for i, v := range p.Errors {
+		want := "…" + strings.Repeat("k", 256-len("…")-len(".k.v00")) + fmt.Sprintf(".k.v%02d", i)
+		if v.Path != want || v.Message != "expected object, got integer" {
+			t.Fatalf("%d: %q %q", i, v.Path, v.Message)
+		}
+	}
+
+	// A path cut within a multi-byte rune starts at the next rune.
+	b.Reset()
+	b.WriteString(`{"k":{"` + strings.Repeat("é", 300) + `":{"k":{"x":1}}}}`)
+	p = c.Post("/t", b.String()).Problem()
+	if len(p.Errors) != 1 || !utf8.ValidString(p.Errors[0].Path) || !strings.HasPrefix(p.Errors[0].Path, "…é") ||
+		len(p.Errors[0].Path) > 256 || !strings.HasSuffix(p.Errors[0].Path, "é.k.x") {
+		t.Fatalf("%q", listed(p))
+	}
+
+	// A path of 256 bytes is whole; of 257, cut.
+	for n, want := range map[int]string{
+		256: "$.k." + strings.Repeat("p", 252),
+		257: "…" + strings.Repeat("p", 253),
+	} {
+		p = c.Post("/t", `{"k":{"`+strings.Repeat("p", n-len("$.k."))+`":1}}`).Problem()
+		if len(p.Errors) != 1 || p.Errors[0].Path != want {
+			t.Fatalf("%d: %q", n, listed(p))
+		}
+	}
+
+	// A duplicate key names its path as the path, cut, whatever the name's
+	// length: some 500 KB of name, six bytes a byte in JSON, answers under 2
+	// KiB.
+	name := strings.Repeat("<", 500<<10)
+	res = c.Post("/t", `{"k":{"`+name+`":{},"`+name+`":{}}}`)
+	p = res.Problem()
+	if res.Status != 400 || len(res.Body) >= 2<<10 || len(p.Errors) != 1 ||
+		p.Errors[0].Path != "…"+strings.Repeat("<", 253) || p.Errors[0].Message != "duplicate object key" {
+		t.Fatalf("%d, %d bytes: %q", res.Status, len(res.Body), listed(p))
+	}
+
+	// A message quotes at most 128 bytes of a value, then "…": a string, and
+	// a number past its type's range.
+	quoted := `"` + strings.Repeat("<", 128) + `…"`
+	res = c.Post("/l", `{"picks":["`+strings.Repeat("<", 4000)+`"]}`)
+	if p = res.Problem(); len(p.Errors) != 1 || p.Errors[0].Message != quoted+" is not one of a, b" || len(res.Body) >= 2<<10 {
+		t.Fatalf("%d bytes: %q", len(res.Body), listed(p))
+	}
+	p = c.Post("/j?q=1&p="+strings.Repeat("9", 4000), `{"a":"x"}`).Problem()
+	if len(p.Errors) != 1 || p.Errors[0].Message != strings.Repeat("9", 128)+"… is out of range for int" {
+		t.Fatalf("%q", listed(p))
+	}
+
+	// Each message quotes a value JSON writes at six bytes a byte: the list
+	// stops before the errors array passes 16 KiB.
+	vals := make([]string, 60)
+	for i := range vals {
+		vals[i] = `"` + strings.Repeat("<", 3000) + `"`
+	}
+	res = c.Post("/l", `{"picks":[`+strings.Join(vals, ",")+`]}`)
+	p = res.Problem()
+	var raw struct {
+		Errors json.RawMessage `json:"errors"`
+	}
+	if err := json.Unmarshal(res.Body, &raw); err != nil {
+		t.Fatal(err)
+	}
+	if res.Status != 400 || len(p.Errors) != 19 || p.Omitted != 41 || len(raw.Errors) > 16<<10 || p.Errors[18].Message != quoted+" is not one of a, b" {
+		t.Fatalf("%d: %d listed in %d bytes, %d omitted", res.Status, len(p.Errors), len(raw.Errors), p.Omitted)
+	}
+
+	// The Debug line counts what was listed and omitted, naming no path.
+	var logged strings.Builder
+	log := slog.New(slog.NewTextHandler(&logged, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	app, err := geta.New(tbl, geta.WithLogger(log))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/l", strings.NewReader(`{"picks":[`+strings.Join(vals, ",")+`]}`))
+	req.Header.Set("Content-Type", "application/json")
+	app.ServeHTTP(rec, req)
+	if l := logged.String(); rec.Code != 400 || !strings.Contains(l, "violations=19 ") || !strings.Contains(l, "omitted=41") ||
+		strings.Contains(l, "picks") || strings.Count(l, "\n") != 1 {
+		t.Fatalf("%d %q", rec.Code, l)
+	}
+
+	// Under both caps a problem is as it was, and states nothing omitted.
+	res = c.Post("/j?q=1", `{"a":"x"}`)
+	if string(res.Body) != `{"type":"about:blank","title":"Bad Request","status":400,"detail":"the request does not match its contract",`+
+		`"errors":[{"in":"query","path":"p","message":"missing required parameter"}]}` {
+		t.Fatalf("%s", res.Body)
 	}
 }
 

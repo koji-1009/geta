@@ -139,7 +139,7 @@ func syntaxError(err error) error {
 	}
 	if se, ok := errors.AsType[*jsontext.SyntacticError](err); ok {
 		if errors.Is(se.Err, jsontext.ErrDuplicateName) {
-			return fmt.Errorf("duplicate object key at %s", pointerPath(se.JSONPointer))
+			return &duplicateKeyError{path: pointerPath(se.JSONPointer)}
 		}
 		return fmt.Errorf("malformed JSON at byte %d: %v", se.ByteOffset, se.Err)
 	}
@@ -147,6 +147,13 @@ func syntaxError(err error) error {
 	// with io.EOF.
 	return errors.New("malformed JSON")
 }
+
+// A duplicateKeyError is a member name an object repeats, at path. A
+// request's violation names the path as its path (capPath), since the path
+// is as long as the body chooses.
+type duplicateKeyError struct{ path string }
+
+func (e *duplicateKeyError) Error() string { return "duplicate object key at " + e.path }
 
 // pointerPath renders a JSON Pointer the way violations name paths: $.a[0].
 // It is built in one buffer, since a pointer can have as many tokens as the

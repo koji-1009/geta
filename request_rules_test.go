@@ -167,7 +167,7 @@ func TestJSONBodyContent(t *testing.T) {
 		"/r": {
 			" \n\t":                            "body $: unexpected end of JSON input",
 			"null":                             "body $: expected object, got null",
-			`{"a":"x","` + `\` + `u0061":"y"}`: "body $: duplicate object key at $.a", // a name escaped
+			`{"a":"x","` + `\` + `u0061":"y"}`: "body $.a: duplicate object key", // a name escaped
 			`{"a":"x","raw":"!!"}`:             `body $.raw: "!!" is not valid base64`,
 			`{"a":"x","raw":"AA=="} `:          "",
 		},

@@ -172,7 +172,7 @@ func TestBodyBinding(t *testing.T) {
 		"body $.name: string length 0 is shorter than minLength 1",
 		"body $.price: -1 is less than minimum 0")
 	same(t, violations(t, c.Post("/x", `{"name":"a","price":1,"extra":true}`)), "body $.extra: unknown member")
-	same(t, violations(t, c.Post("/x", `{"name":"a","price":1,"name":"b"}`)), "body $: duplicate object key at $.name")
+	same(t, violations(t, c.Post("/x", `{"name":"a","price":1,"name":"b"}`)), "body $.name: duplicate object key")
 	same(t, violations(t, c.Post("/x", `{"name":"a"`)), "body $: unexpected end of JSON input")
 	same(t, violations(t, c.Post("/x", `nope`)), "body $: malformed JSON at byte 1: invalid character 'o' in literal null (expecting 'u')")
 	got(t, c.With("Content-Type", "application/merge-patch+json").Post("/x", `{"name":"a","price":1}`))

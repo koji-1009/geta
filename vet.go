@@ -804,7 +804,7 @@ func hasTag(f VetField, name string) bool {
 }
 
 // problemMembers are the members of [Problem] geta writes itself.
-var problemMembers = []string{"type", "title", "status", "instance", "errors"}
+var problemMembers = []string{"type", "title", "status", "instance", "errors", "omitted"}
 
 // CheckProblemMember reports whether geta.New accepts member, of kind, as an
 // extension member of a geta.OnAsProblem row's problem. Members geta writes

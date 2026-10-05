@@ -4,7 +4,7 @@ import "testing"
 
 // What a geta.OnAsProblem row's function returns: getavet reports what
 // geta.New refuses of it, with its text (a type that is not a struct, a
-// member that is the problem's own, a detail that is no string, a cookie,
+// member that is the problem's own, omitted included, a detail that is no string, a cookie,
 // status, or raw body field, a body that is not a struct). Sound ones pass.
 func TestProblemDescriptionsMatchGetaNew(t *testing.T) {
 	diagnostics, built := vetAndNew(t, `package lib
@@ -42,6 +42,10 @@ type NumberDetail struct {
 	Detail int `+"`json:\"detail\"`"+`
 }
 
+type OwnOmitted struct {
+	Omitted int `+"`json:\"omitted\"`"+`
+}
+
 type WithCookie struct {
 	Session *http.Cookie `+"`cookie:\"sid\"`"+`
 }
@@ -64,6 +68,7 @@ func Build() (*geta.App, error) {
 		{Path: "/d", Route: rows(geta.OnAsProblem(429, "q", func(*QuotaError) NumberDetail { return NumberDetail{} }))},
 		{Path: "/e", Route: rows(geta.OnAsProblem(429, "q", func(*QuotaError) WithCookie { return WithCookie{} }))},
 		{Path: "/f", Route: rows(geta.OnAsProblem(429, "q", func(*QuotaError) ListBody { return ListBody{} }))},
+		{Path: "/g", Route: rows(geta.OnAsProblem(429, "q", func(*QuotaError) OwnOmitted { return OwnOmitted{} }))},
 	}})
 }
 `)
@@ -73,6 +78,7 @@ func Build() (*geta.App, error) {
 		`geta.OnAsProblem: member "detail" has kind int, not string`,
 		"Session: a problem's envelope takes no cookie field",
 		"geta.OnAsProblem: []string is not a struct",
+		`geta.OnAsProblem: member "omitted" is reserved`,
 	})
 }
 

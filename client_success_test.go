@@ -3,8 +3,10 @@ package geta_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -269,5 +271,33 @@ func TestClientErrorText(t *testing.T) {
 	}
 	if got := (&getaclient.Error{Status: http.StatusBadGateway}).Error(); got != "502 Bad Gateway" {
 		t.Errorf("%q", got)
+	}
+}
+
+// An Error's Problem carries omitted, the count of violations not listed,
+// and its text ends with the count, as App.Conforms's does.
+func TestClientErrorCarriesOmitted(t *testing.T) {
+	c := getatest.New(t, geta.Table{Routes: []geta.Entry{
+		{Path: "/j", Route: geta.Route{Post: geta.Op(http.StatusOK, func(context.Context, *rqManyIn) (*ok, error) { return &ok{true}, nil }, geta.Doc{})}},
+	}})
+	// Sent as a map: no a, and 60 members the body does not know.
+	type in struct {
+		P    int            `query:"p"`
+		Q    int            `query:"q"`
+		Body map[string]int `body:"json"`
+	}
+	body := map[string]int{}
+	for i := range 60 {
+		body[fmt.Sprintf("m%02d", i)] = 1
+	}
+	_, err := getaclient.Call[in, ok](t.Context(), &getaclient.Client{Base: c.URL(), HTTP: c.HTTP()}, http.MethodPost, "/j", &in{P: 1, Q: 2, Body: body})
+	e, isError := errors.AsType[*getaclient.Error](err)
+	if !isError || e.Problem == nil || len(e.Problem.Errors) != 50 || e.Problem.Omitted != 11 {
+		t.Fatalf("%v", err)
+	}
+	last := e.Problem.Errors[49]
+	if got, want := err.Error(), fmt.Sprintf("; %s %s: %s; and 11 more not listed", last.In, last.Path, last.Message); !strings.HasSuffix(got, want) ||
+		strings.Count(got, "; ") != 51 {
+		t.Fatalf("%q, want it to end %q", got, want)
 	}
 }

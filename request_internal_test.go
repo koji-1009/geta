@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	jsonv2 "encoding/json/v2"
 	"log/slog"
 	"mime/multipart"
 	"net/http"
@@ -11,8 +12,10 @@ import (
 	"os"
 	"reflect"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 // A body plan that does not read in one pass (fast false) binds on the
@@ -163,4 +166,129 @@ func TestAFileGetaCannotWriteIsA500(t *testing.T) {
 	if left, err := os.ReadDir(dir); err != nil || len(left) != 0 {
 		t.Fatalf("%v left %v", err, left)
 	}
+}
+
+// writtenStringLen returns the bytes of s as sendProblem writes it in a
+// string, quotes aside.
+func writtenStringLen(t testing.TB, s string) int {
+	b, err := jsonv2.Marshal(s, problemOptions)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return len(b) - len(`""`)
+}
+
+// jsonStringLen is the length sendProblem writes, exactly: every byte, every
+// rune (U+2028 and U+2029 included), invalid UTF-8 of each kind (a
+// surrogate, an overlong form, a sequence cut short), and mixes of them.
+func TestJSONStringLenIsTheWrittenLength(t *testing.T) {
+	var cases []string
+	for c := range 256 {
+		cases = append(cases, string([]byte{byte(c)}), "a"+string([]byte{byte(c)})+"é<")
+	}
+	for r := rune(0); r <= utf8.MaxRune; r++ {
+		if utf8.ValidRune(r) {
+			cases = append(cases, string(r))
+		}
+	}
+	cases = append(cases, "\xed\xa0\x80", "\xc0\x80", "\xe2\x80", "\xf0\x9f\x98", "\xff\xfe",
+		"a\b\f\n\r\t\"\\/<>&\x00\x1f\x7f"+string(rune(0x2028))+string(rune(0x2029))+"\xe2\x80"+string(utf8.RuneError))
+	for _, s := range cases {
+		if got, want := jsonStringLen(s), writtenStringLen(t, s); got != want {
+			t.Fatalf("%q: %d, written %d", s, got, want)
+		}
+	}
+}
+
+func FuzzJSONStringLen(f *testing.F) {
+	for _, s := range []string{"", "a", "<&>", "\n\t\x01", "\xe2\x80\xa8\xe2\x80\xa9", "\xed\xa0\x80\xff", "é\"\\"} {
+		f.Add(s)
+	}
+	f.Fuzz(func(t *testing.T, s string) {
+		if got, want := jsonStringLen(s), writtenStringLen(t, s); got != want {
+			t.Fatalf("%q: %d, written %d", s, got, want)
+		}
+	})
+}
+
+// The listed violations' errors array is at most 16 KiB, exactly: a list
+// that writes 16384 bytes is whole, and one that writes 16385 loses its
+// last violation to omitted.
+func TestListViolationsBoundsTheWrittenArray(t *testing.T) {
+	// Each message mixes the bytes JSON writes at two, three, and six bytes.
+	unit := "\n" + string(rune(0x2028)) + "<"
+	for _, extra := range []int{0, 1} {
+		errs := []Violation{
+			{In: "body", Path: "$.a", Message: strings.Repeat(unit, 700)},
+			{In: "body", Path: "$.b", Message: strings.Repeat(unit, 700)},
+		}
+		written := func(errs []Violation) int {
+			b, err := jsonv2.Marshal(errs, problemOptions)
+			if err != nil {
+				t.Fatal(err)
+			}
+			return len(b)
+		}
+		// Pad the second message to 16 KiB in all, and extra past it.
+		errs[1].Message += strings.Repeat("a", 16<<10-written(errs)+extra)
+		if n := written(errs); n != 16<<10+extra {
+			t.Fatal(n)
+		}
+		listed, omitted := listViolations(slices.Clone(errs), 0)
+		if want := 2 - extra; len(listed) != want || omitted != extra {
+			t.Fatalf("%d bytes: %d listed, %d omitted", written(errs), len(listed), omitted)
+		}
+	}
+}
+
+// refClip is clip's reference: the longest prefix of s, in n bytes or
+// fewer, that splits no rune, a byte of invalid UTF-8 counting as one of its
+// own, and "…"; s itself if it fits.
+func refClip(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	i := 0
+	for i < len(s) {
+		_, size := utf8.DecodeRuneInString(s[i:])
+		if i+size > n {
+			break
+		}
+		i += size
+	}
+	return s[:i] + "…"
+}
+
+// clip cuts a value as refClip does: at a rune boundary in valid UTF-8, and
+// at n bytes through invalid UTF-8, which a header value may hold, rather
+// than dropping it to the last rune start before it.
+func TestClipSplitsNoRune(t *testing.T) {
+	cases := map[string]string{
+		strings.Repeat("a", 4):              "aaa…",
+		"a" + strings.Repeat("é", 3):        "aé…",
+		"aa" + strings.Repeat("é", 3):       "aa…",
+		"a€b":                               "a…",
+		strings.Repeat("\x80", 5):           "\x80\x80\x80…",
+		"a\xe2\x80b":                        "a\xe2\x80…",
+		"ab\xe2\x82\xac":                    "ab…",
+		"abc":                               "abc",
+		"\xed\xa0\x80x":                     "\xed\xa0\x80…",
+		"ab" + string(utf8.RuneError) + "x": "ab…",
+	}
+	for s, want := range cases {
+		if got := clip(s, 3); got != want || got != refClip(s, 3) {
+			t.Errorf("clip(%q, 3) = %q, want %q (reference %q)", s, got, want, refClip(s, 3))
+		}
+	}
+}
+
+func FuzzClip(f *testing.F) {
+	for _, s := range []string{"", "abc", "a€b", "\x80\x80\x80\x80", "\xed\xa0\x80x", "é\xc3"} {
+		f.Add(s, uint8(3))
+	}
+	f.Fuzz(func(t *testing.T, s string, n uint8) {
+		if got, want := clip(s, int(n)), refClip(s, int(n)); got != want {
+			t.Fatalf("clip(%q, %d) = %q, want %q", s, n, got, want)
+		}
+	})
 }

@@ -97,6 +97,35 @@ func TestContentCodingIs415(t *testing.T) {
 	}
 }
 
+// A 415's detail quotes the request's Content-Type or Content-Encoding cut
+// to 128 bytes, as a violation quotes a value: a rune is not split, a byte of
+// invalid UTF-8 counts as one, and "…" marks the cut. A header is as long as
+// MaxHeaderBytes allows, so a whole one made the problem as long.
+func TestRefusedHeaderValuesAreClipped(t *testing.T) {
+	h := func(ctx context.Context, in *bodyIn) (*echoed, error) { return &echoed{Got: in.Body.Name}, nil }
+	c := getatest.New(t, one("/x", geta.Route{Post: geta.Op(http.StatusOK, h, geta.Doc{})}))
+	body := `{"name":"a","price":1}`
+	odd := "application/x" + strings.Repeat("é", 100) // the 128th byte begins an é
+	for ct, quoted := range map[string]string{
+		strings.Repeat("<", 64<<10): strings.Repeat("<", 128) + "…",
+		odd:                         odd[:127] + "…",
+		strings.Repeat("\x80", 200): strings.Repeat("\x80", 128) + "…",
+		strings.Repeat("t", 128):    strings.Repeat("t", 128),
+	} {
+		res := c.With("Content-Type", ct).Post("/x", body)
+		if want := fmt.Sprintf("Content-Type %q is not application/json", quoted); res.Status != http.StatusUnsupportedMediaType ||
+			res.Problem().Detail != want || len(res.Body) > 1<<10 {
+			t.Fatalf("%d bytes of Content-Type: %d, %d bytes: %q, want %q", len(ct), res.Status, len(res.Body), res.Problem().Detail, want)
+		}
+	}
+	codings := strings.Repeat("x-a, ", 16<<10)
+	res := c.With("Content-Encoding", codings).Post("/x", body)
+	refusedCoding(t, res, fmt.Sprintf("Content-Encoding %q is not supported", codings[:128]+"…"))
+	if len(res.Body) > 1<<10 {
+		t.Fatalf("%d bytes", len(res.Body))
+	}
+}
+
 // Content geta does not take is a 415 whatever its size: its coding and media
 // type are judged before the body is read to MaxBodyBytes. Content it takes
 // past MaxBodyBytes is a 413.

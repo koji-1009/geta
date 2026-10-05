@@ -128,6 +128,11 @@ func TestConformsChecksDescribedFailures(t *testing.T) {
 		`{"type":"about:blank","title":"Conflict","status":409}`:           "$.v: missing required member",
 		`{"type":"about:blank","title":"Conflict","status":"409","v":"x"}`: "$.status: expected integer, got string",
 		`{"title":"Conflict","status":409,"v":"x"}`:                        "$.type: missing required member",
+		// omitted, geta's own member, is an integer of at least 1.
+		`{"type":"about:blank","title":"Conflict","status":409,"v":"x","omitted":3}`:   "",
+		`{"type":"about:blank","title":"Conflict","status":409,"v":"x","omitted":0}`:   "$.omitted: 0 is less than minimum 1",
+		`{"type":"about:blank","title":"Conflict","status":409,"v":"x","omitted":1.5}`: "$.omitted: expected integer, got number",
+		`{"type":"about:blank","title":"Conflict","status":409,"v":"x","omitted":"x"}`: "$.omitted: expected integer, got string",
 		`[1]`:      "expected object, got array",
 		`not json`: "the body is not JSON",
 	} {
@@ -144,6 +149,31 @@ func TestConformsChecksDescribedFailures(t *testing.T) {
 	c.Get("/f?kind=busy")
 	if len(rec.errs) != 0 {
 		t.Fatalf("%q", rec.errs)
+	}
+}
+
+type countsOut struct {
+	E string         `json:"e" schema:"enum=a|b"`
+	M map[string]int `json:"m"`
+}
+
+// App.Conforms names where a response departs from its schema whole: a
+// path is not cut, nor a value its message quotes, as a request's are; and
+// past 50 violations it counts those it does not list.
+func TestConformsNamesResponseViolationsWhole(t *testing.T) {
+	h := func(context.Context, *empty) (*countsOut, error) { return &countsOut{E: "a"}, nil }
+	app := getatest.New(t, one("/m", get(h))).App()
+	long := strings.Repeat("K", 300)
+	members := []string{`"` + long + `":"x"`}
+	for i := range 60 {
+		members = append(members, fmt.Sprintf(`"a%02d":"x"`, i))
+	}
+	value := strings.Repeat("z", 300)
+	err := app.Conforms(geta.Match{Template: "/m", Method: http.MethodGet, Operation: true}, http.StatusOK, nil,
+		[]byte(`{"e":"`+value+`","m":{`+strings.Join(members, ",")+`}}`))
+	if err == nil || !strings.Contains(err.Error(), `$.e: "`+value+`" is not one of a, b; $.m.`+long+": expected integer, got string; $.m.a00: ") ||
+		!strings.Contains(err.Error(), "$.m.a47: expected integer, got string; and 12 more not listed") {
+		t.Fatal(err)
 	}
 }
 

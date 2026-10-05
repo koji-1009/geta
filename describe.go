@@ -277,7 +277,7 @@ func (fr *failureResponse) conforms(body []byte) error {
 			return nil
 		}
 		if i == 0 {
-			d.errs = pd.errs
+			d.errs, d.omitted = pd.errs, pd.omitted
 		}
 	}
 	return d.mismatch("the body")
@@ -292,12 +292,17 @@ func checkProblem(d *decoder, m map[string]any) {
 	}
 	for _, f := range []struct{ name, want string }{
 		{"type", "string"}, {"title", "string"}, {"status", "integer"},
-		{"detail", "string"}, {"instance", "string"}, {"errors", "array"},
+		{"detail", "string"}, {"instance", "string"}, {"errors", "array"}, {"omitted", "integer"},
 	} {
 		if v, ok := m[f.name]; ok {
 			if got := jsonType(v); got != f.want {
 				d.fail("$."+f.name, "expected %s, got %s", f.want, got)
 			}
+		}
+	}
+	if n, ok := m["omitted"].(number); ok {
+		if f, _ := strconv.ParseFloat(string(n), 64); cmpNum(string(n), f, 1) < 0 {
+			d.fail("$.omitted", "%s is less than minimum 1", n)
 		}
 	}
 	errs, _ := m["errors"].([]any)

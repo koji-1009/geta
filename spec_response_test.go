@@ -857,6 +857,9 @@ func TestEveryMemberTheProblemWritesIsRefused(t *testing.T) {
 	type errorsMember struct {
 		V []string `json:"errors"`
 	}
+	type omittedMember struct {
+		V int `json:"omitted"`
+	}
 	table := func(row geta.Failure) geta.Table {
 		return one("/f", geta.Route{Get: geta.Op(http.StatusOK, okHandler, geta.Doc{Failures: []geta.Failure{row}})})
 	}
@@ -866,6 +869,7 @@ func TestEveryMemberTheProblemWritesIsRefused(t *testing.T) {
 		"status":   geta.OnAsProblem(429, "", func(*quotaError) statusMember { return statusMember{} }),
 		"instance": geta.OnAsProblem(429, "", func(*quotaError) instanceMember { return instanceMember{} }),
 		"errors":   geta.OnAsProblem(429, "", func(*quotaError) errorsMember { return errorsMember{} }),
+		"omitted":  geta.OnAsProblem(429, "", func(*quotaError) omittedMember { return omittedMember{} }),
 	} {
 		rejects(t, table(row), `member "`+member+`" is reserved`)
 	}

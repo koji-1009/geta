@@ -260,6 +260,9 @@ func (d *decoder) mismatch(what string) error {
 	for i, e := range d.errs {
 		msgs[i] = e.Path + ": " + e.Message
 	}
+	if d.omitted > 0 {
+		msgs = append(msgs, fmt.Sprintf("and %d more not listed", d.omitted))
+	}
 	return fmt.Errorf("%s does not match the documented schema: %s", what, strings.Join(msgs, "; "))
 }
 

@@ -215,9 +215,10 @@ const fzMaxViolations = 50
 // empty elements dropped, each element held to the element's type at
 // name[i], and a list of no element is absent. Every header the reference
 // takes binds the reference's value; a request with any it refuses is a 400
-// problem whose violations name exactly the refused (the first 50, as geta
-// reports no more), and the handler does not run. A bound list, joined again
-// with ", ", reads back as itself.
+// problem whose violations name exactly the first of the refused, in order
+// (50 at most, fewer past 16 KiB of violations), omitted counting the rest,
+// and the handler does not run. A bound list, joined again with ", ", reads
+// back as itself.
 func FuzzHeaderParameters(f *testing.F) {
 	var got *fzHeaderIn
 	app, err := geta.New(one("/h", get(func(_ context.Context, in *fzHeaderIn) (*ok, error) {
@@ -311,16 +312,14 @@ func FuzzHeaderParameters(f *testing.F) {
 				}
 				named = append(named, v.Path)
 			}
-			// geta reports at most fzMaxViolations, the first in its order:
-			// the headers in field order, a list's elements in order, which
-			// is the order refused was built in.
-			if len(refused) > fzMaxViolations {
-				refused = refused[:fzMaxViolations]
-			}
-			slices.Sort(named)
-			slices.Sort(refused)
-			if !slices.Equal(named, refused) {
-				t.Fatalf("%s: violations at %q, want %q: %s", where, named, refused, rec.Body)
+			// geta lists the first violations in its order (the headers in
+			// field order, a list's elements in order, which is the order
+			// refused was built in): at most fzMaxViolations, and fewer where
+			// their messages, which quote the values, pass 16 KiB, but at
+			// least one; omitted counts the rest.
+			n := len(named)
+			if n == 0 || n > fzMaxViolations || n > len(refused) || !slices.Equal(named, refused[:n]) || p.Omitted != len(refused)-n {
+				t.Fatalf("%s: violations at %q (%d omitted), want %q: %s", where, named, p.Omitted, refused, rec.Body)
 			}
 			return
 		}

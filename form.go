@@ -294,7 +294,7 @@ func (p *formPlan) bind(w http.ResponseWriter, r *http.Request, dst reflect.Valu
 		// As a query string: '+' is a space and ';' is refused.
 		values, err := url.ParseQuery(string(data))
 		if err != nil {
-			return bodyViolation("$", "the form body is malformed: "+err.Error()), nil
+			return bodyViolation("$", "the form body is malformed: "+clip(err.Error(), maxErrorBytes)), nil
 		}
 		return p.fill(dst, &formValues{values: values}, limits), nil
 	}
@@ -578,7 +578,7 @@ func (p *formPlan) fill(dst reflect.Value, fv *formValues, limits Limits) *bindE
 	}
 	if len(d.errs) > 0 {
 		dst.SetZero()
-		return &bindError{status: http.StatusBadRequest, errs: d.errs}
+		return &bindError{status: http.StatusBadRequest, errs: d.errs, omitted: d.omitted}
 	}
 	return nil
 }
@@ -655,5 +655,6 @@ func partFailure(err, read error, limits Limits) *bindError {
 	case read != nil:
 		return readFailure(read, limits)
 	}
-	return bodyViolation("$", "the multipart body is malformed: "+err.Error())
+	// The text may quote the body (a malformed part header).
+	return bodyViolation("$", "the multipart body is malformed: "+clip(err.Error(), maxErrorBytes))
 }
