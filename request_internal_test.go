@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	jsonv2 "encoding/json/v2"
 	"log/slog"
 	"mime/multipart"
 	"net/http"
@@ -11,8 +12,10 @@ import (
 	"os"
 	"reflect"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 // A body plan that does not read in one pass (fast false) binds on the
@@ -162,5 +165,78 @@ func TestAFileGetaCannotWriteIsA500(t *testing.T) {
 	}
 	if left, err := os.ReadDir(dir); err != nil || len(left) != 0 {
 		t.Fatalf("%v left %v", err, left)
+	}
+}
+
+// writtenStringLen returns the bytes of s as sendProblem writes it in a
+// string, quotes aside.
+func writtenStringLen(t testing.TB, s string) int {
+	b, err := jsonv2.Marshal(s, problemOptions)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return len(b) - len(`""`)
+}
+
+// jsonStringLen is the length sendProblem writes, exactly: every byte, every
+// rune (U+2028 and U+2029 included), invalid UTF-8 of each kind (a
+// surrogate, an overlong form, a sequence cut short), and mixes of them.
+func TestJSONStringLenIsTheWrittenLength(t *testing.T) {
+	var cases []string
+	for c := range 256 {
+		cases = append(cases, string([]byte{byte(c)}), "a"+string([]byte{byte(c)})+"é<")
+	}
+	for r := rune(0); r <= utf8.MaxRune; r++ {
+		if utf8.ValidRune(r) {
+			cases = append(cases, string(r))
+		}
+	}
+	cases = append(cases, "\xed\xa0\x80", "\xc0\x80", "\xe2\x80", "\xf0\x9f\x98", "\xff\xfe",
+		"a\b\f\n\r\t\"\\/<>&\x00\x1f\x7f"+string(rune(0x2028))+string(rune(0x2029))+"\xe2\x80"+string(utf8.RuneError))
+	for _, s := range cases {
+		if got, want := jsonStringLen(s), writtenStringLen(t, s); got != want {
+			t.Fatalf("%q: %d, written %d", s, got, want)
+		}
+	}
+}
+
+func FuzzJSONStringLen(f *testing.F) {
+	for _, s := range []string{"", "a", "<&>", "\n\t\x01", "\xe2\x80\xa8\xe2\x80\xa9", "\xed\xa0\x80\xff", "é\"\\"} {
+		f.Add(s)
+	}
+	f.Fuzz(func(t *testing.T, s string) {
+		if got, want := jsonStringLen(s), writtenStringLen(t, s); got != want {
+			t.Fatalf("%q: %d, written %d", s, got, want)
+		}
+	})
+}
+
+// The listed violations' errors array is at most 16 KiB, exactly: a list
+// that writes 16384 bytes is whole, and one that writes 16385 loses its
+// last violation to omitted.
+func TestListViolationsBoundsTheWrittenArray(t *testing.T) {
+	// Each message mixes the bytes JSON writes at two, three, and six bytes.
+	unit := "\n" + string(rune(0x2028)) + "<"
+	for _, extra := range []int{0, 1} {
+		errs := []Violation{
+			{In: "body", Path: "$.a", Message: strings.Repeat(unit, 700)},
+			{In: "body", Path: "$.b", Message: strings.Repeat(unit, 700)},
+		}
+		written := func(errs []Violation) int {
+			b, err := jsonv2.Marshal(errs, problemOptions)
+			if err != nil {
+				t.Fatal(err)
+			}
+			return len(b)
+		}
+		// Pad the second message to 16 KiB in all, and extra past it.
+		errs[1].Message += strings.Repeat("a", 16<<10-written(errs)+extra)
+		if n := written(errs); n != 16<<10+extra {
+			t.Fatal(n)
+		}
+		listed, omitted := listViolations(slices.Clone(errs), 0)
+		if want := 2 - extra; len(listed) != want || omitted != extra {
+			t.Fatalf("%d bytes: %d listed, %d omitted", written(errs), len(listed), omitted)
+		}
 	}
 }

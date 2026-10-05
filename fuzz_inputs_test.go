@@ -360,6 +360,19 @@ func fzListed(p *geta.Problem, prefix string) []string {
 	return out
 }
 
+// fzCutPath is path as a problem lists it: past 256 bytes, "…" and its end
+// from a rune boundary, 256 bytes in all.
+func fzCutPath(path string) string {
+	if len(path) <= 256 {
+		return path
+	}
+	i := len(path) - (256 - len("…"))
+	for i < len(path) && !utf8.RuneStart(path[i]) {
+		i++
+	}
+	return "…" + path[i:]
+}
+
 // FuzzFormBody sends an arbitrary form body, with a declared length or
 // none, to an input whose form holds every kind of field. A body past
 // MaxBodyBytes is a 413, an empty one a missing body, one net/url cannot
@@ -438,7 +451,7 @@ func FuzzFormBody(f *testing.F) {
 		} else {
 			listed := fzListed(p, "")
 			for _, k := range unknownNames {
-				if want := "$." + strings.ToValidUTF8(k, "�") + ": unknown field"; !slices.Contains(listed, want) && p.Omitted == 0 {
+				if want := fzCutPath("$."+strings.ToValidUTF8(k, "�")) + ": unknown field"; !slices.Contains(listed, want) && p.Omitted == 0 {
 					t.Fatalf("%q: no %q in %q", body, want, listed)
 				}
 			}

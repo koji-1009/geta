@@ -191,10 +191,10 @@ type rqLongIn struct {
 	} `body:"json"`
 }
 
-// A violation's path is cut to 256 bytes, keeping its end after "…", and
-// the violations listed to 16 KiB, always the first; omitted counts the
-// rest. A short path and a problem under both caps are as before, byte for
-// byte.
+// A violation's path is cut to 256 bytes, keeping its end after "…", a
+// value its message quotes to 128 bytes, then "…", and the violations listed
+// to 16 KiB, always the first; omitted counts the rest. A short path and a
+// problem under both caps are as before, byte for byte.
 func TestViolationListsAreBounded(t *testing.T) {
 	tbl := geta.Table{Routes: []geta.Entry{
 		{Path: "/t", Route: geta.Route{Post: geta.Op(http.StatusOK, func(context.Context, *rqTreeIn) (*ok, error) { return &ok{true}, nil }, geta.Doc{})}},
@@ -239,25 +239,56 @@ func TestViolationListsAreBounded(t *testing.T) {
 		t.Fatalf("%q", listed(p))
 	}
 
-	// Each message quotes a 3000-byte value: the list stops before 16 KiB.
+	// A path of 256 bytes is whole; of 257, cut.
+	for n, want := range map[int]string{
+		256: "$.k." + strings.Repeat("p", 252),
+		257: "…" + strings.Repeat("p", 253),
+	} {
+		p = c.Post("/t", `{"k":{"`+strings.Repeat("p", n-len("$.k."))+`":1}}`).Problem()
+		if len(p.Errors) != 1 || p.Errors[0].Path != want {
+			t.Fatalf("%d: %q", n, listed(p))
+		}
+	}
+
+	// A duplicate key names its path as the path, cut, whatever the name's
+	// length: some 500 KB of name, six bytes a byte in JSON, answers under 2
+	// KiB.
+	name := strings.Repeat("<", 500<<10)
+	res = c.Post("/t", `{"k":{"`+name+`":{},"`+name+`":{}}}`)
+	p = res.Problem()
+	if res.Status != 400 || len(res.Body) >= 2<<10 || len(p.Errors) != 1 ||
+		p.Errors[0].Path != "…"+strings.Repeat("<", 253) || p.Errors[0].Message != "duplicate object key" {
+		t.Fatalf("%d, %d bytes: %q", res.Status, len(res.Body), listed(p))
+	}
+
+	// A message quotes at most 128 bytes of a value, then "…": a string, and
+	// a number past its type's range.
+	quoted := `"` + strings.Repeat("<", 128) + `…"`
+	res = c.Post("/l", `{"picks":["`+strings.Repeat("<", 4000)+`"]}`)
+	if p = res.Problem(); len(p.Errors) != 1 || p.Errors[0].Message != quoted+" is not one of a, b" || len(res.Body) >= 2<<10 {
+		t.Fatalf("%d bytes: %q", len(res.Body), listed(p))
+	}
+	p = c.Post("/j?q=1&p="+strings.Repeat("9", 4000), `{"a":"x"}`).Problem()
+	if len(p.Errors) != 1 || p.Errors[0].Message != strings.Repeat("9", 128)+"… is out of range for int" {
+		t.Fatalf("%q", listed(p))
+	}
+
+	// Each message quotes a value JSON writes at six bytes a byte: the list
+	// stops before the errors array passes 16 KiB.
 	vals := make([]string, 60)
 	for i := range vals {
-		vals[i] = `"` + strings.Repeat("z", 3000) + `"`
+		vals[i] = `"` + strings.Repeat("<", 3000) + `"`
 	}
 	res = c.Post("/l", `{"picks":[`+strings.Join(vals, ",")+`]}`)
 	p = res.Problem()
-	var listedSize int
-	for _, v := range p.Errors {
-		raw, _ := json.Marshal(v)
-		listedSize += len(raw) + 1
+	var raw struct {
+		Errors json.RawMessage `json:"errors"`
 	}
-	if res.Status != 400 || len(p.Errors) != 5 || p.Omitted != 55 || listedSize > 16<<10 {
-		t.Fatalf("%d: %d listed in %d bytes, %d omitted", res.Status, len(p.Errors), listedSize, p.Omitted)
+	if err := json.Unmarshal(res.Body, &raw); err != nil {
+		t.Fatal(err)
 	}
-	// The first is listed whatever its size.
-	res = c.Post("/l", `{"picks":["`+strings.Repeat("<", 4000)+`"]}`)
-	if p = res.Problem(); len(p.Errors) != 1 || p.Omitted != 0 {
-		t.Fatalf("%d listed, %d omitted", len(p.Errors), p.Omitted)
+	if res.Status != 400 || len(p.Errors) != 19 || p.Omitted != 41 || len(raw.Errors) > 16<<10 || p.Errors[18].Message != quoted+" is not one of a, b" {
+		t.Fatalf("%d: %d listed in %d bytes, %d omitted", res.Status, len(p.Errors), len(raw.Errors), p.Omitted)
 	}
 
 	// The Debug line counts what was listed and omitted, naming no path.
@@ -271,7 +302,7 @@ func TestViolationListsAreBounded(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/l", strings.NewReader(`{"picks":[`+strings.Join(vals, ",")+`]}`))
 	req.Header.Set("Content-Type", "application/json")
 	app.ServeHTTP(rec, req)
-	if l := logged.String(); rec.Code != 400 || !strings.Contains(l, "violations=5 ") || !strings.Contains(l, "omitted=55") ||
+	if l := logged.String(); rec.Code != 400 || !strings.Contains(l, "violations=19 ") || !strings.Contains(l, "omitted=41") ||
 		strings.Contains(l, "picks") || strings.Count(l, "\n") != 1 {
 		t.Fatalf("%d %q", rec.Code, l)
 	}

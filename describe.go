@@ -277,7 +277,7 @@ func (fr *failureResponse) conforms(body []byte) error {
 			return nil
 		}
 		if i == 0 {
-			d.errs = pd.errs
+			d.errs, d.omitted = pd.errs, pd.omitted
 		}
 	}
 	return d.mismatch("the body")

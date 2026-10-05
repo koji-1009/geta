@@ -653,6 +653,9 @@ func (b *bodyPlan) reference(dec *jsontext.Decoder, data []byte, dst reflect.Val
 	}
 	tree, err := parseJSONFrom(dec, limits.MaxDepth, sp)
 	if err != nil {
+		if de, ok := err.(*duplicateKeyError); ok {
+			return []Violation{{In: "body", Path: capPath(de.path), Message: "duplicate object key"}}, 0
+		}
 		return []Violation{{In: "body", Path: "$", Message: err.Error()}}, 0
 	}
 	d := &decoder{limits: limits, in: "body"}

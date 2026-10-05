@@ -70,18 +70,19 @@ const maxViolationBytes = 16 << 10
 
 // listViolations returns the violations a problem lists and the count it
 // leaves out: at most maxViolations, each path cut by capPath, and no more
-// than fit in maxViolationBytes, but always the first, so that a refusal
-// names a cause (its path is bounded, and its message quotes at most one
-// value of the request). omitted counts those already left out.
+// than fit, as the errors array's JSON, in maxViolationBytes, but always the
+// first, so that a refusal names a cause (its path is bounded, and its
+// message quotes at most one value of the request, cut by clip). omitted
+// counts those already left out.
 func listViolations(errs []Violation, omitted int) ([]Violation, int) {
-	size := 0
+	size := len("[")
 	for i := range errs {
 		if i == maxViolations {
 			return errs[:i], omitted + len(errs) - i
 		}
 		errs[i].Path = capPath(errs[i].Path)
 		v := &errs[i]
-		// {"in":"","path":"","message":""} and a comma.
+		// {"in":"","path":"","message":""}, and a comma or the ].
 		size += 33 + jsonStringLen(v.In) + jsonStringLen(v.Path) + jsonStringLen(v.Message)
 		if i > 0 && size > maxViolationBytes {
 			return errs[:i], omitted + len(errs) - i
@@ -91,17 +92,21 @@ func listViolations(errs []Violation, omitted int) ([]Violation, int) {
 }
 
 // jsonStringLen returns the bytes of s as sendProblem writes it in a string,
-// quotes aside: HTML-safe, invalid UTF-8 as U+FFFD. It may overcount.
+// quotes aside, exactly: with EscapeForHTML and AllowInvalidUTF8 alone, '"',
+// '\\', \b, \f, \n, \r, and \t are two bytes, the other control bytes and
+// '<', '>', and '&' are six (\u00XX), each byte of invalid UTF-8 is U+FFFD,
+// and every other rune, U+2028 and U+2029 included (EscapeForJS is off),
+// is as written.
 func jsonStringLen(s string) int {
 	n := 0
 	for i := 0; i < len(s); {
 		c := s[i]
 		if c < utf8.RuneSelf {
 			switch {
-			case c < 0x20 || c == '<' || c == '>' || c == '&':
-				n += 6 // \u00XX at most
-			case c == '"' || c == '\\':
+			case c == '"' || c == '\\' || c == '\b' || c == '\f' || c == '\n' || c == '\r' || c == '\t':
 				n += 2
+			case c < 0x20 || c == '<' || c == '>' || c == '&':
+				n += 6
 			default:
 				n++
 			}
@@ -109,12 +114,9 @@ func jsonStringLen(s string) int {
 			continue
 		}
 		r, size := utf8.DecodeRuneInString(s[i:])
-		switch {
-		case r == utf8.RuneError && size == 1:
-			n += 3 // U+FFFD
-		case r == ' ' || r == ' ':
-			n += 6
-		default:
+		if r == utf8.RuneError && size == 1 {
+			n += utf8.RuneLen(utf8.RuneError)
+		} else {
 			n += size
 		}
 		i += size
@@ -124,8 +126,9 @@ func jsonStringLen(s string) int {
 
 // logRefusal logs at Debug a 400, 408, 412, 413, 415, 426, or 428 geta
 // answers itself. The line carries the method, route template, status,
-// detail, the count and locations of violations, and the count omitted; never the raw path, a
-// value, or a violation's text, which may quote the request.
+// detail, the count and locations of violations, and the count omitted;
+// never the raw path, a value, or a violation's text, which may quote the
+// request.
 func logRefusal(r *http.Request, status int, detail string, errs []Violation, omitted int) {
 	switch status {
 	case http.StatusBadRequest, http.StatusRequestTimeout, http.StatusPreconditionFailed,

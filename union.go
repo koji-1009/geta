@@ -427,7 +427,7 @@ func (d *decoder) checkOneOf(c *codec, v any, at vpath) {
 	for i, vc := range c.variants {
 		tags[i] = vc.tag
 	}
-	d.failAt(p.member(c.disc), "unknown %s %q; one of %s", c.t.Name(), tag, strings.Join(tags, ", "))
+	d.failAt(p.member(c.disc), "unknown %s %q; one of %s", c.t.Name(), d.value(tag), strings.Join(tags, ", "))
 }
 
 // hasUnion reports whether a value of c can hold a sealed type.

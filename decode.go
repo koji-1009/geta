@@ -136,9 +136,15 @@ type decoder struct {
 // unbounded are the limits a response is checked under (Conforms).
 var unbounded = Limits{MaxStringLength: math.MaxInt, MaxItems: math.MaxInt, MaxDepth: math.MaxInt}
 
+// fail records a violation at path, up to maxViolations, and counts the
+// rest. A request's path is cut by capPath; a response's is whole, so that
+// Conforms names where a response departs from its schema.
 func (d *decoder) fail(path, format string, args ...any) {
 	if len(d.errs) < maxViolations {
-		d.errs = append(d.errs, Violation{In: d.in, Path: capPath(path), Message: fmt.Sprintf(format, args...)})
+		if !d.written {
+			path = capPath(path)
+		}
+		d.errs = append(d.errs, Violation{In: d.in, Path: path, Message: fmt.Sprintf(format, args...)})
 		return
 	}
 	d.omitted++
@@ -147,7 +153,11 @@ func (d *decoder) fail(path, format string, args ...any) {
 // failAt is fail at p, rendering p only for a violation that is kept.
 func (d *decoder) failAt(p *vpath, format string, args ...any) {
 	if len(d.errs) < maxViolations {
-		d.errs = append(d.errs, Violation{In: d.in, Path: p.String(), Message: fmt.Sprintf(format, args...)})
+		limit := maxPathBytes
+		if d.written {
+			limit = math.MaxInt
+		}
+		d.errs = append(d.errs, Violation{In: d.in, Path: p.render(limit), Message: fmt.Sprintf(format, args...)})
 		return
 	}
 	d.omitted++
@@ -172,12 +182,16 @@ func (p *vpath) member(name string) *vpath { return &vpath{up: p, name: name, in
 // item is the path of p's element i: path + "[i]".
 func (p *vpath) item(i int) *vpath { return &vpath{up: p, index: i} }
 
-// String renders the path as capPath cuts it, walking up only as far as the
-// kept end needs.
-func (p *vpath) String() string {
+// String renders the path as capPath cuts it.
+func (p *vpath) String() string { return p.render(maxPathBytes) }
+
+// render renders the path whole if it fits limit, maxPathBytes or
+// math.MaxInt, and otherwise as capPath cuts it, walking up only as far as
+// the kept end needs.
+func (p *vpath) render(limit int) string {
 	n := 0
 	top := p
-	for ; top.up != nil && n <= maxPathBytes; top = top.up {
+	for ; top.up != nil && n <= limit; top = top.up {
 		if top.index < 0 {
 			n += 1 + len(top.name)
 		} else {
@@ -186,7 +200,11 @@ func (p *vpath) String() string {
 	}
 	var b strings.Builder
 	p.writeTo(&b, top)
-	return capPath(b.String())
+	s := b.String()
+	if len(s) <= limit {
+		return s
+	}
+	return capPath(s)
 }
 
 // maxPathBytes bounds the bytes of a violation's path. A path is as long as
@@ -230,6 +248,40 @@ func (p *vpath) writeTo(b *strings.Builder, top *vpath) {
 	b.WriteByte('[')
 	b.WriteString(strconv.Itoa(p.index))
 	b.WriteByte(']')
+}
+
+// maxValueBytes bounds the bytes of a request's value that a violation's
+// message quotes. A value is as long as the request makes it, within
+// MaxStringLength or the schema's maxLength, or, for a number, the body, and
+// quoting and JSON escaping make it longer still.
+const maxValueBytes = 128
+
+// maxErrorBytes bounds the bytes of an error's text that a violation's
+// message carries, when the text may hold the request's values (a body's
+// own UnmarshalJSON, a malformed form).
+const maxErrorBytes = 512
+
+// clip returns s if it fits n bytes, and otherwise its first bytes, to a
+// rune boundary, in n or fewer, and pathMark.
+func clip(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	i := n
+	for i > 0 && !utf8.RuneStart(s[i]) {
+		i--
+	}
+	return s[:i] + pathMark
+}
+
+// value returns v, a value of the request, as a message quotes it: cut by
+// clip to maxValueBytes. A response's value is whole (Conforms), as its path
+// is.
+func (d *decoder) value(v string) string {
+	if d.written {
+		return v
+	}
+	return clip(v, maxValueBytes)
 }
 
 // check validates the parsed value v against s and c: type, required
@@ -281,7 +333,7 @@ func (d *decoder) checkAt(c *codec, s *schema, v any, at vpath) {
 			if what == "" {
 				what = c.t.Name()
 			}
-			d.failAt(p, "%q is not a valid %s", str, what)
+			d.failAt(p, "%q is not a valid %s", d.value(str), what)
 		}
 	case kBytes:
 		str := v.(string)
@@ -289,13 +341,13 @@ func (d *decoder) checkAt(c *codec, s *schema, v any, at vpath) {
 			return
 		}
 		if _, err := base64.StdEncoding.DecodeString(str); err != nil {
-			d.failAt(p, "%q is not valid base64", str)
+			d.failAt(p, "%q is not valid base64", d.value(str))
 		}
 	case kInt:
 		lit := string(v.(number))
 		n, err := strconv.ParseInt(lit, 10, c.t.Bits())
 		if err != nil {
-			d.failAt(p, "%s is out of range for %s", lit, c.t.Kind())
+			d.failAt(p, "%s is out of range for %s", d.value(lit), c.t.Kind())
 			return
 		}
 		d.num(s, float64(n), lit, p)
@@ -303,7 +355,7 @@ func (d *decoder) checkAt(c *codec, s *schema, v any, at vpath) {
 		lit := string(v.(number))
 		n, err := strconv.ParseUint(lit, 10, c.t.Bits())
 		if err != nil {
-			d.failAt(p, "%s is out of range for %s", lit, c.t.Kind())
+			d.failAt(p, "%s is out of range for %s", d.value(lit), c.t.Kind())
 			return
 		}
 		d.num(s, float64(n), lit, p)
@@ -311,7 +363,7 @@ func (d *decoder) checkAt(c *codec, s *schema, v any, at vpath) {
 		lit := string(v.(number))
 		_, f, err := parseFloat(lit, c.t.Bits())
 		if err != nil {
-			d.failAt(p, "%s is out of range for %s", lit, c.t.Kind())
+			d.failAt(p, "%s is out of range for %s", d.value(lit), c.t.Kind())
 			return
 		}
 		d.num(s, f, lit, p)
@@ -324,7 +376,7 @@ func (d *decoder) checkAt(c *codec, s *schema, v any, at vpath) {
 			lit := string(v.(number))
 			f, err := strconv.ParseFloat(lit, 64)
 			if err != nil {
-				d.failAt(p, "%s is out of range", lit)
+				d.failAt(p, "%s is out of range", d.value(lit))
 				return
 			}
 			d.num(s, f, lit, p)
@@ -402,7 +454,8 @@ func (d *decoder) decodeJSON(data []byte, dst reflect.Value, opts json.Options) 
 	} else if se, ok := errors.AsType[*jsontext.SyntacticError](err); ok {
 		path = pointerPath(se.JSONPointer)
 	}
-	d.fail(path, "%v", err)
+	// The text is the type's own, and may quote the value.
+	d.fail(path, "%s", clip(err.Error(), maxErrorBytes))
 }
 
 // applyDefaults sets, at any depth of dst, every member missing from v that
@@ -559,7 +612,7 @@ func (d *decoder) keyText(kc *codec, k string, p *vpath) bool {
 		if what == "" {
 			what = kc.t.Name()
 		}
-		d.failAt(p, "key %q is not a valid %s", k, what)
+		d.failAt(p, "key %q is not a valid %s", d.value(k), what)
 		return false
 	}
 	return true
@@ -586,11 +639,11 @@ func (d *decoder) text(s *schema, v string, p *vpath, what, lead string) bool {
 		return false
 	}
 	if len(s.Enum) > 0 && !slices.Contains(s.Enum, v) {
-		d.failAt(p, "%s%q is not one of %s", lead, v, strings.Join(s.Enum, ", "))
+		d.failAt(p, "%s%q is not one of %s", lead, d.value(v), strings.Join(s.Enum, ", "))
 		return false
 	}
 	if !s.validFormat(v) {
-		d.failAt(p, "%s%q is not a valid %s", lead, v, s.Format)
+		d.failAt(p, "%s%q is not a valid %s", lead, d.value(v), s.Format)
 		return false
 	}
 	if s.re != nil {
@@ -599,13 +652,13 @@ func (d *decoder) text(s *schema, v string, p *vpath, what, lead string) bool {
 			return false
 		}
 		if !s.re.MatchString(v) {
-			d.failAt(p, "%s%q does not match pattern %s", lead, v, s.Pattern)
+			d.failAt(p, "%s%q does not match pattern %s", lead, d.value(v), s.Pattern)
 			return false
 		}
 	}
 	for _, ip := range s.implied {
 		if !ip.holds(v) {
-			d.failAt(p, "%s%q %s", lead, v, ip.why)
+			d.failAt(p, "%s%q %s", lead, d.value(v), ip.why)
 			return false
 		}
 	}
@@ -623,27 +676,27 @@ func (s *schema) validFormat(v string) bool {
 func (d *decoder) num(s *schema, f float64, lit string, p *vpath) bool {
 	ok := true
 	if s.Minimum != nil && cmpNum(lit, f, *s.Minimum) < 0 {
-		d.failAt(p, "%s is less than minimum %s", lit, fmtNum(*s.Minimum))
+		d.failAt(p, "%s is less than minimum %s", d.value(lit), fmtNum(*s.Minimum))
 		ok = false
 	}
 	if s.Maximum != nil && cmpNum(lit, f, *s.Maximum) > 0 {
-		d.failAt(p, "%s is greater than maximum %s", lit, fmtNum(*s.Maximum))
+		d.failAt(p, "%s is greater than maximum %s", d.value(lit), fmtNum(*s.Maximum))
 		ok = false
 	}
 	if s.ExclusiveMinimum != nil && cmpNum(lit, f, *s.ExclusiveMinimum) <= 0 {
-		d.failAt(p, "%s is not greater than exclusiveMinimum %s", lit, fmtNum(*s.ExclusiveMinimum))
+		d.failAt(p, "%s is not greater than exclusiveMinimum %s", d.value(lit), fmtNum(*s.ExclusiveMinimum))
 		ok = false
 	}
 	if s.ExclusiveMaximum != nil && cmpNum(lit, f, *s.ExclusiveMaximum) >= 0 {
-		d.failAt(p, "%s is not less than exclusiveMaximum %s", lit, fmtNum(*s.ExclusiveMaximum))
+		d.failAt(p, "%s is not less than exclusiveMaximum %s", d.value(lit), fmtNum(*s.ExclusiveMaximum))
 		ok = false
 	}
 	if s.MultipleOf != nil && !isMultiple(lit, *s.MultipleOf) {
-		d.failAt(p, "%s is not a multiple of %s", lit, fmtNum(*s.MultipleOf))
+		d.failAt(p, "%s is not a multiple of %s", d.value(lit), fmtNum(*s.MultipleOf))
 		ok = false
 	}
 	if len(s.numEnum) > 0 && !s.inNumEnum(lit) {
-		d.failAt(p, "%s is not one of %s", lit, strings.Join(s.Enum, ", "))
+		d.failAt(p, "%s is not one of %s", d.value(lit), strings.Join(s.Enum, ", "))
 		ok = false
 	}
 	return ok
