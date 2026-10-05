@@ -364,6 +364,9 @@ type pathField struct {
 type vet struct {
 	pass     *analysis.Pass
 	reported map[string]bool
+	// elems holds, as geta.New prefixes an element's refusal, the slices
+	// and maps jsonType is inside since the field it reports at ("T: ").
+	elems []string
 }
 
 // report puts a diagnostic on the field when it is declared in this
@@ -961,19 +964,38 @@ func (v *vet) jsonType(call *ast.CallExpr, at token.Pos, name string, t types.Ty
 		v.report(call, at, fieldMessage(name, err))
 		return
 	}
-	if vt.Marshaler || done.At(t) != nil {
-		return // a text type, one string, or one checked already
+	if vt.Marshaler {
+		return // a text type, one string
 	}
-	done.Set(t, true)
+	if checked, ok := done.At(t).(bool); ok {
+		// A type met again while its elements and members are being checked
+		// holds itself.
+		if !checked {
+			_, named := types.Unalias(t).(*types.Named)
+			_, isStruct := t.Underlying().(*types.Struct)
+			if err := geta.CheckSelfHolding(typeString(t), named && isStruct); err != nil {
+				v.report(call, at, fieldMessage(name, fmt.Errorf("%s%w", strings.Join(v.elems, ""), err)))
+			}
+		}
+		return // checked already, or being checked
+	}
+	done.Set(t, false)
+	defer done.Set(t, true)
+	// geta.New prefixes an element's refusal with the slice or map.
+	elem := func(e types.Type) {
+		v.elems = append(v.elems, typeString(t)+": ")
+		v.jsonType(call, at, name, e, done, read)
+		v.elems = v.elems[:len(v.elems)-1]
+	}
 	switch u := t.Underlying().(type) {
 	case *types.Slice:
 		if b, ok := u.Elem().Underlying().(*types.Basic); !ok || b.Kind() != types.Uint8 {
-			v.jsonType(call, at, name, u.Elem(), done, read)
+			elem(u.Elem())
 		}
 	case *types.Map:
 		// The key before the value, in geta.New's order.
 		v.jsonType(call, at, name, u.Key(), done, read)
-		v.jsonType(call, at, name, u.Elem(), done, read)
+		elem(u.Elem())
 	case *types.Struct:
 		// A named struct is a component; its name is checked first.
 		if _, named := types.Unalias(t).(*types.Named); named {
@@ -1020,7 +1042,11 @@ func (v *vet) members(call *ast.CallExpr, at token.Pos, name string, t types.Typ
 				continue
 			}
 			v.schemaTag(call, f, tag, read)
+			// A field's diagnostics are named from the field.
+			outer := v.elems
+			v.elems = nil
 			v.jsonType(call, f.Pos(), f.Name(), deref(f.Type()), done, read)
+			v.elems = outer
 		}
 	}
 	walk(st)

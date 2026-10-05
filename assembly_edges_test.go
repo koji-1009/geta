@@ -86,6 +86,45 @@ func TestNestedTypesWithNoJSONFormAreRefused(t *testing.T) {
 	}
 }
 
+type (
+	aeSelfMap   map[string]aeSelfMap
+	aeSelfSlice []aeSelfSlice
+	aeSelfAnon  map[string]struct {
+		M aeSelfAnon `json:"m"`
+	}
+	aeSelfMapOut struct {
+		M aeSelfMap `json:"m"`
+	}
+	aeSelfSliceOut struct {
+		S aeSelfSlice `json:"s"`
+	}
+	aeSelfAnonOut struct {
+		A aeSelfAnon `json:"a"`
+	}
+	aeSelfMapIn struct {
+		Body aeSelfMap `body:"json"`
+	}
+	aeSelfStruct struct {
+		K map[string]aeSelfStruct `json:"k"`
+		L []aeSelfStruct          `json:"l"`
+	}
+	aeSelfStructOut struct {
+		S aeSelfStruct `json:"s"`
+	}
+)
+
+// A type that holds itself other than through a named struct type has no
+// schema (only a named struct is a component to refer to), so New refuses
+// it, as input and as output. Through a named struct it is taken.
+func TestTypesHoldingThemselvesOutsideANamedStructAreRefused(t *testing.T) {
+	const why = "holds itself other than through a named struct type"
+	rejects(t, output[aeSelfMapOut](), "geta_test.aeSelfMap "+why)
+	rejects(t, output[aeSelfSliceOut](), "geta_test.aeSelfSlice "+why)
+	rejects(t, output[aeSelfAnonOut](), "geta_test.aeSelfAnon "+why)
+	rejects(t, one("/t", post(func(context.Context, *aeSelfMapIn) (*ok, error) { return nil, nil })), "geta_test.aeSelfMap "+why)
+	accepts(t, output[aeSelfStructOut]())
+}
+
 // OPTIONS, which geta serves on every template, runs the root scope alone:
 // a root middleware that requires scopes of a scheme the root gates do not
 // require by default refuses every OPTIONS request a gate admits, so New

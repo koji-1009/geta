@@ -136,6 +136,7 @@ Every behaviour geta states has a test or a command that checks it. [`llms.txt`]
 | A streamed body that fails to encode aborts the connection | `TestAStreamedBodyThatFailsAbortsTheConnection` |
 | A large response holds at most 64 KiB of its body | `TestLargeBodiesHoldBoundedMemory`, `BenchmarkLargeGet` |
 | A request body is read once; responses are written by `encoding/json/v2` | `TestRejectsSchemaMistakes`, `TestEncodeShapesMatchTheSchema` |
+| A type holds itself only through a named struct; any other self-holding type is refused | `TestTypesHoldingThemselvesOutsideANamedStructAreRefused`, `TestSelfHoldingTypesMatchGetaNew` (getavet) |
 | A type with its own JSON methods needs no declaration | `TestOwnJSONTypesNeedNoDeclaration`, `TestOwnJSONOutputThatIsNotJSONIsADefect`, `TestOwnJSONTypesUseTheirMethods`, `TestWithSchemaMistakes`, `TestSinglePassTakesNullForAnOwnJSONType`, `TestSinglePassRefusesNullForADeclaredOwnJSONType`, `TestSinglePassAgreesOnKeywords`, `FuzzSinglePass` |
 | Sealed types are checked by discriminator, documented as `oneOf`, and refused when misdeclared | `TestSealedTypeRoundTrip`, `TestSealedTypeViolations`, `TestSealedTypeOutputDefects`, `TestSealedTypeDeclarationMistakes`, `TestNilUnionInsideAPointerVariant`, `TestTypedNilPointerVariantIsADefect`, `TestNilUnionNamesItsPath`, `TestNilUnionSkipsWhatHoldsNone`, `TestAnEnvelopeBodyHoldsItsSealedTypes` |
 | getatest checks every uncoded JSON body against its schema | `TestGetatestChecksBodiesAgainstTheDocument` (and every other test that uses getatest) |

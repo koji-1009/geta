@@ -259,6 +259,15 @@ func (c *codec) use() *schema {
 // codecFor analyses t. Errors name the type and the field path.
 func (r *registry) codecFor(t reflect.Type) (*codec, error) {
 	if c, ok := r.codecs[t]; ok {
+		// A codec still being made has no schema yet. A named struct is
+		// referred to by its component; any other type holding itself would
+		// have a schema that contains itself. CheckSelfHolding is shared
+		// with getavet.
+		if c.schema == nil {
+			if err := CheckSelfHolding(t.String(), c.name != ""); err != nil {
+				return nil, err
+			}
+		}
 		return c, nil
 	}
 	// A Nullable has JSON methods, but its schema is its value's plus null.

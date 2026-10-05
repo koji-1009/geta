@@ -336,7 +336,7 @@ func (h Handler) Delete(ctx context.Context, in *DeleteIn) error {
 
 - geta reads a request body once. It walks the `encoding/json/jsontext` tokens, checks the schema on the way, and hands the values to `encoding/json/v2`, which also writes responses.
 - Unknown members, duplicate keys, names in the wrong case, and trailing data get 400.
-- Types are structs with `json:"name"` tags, slices, `map[string]T`, scalars, and text types. `any`, channels, and `time.Duration` are not allowed (use `geta.Duration`).
+- Types are structs with `json:"name"` tags, slices, `map[string]T`, scalars, and text types. `any`, channels, and `time.Duration` are not allowed (use `geta.Duration`). A type may hold itself only through a named struct, which its component refers to: `type Node struct { Kids map[string]Node }` is taken, `type Tree map[string]Tree` fails `geta.New`, and getavet reports it.
 - An optional field is a pointer tagged `json:"name,omitzero"`. A pointer without `omitzero`, or `omitzero` on a non-pointer, fails. No other tag options are allowed. Slice and map elements are never pointers (`[]T`, not `[]*T`).
 - Map keys are of string kind. A key type with text methods is read and written by them (as v2 does, on any receiver), so it needs both.
 - A json tag on an unexported field fails (use `json:"-"`, or export the field). The members of an untagged embedded struct are promoted. An untagged embedded pointer, non-struct, or type with JSON or text methods fails; a json name makes it one member. A named embedded pointer is optional and needs `omitzero`.

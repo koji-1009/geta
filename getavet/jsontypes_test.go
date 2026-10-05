@@ -327,6 +327,54 @@ func Build() (*geta.App, error) {
 	})
 }
 
+// A type that holds itself other than through a named struct type is
+// reported as geta.New refuses it, in an output and an input; one that
+// holds itself through a named struct is not.
+func TestSelfHoldingTypesMatchGetaNew(t *testing.T) {
+	diagnostics, built := vetAndNew(t, `package lib
+
+import (
+	"context"
+	"net/http"
+
+	"github.com/koji-1009/geta"
+)
+
+type Tree map[string]Tree
+
+type Chain []Chain
+
+type Anon map[string]struct {
+	M Anon `+"`json:\"m\"`"+`
+}
+
+type Node struct {
+	Kids map[string]Node `+"`json:\"kids\"`"+`
+	Next []Node          `+"`json:\"next\"`"+`
+}
+
+type TreeIn struct {
+	Body Tree `+"`body:\"json\"`"+`
+}
+
+func Build() (*geta.App, error) {
+	return geta.New(geta.Table{Routes: []geta.Entry{
+		{Path: "/a", Route: geta.Route{Get: geta.Op(http.StatusOK, func(context.Context, *struct{}) (*Tree, error) { return nil, nil }, geta.Doc{})}},
+		{Path: "/b", Route: geta.Route{Get: geta.Op(http.StatusOK, func(context.Context, *struct{}) (*Chain, error) { return nil, nil }, geta.Doc{})}},
+		{Path: "/c", Route: geta.Route{Get: geta.Op(http.StatusOK, func(context.Context, *struct{}) (*Anon, error) { return nil, nil }, geta.Doc{})}},
+		{Path: "/d", Route: geta.Route{Get: geta.Op(http.StatusOK, func(context.Context, *struct{}) (*Node, error) { return nil, nil }, geta.Doc{})}},
+		{Path: "/e", Route: geta.Route{Post: geta.Op(http.StatusOK, func(context.Context, *TreeIn) (*Node, error) { return nil, nil }, geta.Doc{})}},
+	}})
+}
+`)
+	checkSame(t, diagnostics, built, []string{
+		"lib.Tree: lib.Tree holds itself other than through a named struct type",
+		"lib.Chain: lib.Chain holds itself other than through a named struct type",
+		"M: lib.Anon holds itself other than through a named struct type",
+		"Body: lib.Tree: lib.Tree holds itself other than through a named struct type",
+	})
+}
+
 // An operation built in a generic function is judged where it is
 // instantiated, by geta.New: an input or a problem description that is a
 // type parameter, and a member of a type parameter's type, are not judged.
