@@ -5,9 +5,12 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -308,10 +311,11 @@ func TestMultipartTemporaryFilesAreRemoved(t *testing.T) {
 func TestOversizedFormIs413(t *testing.T) {
 	limits := geta.DefaultLimits
 	limits.MaxBodyBytes = 64
+	limits.MaxMultipartMemory = 0
 	app, err := geta.New(geta.Table{Routes: []geta.Entry{
 		{Path: "/m", Route: geta.Route{Post: geta.Op(http.StatusOK, echoUpload, geta.Doc{})}},
 		{Path: "/f", Route: geta.Route{Post: geta.Op(http.StatusOK, echoForm, geta.Doc{})}},
-	}}, geta.WithLimits(limits))
+	}}, geta.WithLimits(limits), geta.WithLogger(slog.New(slog.DiscardHandler)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -325,6 +329,103 @@ func TestOversizedFormIs413(t *testing.T) {
 	tooLarge(c.Multipart(http.MethodPost, "/m", url.Values{"title": {"t"}},
 		getatest.FilePart{Field: "avatar", Filename: "a", Content: bytes.Repeat([]byte("x"), 100)}))
 	tooLarge(c.Form(http.MethodPost, "/f?id=1", url.Values{"name": {strings.Repeat("x", 100)}}))
+
+	// A body of no declared length that MaxBodyBytes cuts within a part's
+	// header lines is a 413, not a malformed header.
+	body := "--B\r\nContent-Disposition: form-data; name=\"title\"\r\n\r\nt\r\n--B\r\nContent-Type: text/plain\r\n" +
+		"Content-Disposition: form-data; name=\"avatar\"; filename=\"a\"\r\n\r\nx\r\n--B--\r\n"
+	req := httptest.NewRequest(http.MethodPost, "/m", strings.NewReader(body))
+	req.ContentLength = -1
+	req.Header.Set("Content-Type", "multipart/form-data; boundary=B")
+	rec := httptest.NewRecorder()
+	app.ServeHTTP(rec, req)
+	if rec.Code != http.StatusRequestEntityTooLarge || !strings.Contains(rec.Body.String(), "the request body exceeds 64 bytes") {
+		t.Fatalf("cut in a part's header: %d %s", rec.Code, rec.Body)
+	}
+
+	// Nor is one that mime/multipart finds malformed before the cut: content
+	// that begins with the delimiter reads as a delimiter line, and the next
+	// delimiter line as a header without its colon.
+	head := "--B\r\nContent-Disposition: form-data; name=\"title\"\r\n\r\n--B\r\n--B\r\n"
+	if len(head) > 64 {
+		t.Fatal(len(head))
+	}
+	req = httptest.NewRequest(http.MethodPost, "/m", strings.NewReader(head+strings.Repeat("x", 200)))
+	req.ContentLength = -1
+	req.Header.Set("Content-Type", "multipart/form-data; boundary=B")
+	rec = httptest.NewRecorder()
+	app.ServeHTTP(rec, req)
+	if rec.Code != http.StatusRequestEntityTooLarge || !strings.Contains(rec.Body.String(), "the request body exceeds 64 bytes") {
+		t.Fatalf("malformed before the cut: %d %s", rec.Code, rec.Body)
+	}
+
+	// The answer does not depend on how the body is split into reads: a body
+	// of no declared length past MaxBodyBytes is a 413 wherever the excess
+	// lies. send sends body of no declared length through chunked.
+	send := func(body string, sizes []int, end error) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPost, "/m", &chunked{s: body, sizes: sizes, end: end})
+		req.ContentLength = -1
+		req.Header.Set("Content-Type", "multipart/form-data; boundary=B")
+		rec := httptest.NewRecorder()
+		app.ServeHTTP(rec, req)
+		return rec
+	}
+	tooLargeRec := func(what string, rec *httptest.ResponseRecorder) {
+		t.Helper()
+		if rec.Code != http.StatusRequestEntityTooLarge || !strings.Contains(rec.Body.String(), "the request body exceeds 64 bytes") {
+			t.Errorf("%s: %d %s", what, rec.Code, rec.Body)
+		}
+	}
+	// The close delimiter within the limit, the epilogue past it.
+	closed := "--B\r\nContent-Disposition: form-data; name=\"title\"\r\n\r\nt\r\n--B--\r\n"
+	if len(closed) > 64 {
+		t.Fatal(len(closed))
+	}
+	tooLargeRec("epilogue past the limit, one read", send(closed+strings.Repeat("x", 100), nil, nil))
+	tooLargeRec("epilogue past the limit, split reads", send(closed+strings.Repeat("x", 100), []int{len(closed)}, nil))
+	// Malformed before the limit, cut after it.
+	tooLargeRec("malformed before the cut, split reads", send(head+strings.Repeat("x", 200), []int{len(head)}, nil))
+
+	// A client that disconnects sent a body that could not be read, not a
+	// malformed one.
+	rec = send("--B\r\nContent-Disposition: form-data; name=\"title\"\r\n\r\nt", nil, io.ErrUnexpectedEOF)
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "the request body could not be read") {
+		t.Errorf("disconnected: %d %s", rec.Code, rec.Body)
+	}
+
+	// A file geta cannot store is a 500 even in a body past the limit.
+	t.Setenv("TMPDIR", filepath.Join(t.TempDir(), "absent"))
+	file := "--B\r\nContent-Disposition:form-data;name=avatar;filename=a\r\n\r\n"
+	if len(file)+1 > 64 {
+		t.Fatal(len(file))
+	}
+	if rec := send(file+strings.Repeat("x", 100), nil, nil); rec.Code != http.StatusInternalServerError {
+		t.Errorf("a file not stored: %d %s", rec.Code, rec.Body)
+	}
+}
+
+// chunked delivers s in reads of sizes, then the rest at once, then fails
+// with end (io.EOF if nil).
+type chunked struct {
+	s     string
+	sizes []int
+	end   error
+}
+
+func (c *chunked) Read(p []byte) (int, error) {
+	if c.s == "" {
+		if c.end != nil {
+			return 0, c.end
+		}
+		return 0, io.EOF
+	}
+	n := len(c.s)
+	if len(c.sizes) > 0 {
+		n, c.sizes = min(n, c.sizes[0]), c.sizes[1:]
+	}
+	n = copy(p, c.s[:n])
+	c.s = c.s[n:]
+	return n, nil
 }
 
 // getaclient sends a form or multipart body from the input type, files

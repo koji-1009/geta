@@ -271,7 +271,7 @@ func (p *formPlan) bind(w http.ResponseWriter, r *http.Request, dst reflect.Valu
 			return tooLong(limits.MaxBodyBytes), nil
 		}
 	}
-	body := http.MaxBytesReader(w, r.Body, limits.MaxBodyBytes)
+	body := &errKeeper{r: http.MaxBytesReader(w, r.Body, limits.MaxBodyBytes)}
 	// Otherwise peek one byte to tell an absent body from content, and judge
 	// it before reading the rest.
 	br := bufio.NewReader(body)
@@ -304,9 +304,13 @@ func (p *formPlan) bind(w http.ResponseWriter, r *http.Request, dst reflect.Valu
 	}
 	cw := newCloseWatcher(br, boundary)
 	fv, err := p.readParts(multipart.NewReader(cw, boundary), cw, limits, &tmp)
-	if err != nil {
+	// A body past MaxBodyBytes is a 413 wherever the excess lies: read on to learn it.
+	if _, stored := errors.AsType[*storeError](err); !stored && !body.done {
+		io.Copy(io.Discard, br)
+	}
+	if be := partFailure(err, body.err, limits); be != nil {
 		removeFiles(tmp)
-		return partFailure(err, limits), nil
+		return be, nil
 	}
 	if be := p.fill(dst, fv, limits); be != nil {
 		removeFiles(tmp)
@@ -365,6 +369,29 @@ func (p *formPlan) readParts(mr *multipart.Reader, cw *closeWatcher, limits Limi
 			return nil, err
 		}
 	}
+}
+
+// errKeeper keeps the first error reading the body other than io.EOF, and
+// whether the body's reads ended. The body's own failure is taken from here,
+// not from mime/multipart's error: bufio.Reader holds a read error back until
+// its buffer is drained, and a mime/multipart error does not wrap it, so
+// mime/multipart may fail on the bytes before a MaxBodyBytes cut, as a
+// malformed header or part, with the MaxBytesError unseen.
+type errKeeper struct {
+	r    io.Reader
+	err  error
+	done bool // a read returned an error, io.EOF included
+}
+
+func (k *errKeeper) Read(p []byte) (int, error) {
+	n, err := k.r.Read(p)
+	if err != nil {
+		k.done = true
+		if err != io.EOF && k.err == nil {
+			k.err = err
+		}
+	}
+	return n, err
 }
 
 // errCutShort reports a multipart body that ends before its close
@@ -432,10 +459,12 @@ func (w *closeWatcher) scan(b []byte) {
 		}
 		switch {
 		case len(w.line) < cap(w.line):
-			w.line = append(w.line, c)
-			if n := min(len(w.line), len(w.boundary)); !bytes.Equal(w.line[:n], w.boundary[:n]) {
+			// The bytes before c matched, or the line would be dead: c alone
+			// is compared.
+			if i := len(w.line); i < len(w.boundary) && c != w.boundary[i] {
 				w.dead = true
 			}
+			w.line = append(w.line, c)
 		case w.over == 2 || c != ' ' && c != '\t' && c != '\r' || w.line[len(w.line)-1] == '\r':
 			// After the boundary, only spaces, tabs, and a final '\r'.
 			w.dead = true
@@ -608,15 +637,23 @@ func readFailure(err error, limits Limits) *bindError {
 	return bodyViolation("$", "the request body could not be read")
 }
 
-// partFailure answers a multipart body that could not be read: 408 past the
-// read deadline, 413 past MaxBodyBytes, 500 for a file that could not be
-// stored, and 400 for a malformed body.
-func partFailure(err error, limits Limits) *bindError {
-	if _, ok := errors.AsType[*http.MaxBytesError](err); ok || errors.Is(err, errBodyLate) {
-		return readFailure(err, limits)
-	}
+// partFailure answers a multipart body from readParts' error err and the
+// body's own read error read (errKeeper), or returns nil to take it: 500 for
+// a file that could not be stored, then 413 past MaxBodyBytes and 408 past
+// the read deadline whatever err is, then, if err is not nil, 400 for a body
+// that could not be read or else a malformed body.
+func partFailure(err, read error, limits Limits) *bindError {
 	if se, ok := errors.AsType[*storeError](err); ok {
 		return &bindError{status: http.StatusInternalServerError, err: se}
+	}
+	if _, ok := errors.AsType[*http.MaxBytesError](read); ok || errors.Is(read, errBodyLate) {
+		return readFailure(read, limits)
+	}
+	switch {
+	case err == nil:
+		return nil
+	case read != nil:
+		return readFailure(read, limits)
 	}
 	return bodyViolation("$", "the multipart body is malformed: "+err.Error())
 }
