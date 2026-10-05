@@ -81,7 +81,7 @@ func Build() (*geta.App, error) {
 		`Date: schema keyword format: the type already has format "date"`,
 		`Pass: schema keyword format: the type already has format "password"`,
 		"Wait: " + noForm,
-		"Waits: " + noForm,
+		"Waits: []time.Duration: " + noForm,
 		"For: " + noForm,
 	}
 	for _, want := range wants {

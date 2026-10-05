@@ -28,6 +28,9 @@
 //     chan, func, array, complex, and time.Duration, a type with only half
 //     of the text marshaling methods, a misused geta.FormatType or
 //     geta.File, and nested geta.Nullable.
+//   - a type that holds itself with no named struct on the cycle from the
+//     type back to itself (geta.CheckSelfHolding), such as
+//     type Tree map[string]Tree.
 //   - a body on an operation a geta.Route literal builds in place under Get
 //     or Delete (geta.CheckMethodBody).
 //   - a constant success status geta does not accept or the output's status
@@ -364,9 +367,25 @@ type pathField struct {
 type vet struct {
 	pass     *analysis.Pass
 	reported map[string]bool
-	// elems holds, as geta.New prefixes an element's refusal, the slices
-	// and maps jsonType is inside since the field it reports at ("T: ").
+	// elems is the prefix geta.New puts on an element's refusal ("T: "),
+	// one per slice or map since the reporting field.
 	elems []string
+	// making holds the types jsonType is checking the elements and members
+	// of, outermost first.
+	making []types.Type
+}
+
+// refuse reports err, a refusal of the type jsonType checks, as geta.New
+// words it: prefixed by elems and the field name.
+func (v *vet) refuse(call *ast.CallExpr, at token.Pos, name string, err error) {
+	v.report(call, at, fieldMessage(name, fmt.Errorf("%s%w", strings.Join(v.elems, ""), err)))
+}
+
+// namedStruct reports whether t is a named struct type.
+func namedStruct(t types.Type) bool {
+	_, named := types.Unalias(t).(*types.Named)
+	_, isStruct := t.Underlying().(*types.Struct)
+	return named && isStruct
 }
 
 // report puts a diagnostic on the field when it is declared in this
@@ -947,7 +966,7 @@ func (v *vet) jsonType(call *ast.CallExpr, at token.Pos, name string, t types.Ty
 	if e, ok := nullableOf(t); ok {
 		_, nested := nullableOf(e)
 		if err := geta.CheckJSONType(geta.VetType{Type: typeString(t), Nullable: true, Elem: typeString(e), ElemNullable: nested}); err != nil {
-			v.report(call, at, fieldMessage(name, err))
+			v.refuse(call, at, name, err)
 			return
 		}
 		v.jsonType(call, at, name, e, done, read)
@@ -955,32 +974,42 @@ func (v *vet) jsonType(call *ast.CallExpr, at token.Pos, name string, t types.Ty
 	}
 	if ownJSON(t) {
 		if err := geta.CheckJSONType(geta.VetType{Type: typeString(t), JSON: true, Format: namesFormat(t)}); err != nil {
-			v.report(call, at, fieldMessage(name, err))
+			v.refuse(call, at, name, err)
 		}
 		return
 	}
 	vt := vetType(t)
 	if err := geta.CheckJSONType(vt); err != nil {
-		v.report(call, at, fieldMessage(name, err))
+		v.refuse(call, at, name, err)
 		return
 	}
-	if vt.Marshaler {
-		return // a text type, one string
+	if vt.Marshaler || done.At(t) != nil {
+		return // a text type, one string, or one checked already
 	}
-	if checked, ok := done.At(t).(bool); ok {
-		// A type met again while its elements and members are being checked
-		// holds itself.
-		if !checked {
-			_, named := types.Unalias(t).(*types.Named)
-			_, isStruct := t.Underlying().(*types.Struct)
-			if err := geta.CheckSelfHolding(typeString(t), named && isStruct); err != nil {
-				v.report(call, at, fieldMessage(name, fmt.Errorf("%s%w", strings.Join(v.elems, ""), err)))
-			}
+	// A type met again while its elements and members are being checked
+	// holds itself, as geta.New judges it: by the cycle, whatever the order
+	// types are met in.
+	for i := len(v.making) - 1; i >= 0; i-- {
+		if !types.Identical(v.making[i], t) {
+			continue
 		}
-		return // checked already, or being checked
+		through := slices.ContainsFunc(v.making[i:], namedStruct)
+		if err := geta.CheckSelfHolding(typeString(t), through); err != nil {
+			v.refuse(call, at, name, err)
+			return
+		}
+		if namedStruct(t) {
+			return
+		}
+		// Any other type is checked again inside the named struct, as
+		// geta.New makes it again.
+		break
 	}
-	done.Set(t, false)
-	defer done.Set(t, true)
+	v.making = append(v.making, t)
+	defer func() {
+		v.making = v.making[:len(v.making)-1]
+		done.Set(t, true)
+	}()
 	// geta.New prefixes an element's refusal with the slice or map.
 	elem := func(e types.Type) {
 		v.elems = append(v.elems, typeString(t)+": ")
@@ -1000,7 +1029,7 @@ func (v *vet) jsonType(call *ast.CallExpr, at token.Pos, name string, t types.Ty
 		// A named struct is a component; its name is checked first.
 		if _, named := types.Unalias(t).(*types.Named); named {
 			if err := geta.CheckSchemaName(typeString(t)); err != nil {
-				v.report(call, at, fieldMessage(name, err))
+				v.refuse(call, at, name, err)
 				return
 			}
 		}
@@ -1055,7 +1084,7 @@ func (v *vet) members(call *ast.CallExpr, at token.Pos, name string, t types.Typ
 		return
 	}
 	if err := geta.CheckStructMembers(typeString(t), st.NumFields(), len(names)); err != nil {
-		v.report(call, at, fieldMessage(name, err))
+		v.refuse(call, at, name, err)
 	}
 }
 

@@ -3,6 +3,7 @@ package geta_test
 import (
 	"context"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -122,7 +123,122 @@ func TestTypesHoldingThemselvesOutsideANamedStructAreRefused(t *testing.T) {
 	rejects(t, output[aeSelfSliceOut](), "geta_test.aeSelfSlice "+why)
 	rejects(t, output[aeSelfAnonOut](), "geta_test.aeSelfAnon "+why)
 	rejects(t, one("/t", post(func(context.Context, *aeSelfMapIn) (*ok, error) { return nil, nil })), "geta_test.aeSelfMap "+why)
+	// Two named types other than structs that hold each other.
+	rejects(t, output[aeMutualA](), "geta_test.aeMutualA: geta_test.aeMutualB: geta_test.aeMutualA "+why)
+	rejects(t, output[aeMutualB](), "geta_test.aeMutualB: geta_test.aeMutualA: geta_test.aeMutualB "+why)
+	// A generic type, and a type holding itself through a Nullable.
+	rejects(t, output[aeGenTree[string]](), "geta_test.aeGenTree[string] "+why)
+	rejects(t, output[aeNullSelf](), "geta_test.aeNullSelf: geta_test.aeNullSelf "+why)
+	// A named struct elsewhere than on the cycle does not make it one.
+	rejects(t, output[aeSelfBeside](), "geta_test.aeSelfBesideList "+why)
 	accepts(t, output[aeSelfStructOut]())
+}
+
+type (
+	aeMutualA        []aeMutualB
+	aeMutualB        map[string]aeMutualA
+	aeGenTree[T any] map[string]aeGenTree[T]
+	aeNullSelf       map[string]geta.Nullable[aeNullSelf]
+	aeSelfBesideList []aeSelfBesideList
+	aeSelfBeside     struct {
+		L aeSelfBesideList `json:"l"`
+	}
+
+	// Recursion through a named struct, by a slice, a map, a pointer, an
+	// embedded struct, and a Nullable.
+	aeKids []aeNode
+	aeNode struct {
+		Name string `json:"name"`
+		Kids aeKids `json:"kids"`
+	}
+	aeForest struct {
+		Roots aeKids `json:"roots"`
+	}
+	aeKidMap map[string]aeMNode
+	aeMNode  struct {
+		Kids aeKidMap `json:"kids"`
+	}
+	aePKids []aePNode
+	aePNode struct {
+		Kids *aePKids `json:"kids,omitzero"`
+	}
+	aeEKids []aeENode
+	aeENode struct{ aeEBase }
+	aeEBase struct {
+		Kids aeEKids `json:"kids"`
+	}
+	aeNKids []aeNNode
+	aeNNode struct {
+		Kids geta.Nullable[aeNKids] `json:"kids,omitzero"`
+	}
+	aeKidsIn struct {
+		Body aeKids `body:"json"`
+	}
+)
+
+func output2[A, B any]() geta.Table {
+	return geta.Table{Routes: []geta.Entry{
+		{Path: "/a", Route: get(func(context.Context, *empty) (*A, error) { return nil, nil })},
+		{Path: "/b", Route: get(func(context.Context, *empty) (*B, error) { return nil, nil })},
+	}}
+}
+
+// A type that holds itself through a named struct is taken whichever type
+// of the cycle New meets first, in one route or across two, and its schema
+// is whole.
+func TestTypesHoldingThemselvesThroughANamedStructAreTakenInAnyOrder(t *testing.T) {
+	for name, tbl := range map[string]geta.Table{
+		"slice first":           output[aeKids](),
+		"struct first":          output[aeNode](),
+		"slice first, by field": output[aeForest](),
+		"slice, then struct":    output2[aeKids, aeNode](),
+		"struct, then slice":    output2[aeNode, aeKids](),
+		"field, then struct":    output2[aeForest, aeNode](),
+		"struct, then field":    output2[aeNode, aeForest](),
+		"map first":             output[aeKidMap](),
+		"map's struct first":    output[aeMNode](),
+		"pointer, slice first":  output[aePKids](),
+		"pointer, struct first": output[aePNode](),
+		"embedded, slice first": output[aeEKids](),
+		"embedded, struct":      output[aeENode](),
+		"Nullable, slice first": output[aeNKids](),
+		"Nullable, struct":      output[aeNNode](),
+	} {
+		t.Run(name, func(t *testing.T) {
+			a := accepts(t, tbl)
+			d := doc(t, a)
+			for _, n := range []string{"aeNode", "aeMNode", "aePNode", "aeENode", "aeNNode"} {
+				s, ok := at(t, d, "components", "schemas").(map[string]any)[n]
+				if !ok {
+					continue
+				}
+				if !strings.Contains(compact(t, s), `"$ref":"#/components/schemas/`+n+`"`) {
+					t.Errorf("%s does not refer to itself: %s", n, compact(t, s))
+				}
+			}
+		})
+	}
+	// The slice's own schema, made first, refers to the struct.
+	d := doc(t, accepts(t, output[aeKids]()))
+	if got := compact(t, at(t, d, "paths", "/t", "get", "responses", "200", "content", "application/json", "schema")); got != `{"items":{"$ref":"#/components/schemas/aeNode"},"type":"array"}` {
+		t.Errorf("schema %s", got)
+	}
+}
+
+// A body of such a type is read at depth, its slice made first.
+func TestBodiesOfTypesHoldingThemselvesAreReadAtDepth(t *testing.T) {
+	a := accepts(t, one("/t", post(func(_ context.Context, in *aeKidsIn) (*aeKids, error) { return &in.Body, nil })))
+	body := `[]`
+	for i := range 12 {
+		body = `[{"name":"n` + itoa(i) + `","kids":` + body + `},{"name":"leaf","kids":[]}]`
+	}
+	req := httptest.NewRequest(http.MethodPost, "/t", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	a.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || strings.TrimSpace(rec.Body.String()) != body {
+		t.Fatalf("%d %s", rec.Code, rec.Body)
+	}
 }
 
 // OPTIONS, which geta serves on every template, runs the root scope alone:
