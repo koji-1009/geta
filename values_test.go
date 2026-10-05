@@ -267,10 +267,12 @@ func TestKeyKeywordsHoldEachKey(t *testing.T) {
 	}
 	// A key past the backstop is refused, at its member, and the value under
 	// it is left unchecked; on the single pass and the reference path alike.
+	// Its path is cut to its last 253 bytes after "…".
 	long := strings.Repeat("k", 5000)
-	same(t, violations(t, send(`{"free":{"`+long+`":1}}`)), "body $.free."+long+": key length 5000 exceeds the ceiling of 10 code points")
+	cut := "…" + long[:253]
+	same(t, violations(t, send(`{"free":{"`+long+`":1}}`)), "body "+cut+": key length 5000 exceeds the ceiling of 10 code points")
 	same(t, violations(t, send(`{"free":{},"vals":{"`+long+`":-1,"v":-1}}`)),
-		"body $.vals."+long+": key length 5000 exceeds the ceiling of 10 code points",
+		"body "+cut+": key length 5000 exceeds the ceiling of 10 code points",
 		"body $.vals.v: -1 is less than minimum 0")
 	same(t, violations(t, send(`{"free":{},"short":{"a":1,"AB":2,"`+strings.Repeat("s", 21)+`":3},"pick":{"c":1},"ids":{"x":1},`+
 		`"rows":[{"abc":1}],"deep":{"d":{"abc":1}}}`)),

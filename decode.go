@@ -123,6 +123,8 @@ type decoder struct {
 	limits Limits
 	in     string
 	errs   []Violation
+	// omitted counts the violations found past maxViolations, not in errs.
+	omitted int
 	// written is set when checking a response (Conforms); the pattern
 	// ceiling does not apply.
 	written bool
@@ -136,15 +138,19 @@ var unbounded = Limits{MaxStringLength: math.MaxInt, MaxItems: math.MaxInt, MaxD
 
 func (d *decoder) fail(path, format string, args ...any) {
 	if len(d.errs) < maxViolations {
-		d.errs = append(d.errs, Violation{In: d.in, Path: path, Message: fmt.Sprintf(format, args...)})
+		d.errs = append(d.errs, Violation{In: d.in, Path: capPath(path), Message: fmt.Sprintf(format, args...)})
+		return
 	}
+	d.omitted++
 }
 
 // failAt is fail at p, rendering p only for a violation that is kept.
 func (d *decoder) failAt(p *vpath, format string, args ...any) {
 	if len(d.errs) < maxViolations {
 		d.errs = append(d.errs, Violation{In: d.in, Path: p.String(), Message: fmt.Sprintf(format, args...)})
+		return
 	}
+	d.omitted++
 }
 
 // A vpath is the path of the value check is at, such as $.a[0]. It is
@@ -166,20 +172,56 @@ func (p *vpath) member(name string) *vpath { return &vpath{up: p, name: name, in
 // item is the path of p's element i: path + "[i]".
 func (p *vpath) item(i int) *vpath { return &vpath{up: p, index: i} }
 
+// String renders the path as capPath cuts it, walking up only as far as the
+// kept end needs.
 func (p *vpath) String() string {
+	n := 0
+	top := p
+	for ; top.up != nil && n <= maxPathBytes; top = top.up {
+		if top.index < 0 {
+			n += 1 + len(top.name)
+		} else {
+			n += 2 + len(strconv.Itoa(top.index))
+		}
+	}
 	var b strings.Builder
-	p.writeTo(&b)
-	return b.String()
+	p.writeTo(&b, top)
+	return capPath(b.String())
 }
 
-// writeTo writes p to b, its root first. It keeps no pointer to p, so that
-// the vpaths check makes stay on its stack.
-func (p *vpath) writeTo(b *strings.Builder) {
-	if p.up == nil {
-		b.WriteString(p.name)
+// maxPathBytes bounds the bytes of a violation's path. A path is as long as
+// the nesting and the member names a request chooses, so without a bound 50
+// violations would answer a small body with a response many times its size.
+const maxPathBytes = 256
+
+// pathMark begins a path capPath cut.
+const pathMark = "…"
+
+// capPath returns path if it fits maxPathBytes, and otherwise pathMark and
+// the end of path, from a rune boundary, in maxPathBytes in all. The end is
+// kept because it names the value that failed; In names where it is.
+func capPath(path string) string {
+	if len(path) <= maxPathBytes {
+		return path
+	}
+	i := len(path) - (maxPathBytes - len(pathMark))
+	for i < len(path) && !utf8.RuneStart(path[i]) {
+		i++
+	}
+	return pathMark + path[i:]
+}
+
+// writeTo writes p's steps below top to b, top's first, and top's name
+// before them when top is the root. It keeps no pointer to p, so that the
+// vpaths check makes stay on its stack.
+func (p *vpath) writeTo(b *strings.Builder, top *vpath) {
+	if p == top {
+		if p.up == nil {
+			b.WriteString(p.name) // the root: the path is whole
+		}
 		return
 	}
-	p.up.writeTo(b)
+	p.up.writeTo(b, top)
 	if p.index < 0 {
 		b.WriteByte('.')
 		b.WriteString(p.name)

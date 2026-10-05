@@ -257,15 +257,15 @@ func fzRefused(t *testing.T, p *geta.Problem, in string, trim string) map[string
 }
 
 // fzAgrees checks that the violations of p name exactly the parameters
-// fzValid finds invalid. Past the cap of violations a response lists, a
-// missing one is not a disagreement.
+// fzValid finds invalid. Where the response omitted violations (past 50, or
+// past 16 KiB of them), a missing one is not a disagreement.
 func fzAgrees(t *testing.T, vals url.Values, refused map[string]bool, p *geta.Problem) {
 	t.Helper()
 	for name, ok := range fzValid(vals) {
 		switch {
 		case ok && refused[name]:
 			t.Fatalf("%s=%q refused, which its constraint takes: %+v", name, vals[name], p.Errors)
-		case !ok && !refused[name] && (p == nil || len(p.Errors) < 50):
+		case !ok && !refused[name] && (p == nil || p.Omitted == 0):
 			t.Fatalf("%s=%q taken, which its constraint refuses", name, vals[name])
 		}
 	}
@@ -338,6 +338,18 @@ func FuzzQueryParameters(f *testing.F) {
 }
 
 const fiFormMedia = "application/x-www-form-urlencoded"
+
+// fzSameViolations reports whether two problems name the same violations:
+// the same list, or, where either omitted some (its paths, of another
+// length, may reach 16 KiB at another count), the same count found and the
+// same violations as far as both list.
+func fzSameViolations(a, b []string, omittedA, omittedB int) bool {
+	if omittedA == 0 && omittedB == 0 {
+		return slices.Equal(a, b)
+	}
+	n := min(len(a), len(b))
+	return len(a)+omittedA == len(b)+omittedB && slices.Equal(a[:n], b[:n])
+}
 
 // fzListed is p's violations as "path: message", prefix cut from each path.
 func fzListed(p *geta.Problem, prefix string) []string {
@@ -426,7 +438,7 @@ func FuzzFormBody(f *testing.F) {
 		} else {
 			listed := fzListed(p, "")
 			for _, k := range unknownNames {
-				if want := "$." + strings.ToValidUTF8(k, "�") + ": unknown field"; !slices.Contains(listed, want) && len(p.Errors) < 50 {
+				if want := "$." + strings.ToValidUTF8(k, "�") + ": unknown field"; !slices.Contains(listed, want) && p.Omitted == 0 {
 					t.Fatalf("%q: no %q in %q", body, want, listed)
 				}
 			}
@@ -450,7 +462,7 @@ func FuzzFormBody(f *testing.F) {
 			for i := range fv {
 				fv[i] = strings.Replace(fv[i], ": missing required field", ": missing required parameter", 1)
 			}
-			if !slices.Equal(fv, qv) {
+			if !fzSameViolations(fv, qv, p.Omitted, q.Omitted) {
 				t.Fatalf("%q: as a form %q, as a query %q", body, fv, qv)
 			}
 		}
@@ -516,7 +528,7 @@ func FuzzDeepObjectAgreesWithForm(f *testing.F) {
 				t.Fatalf("%q: %+v", raw, fp.Errors)
 			}
 		}
-		if !slices.Equal(dl, fl) {
+		if !fzSameViolations(dl, fl, dp.Omitted, fp.Omitted) {
 			t.Fatalf("%q: as a deepObject %q, as a form %q", raw, dl, fl)
 		}
 	})

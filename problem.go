@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 	"uuid"
 )
 
@@ -24,6 +25,9 @@ type Problem struct {
 	// its log line carries too.
 	Instance string      `json:"instance,omitempty"`
 	Errors   []Violation `json:"errors,omitempty"`
+	// Omitted counts the violations found but not listed in Errors: past
+	// the first 50, or past 16 KiB of listed violations. Zero is left out.
+	Omitted int `json:"omitted,omitzero"`
 }
 
 // ProblemContentType is the media type of a [Problem].
@@ -45,23 +49,84 @@ func WriteProblem(w http.ResponseWriter, status int, detail string) {
 // writeProblem is WriteProblem for geta's own answers. It logs refusals
 // (logRefusal).
 func writeProblem(w http.ResponseWriter, r *http.Request, status int, detail string, errs []Violation) {
-	writeRefusal(w, r, status, detail, detail, errs)
+	writeRefusal(w, r, status, detail, detail, errs, 0)
 }
 
 // writeRefusal is writeProblem that logs logged in place of a detail that
-// holds the request's own values.
-func writeRefusal(w http.ResponseWriter, r *http.Request, status int, detail, logged string, errs []Violation) {
-	logRefusal(r, status, logged, errs)
-	if err := sendProblem(w, plainProblem(status, detail, errs)); err != nil {
+// holds the request's own values. omitted counts violations found past errs;
+// listViolations cuts errs further.
+func writeRefusal(w http.ResponseWriter, r *http.Request, status int, detail, logged string, errs []Violation, omitted int) {
+	errs, omitted = listViolations(errs, omitted)
+	logRefusal(r, status, logged, errs, omitted)
+	p := plainProblem(status, detail, errs)
+	p.Omitted = omitted
+	if err := sendProblem(w, p); err != nil {
 		abortUntaken(r, err)
 	}
 }
 
+// maxViolationBytes bounds the listed violations of a problem, as JSON.
+const maxViolationBytes = 16 << 10
+
+// listViolations returns the violations a problem lists and the count it
+// leaves out: at most maxViolations, each path cut by capPath, and no more
+// than fit in maxViolationBytes, but always the first, so that a refusal
+// names a cause (its path is bounded, and its message quotes at most one
+// value of the request). omitted counts those already left out.
+func listViolations(errs []Violation, omitted int) ([]Violation, int) {
+	size := 0
+	for i := range errs {
+		if i == maxViolations {
+			return errs[:i], omitted + len(errs) - i
+		}
+		errs[i].Path = capPath(errs[i].Path)
+		v := &errs[i]
+		// {"in":"","path":"","message":""} and a comma.
+		size += 33 + jsonStringLen(v.In) + jsonStringLen(v.Path) + jsonStringLen(v.Message)
+		if i > 0 && size > maxViolationBytes {
+			return errs[:i], omitted + len(errs) - i
+		}
+	}
+	return errs, omitted
+}
+
+// jsonStringLen returns the bytes of s as sendProblem writes it in a string,
+// quotes aside: HTML-safe, invalid UTF-8 as U+FFFD. It may overcount.
+func jsonStringLen(s string) int {
+	n := 0
+	for i := 0; i < len(s); {
+		c := s[i]
+		if c < utf8.RuneSelf {
+			switch {
+			case c < 0x20 || c == '<' || c == '>' || c == '&':
+				n += 6 // \u00XX at most
+			case c == '"' || c == '\\':
+				n += 2
+			default:
+				n++
+			}
+			i++
+			continue
+		}
+		r, size := utf8.DecodeRuneInString(s[i:])
+		switch {
+		case r == utf8.RuneError && size == 1:
+			n += 3 // U+FFFD
+		case r == ' ' || r == ' ':
+			n += 6
+		default:
+			n += size
+		}
+		i += size
+	}
+	return n
+}
+
 // logRefusal logs at Debug a 400, 408, 412, 413, 415, 426, or 428 geta
 // answers itself. The line carries the method, route template, status,
-// detail, and the count and locations of violations; never the raw path, a
+// detail, the count and locations of violations, and the count omitted; never the raw path, a
 // value, or a violation's text, which may quote the request.
-func logRefusal(r *http.Request, status int, detail string, errs []Violation) {
+func logRefusal(r *http.Request, status int, detail string, errs []Violation, omitted int) {
 	switch status {
 	case http.StatusBadRequest, http.StatusRequestTimeout, http.StatusPreconditionFailed,
 		http.StatusRequestEntityTooLarge, http.StatusUnsupportedMediaType,
@@ -78,7 +143,7 @@ func logRefusal(r *http.Request, status int, detail string, errs []Violation) {
 	if rc := requestFrom(ctx); rc != nil {
 		method = rc.method
 	}
-	attrs := make([]slog.Attr, 0, 6)
+	attrs := make([]slog.Attr, 0, 7)
 	attrs = append(attrs, slog.String("method", method), routeAttr(ctx), slog.Int("status", status))
 	if detail != "" {
 		attrs = append(attrs, slog.String("detail", detail))
@@ -91,6 +156,9 @@ func logRefusal(r *http.Request, status int, detail string, errs []Violation) {
 			}
 		}
 		attrs = append(attrs, slog.Int("violations", len(errs)), slog.String("in", strings.Join(in, ",")))
+	}
+	if omitted > 0 {
+		attrs = append(attrs, slog.Int("omitted", omitted))
 	}
 	log.LogAttrs(ctx, slog.LevelDebug, "geta: request refused", attrs...)
 }
@@ -180,6 +248,7 @@ func problemSchema() map[string]any {
 					},
 				},
 			},
+			"omitted": map[string]any{"type": "integer", "minimum": 1},
 		},
 	}
 }

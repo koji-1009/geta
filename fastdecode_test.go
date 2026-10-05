@@ -243,7 +243,8 @@ type fastMany struct {
 // It is the body plan's own reference path, which a request reaches.
 func reference(r *registry, c *codec, use *schema, data []byte, limits Limits, dst reflect.Value) []Violation {
 	b := &bodyPlan{c: c, use: use, opts: r.decOpts, defaults: defaultsUnder(c)}
-	return b.reference(jsontext.NewDecoder(bytes.NewReader(data)), data, dst, limits)
+	errs, _ := b.reference(jsontext.NewDecoder(bytes.NewReader(data)), data, dst, limits)
+	return errs
 }
 
 func singlePass(c *codec, use *schema, data []byte, limits Limits, dst reflect.Value) bool {

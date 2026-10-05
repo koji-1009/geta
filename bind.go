@@ -218,7 +218,9 @@ type bindError struct {
 	// logs detail itself.
 	logged string
 	errs   []Violation
-	err    error
+	// omitted counts the violations found past errs (decoder.omitted).
+	omitted int
+	err     error
 }
 
 // write answers the refusal; err must be nil.
@@ -227,7 +229,7 @@ func (be *bindError) write(w http.ResponseWriter, r *http.Request) {
 	if be.logged != "" {
 		logged = be.logged
 	}
-	writeRefusal(w, r, be.status, be.detail, logged, be.errs)
+	writeRefusal(w, r, be.status, be.detail, logged, be.errs, be.omitted)
 }
 
 // bind fills dst from r, collecting every violation. tmp lists the
@@ -243,6 +245,7 @@ func (p *inPlan) bind(w http.ResponseWriter, r *http.Request, dst reflect.Value,
 		query = q
 	}
 	var errs []Violation
+	omitted := 0
 	for _, pp := range p.params {
 		var raw []string
 		switch pp.in {
@@ -250,7 +253,7 @@ func (p *inPlan) bind(w http.ResponseWriter, r *http.Request, dst reflect.Value,
 			raw = []string{r.PathValue(pp.name)}
 		case "query":
 			if pp.deep != nil {
-				errs = pp.bindDeep(query, dst.FieldByIndex(pp.index), limits, errs)
+				errs = pp.bindDeep(query, dst.FieldByIndex(pp.index), limits, errs, &omitted)
 				continue
 			}
 			raw = query[pp.name]
@@ -279,6 +282,7 @@ func (p *inPlan) bind(w http.ResponseWriter, r *http.Request, dst reflect.Value,
 		d := &decoder{limits: limits, in: pp.in}
 		pp.bind(d, raw, field)
 		errs = append(errs, d.errs...)
+		omitted += d.omitted
 	}
 	if p.cond != nil {
 		dst.FieldByIndex(p.cond).Addr().Interface().(*Conditional).method = r.Method
@@ -289,6 +293,7 @@ func (p *inPlan) bind(w http.ResponseWriter, r *http.Request, dst reflect.Value,
 				return be, nil
 			}
 			errs = append(errs, be.errs...)
+			omitted += be.omitted
 		}
 	}
 	if p.form != nil {
@@ -298,6 +303,7 @@ func (p *inPlan) bind(w http.ResponseWriter, r *http.Request, dst reflect.Value,
 				return be, nil
 			}
 			errs = append(errs, be.errs...)
+			omitted += be.omitted
 		}
 		tmp = files
 	}
@@ -307,15 +313,14 @@ func (p *inPlan) bind(w http.ResponseWriter, r *http.Request, dst reflect.Value,
 				return be, nil
 			}
 			errs = append(errs, be.errs...)
+			omitted += be.omitted
 		}
 	}
 	if len(errs) > 0 {
 		removeFiles(tmp)
-		// Each decoder caps its own violations; cap the total too.
-		if len(errs) > maxViolations {
-			errs = errs[:maxViolations]
-		}
-		return &bindError{status: http.StatusBadRequest, detail: "the request does not match its contract", errs: errs}, nil
+		// Each decoder caps its own violations; listViolations caps the
+		// total, counting the rest in omitted.
+		return &bindError{status: http.StatusBadRequest, detail: "the request does not match its contract", errs: errs, omitted: omitted}, nil
 	}
 	return nil, tmp
 }
@@ -422,9 +427,9 @@ func (pp *paramPlan) bind(d *decoder, raw []string, dst reflect.Value) {
 }
 
 // bindDeep binds a deepObject from the query's name[member] keys and
-// returns errs with its violations appended. With no such key, the
-// parameter is absent.
-func (pp *paramPlan) bindDeep(query url.Values, dst reflect.Value, limits Limits, errs []Violation) []Violation {
+// returns errs with its violations appended, adding those it leaves out to
+// omitted. With no such key, the parameter is absent.
+func (pp *paramPlan) bindDeep(query url.Values, dst reflect.Value, limits Limits, errs []Violation, omitted *int) []Violation {
 	fv := &formValues{values: url.Values{}}
 	prefix := pp.name + "["
 	for k, vs := range query {
@@ -440,6 +445,7 @@ func (pp *paramPlan) bindDeep(query url.Values, dst reflect.Value, limits Limits
 	}
 	if be := pp.deep.fill(dst, fv, limits); be != nil {
 		errs = append(errs, be.errs...)
+		*omitted += be.omitted
 	}
 	return errs
 }
@@ -609,9 +615,9 @@ func (b *bodyPlan) bind(w http.ResponseWriter, r *http.Request, dst reflect.Valu
 		// Start over on the reference path, which names every violation.
 		dst.SetZero()
 	}
-	if errs := b.reference(f.reread(data), data, dst, limits); len(errs) > 0 {
+	if errs, omitted := b.reference(f.reread(data), data, dst, limits); len(errs) > 0 {
 		dst.SetZero()
-		return &bindError{status: http.StatusBadRequest, errs: errs}
+		return &bindError{status: http.StatusBadRequest, errs: errs, omitted: omitted}
 	}
 	return nil
 }
@@ -636,9 +642,10 @@ func tooLong(limit int64) *bindError {
 
 // reference reads a body the single pass refused or cannot read: parse
 // (parseJSONFrom), check against the schema, decode (decodeJSON), and fill
-// defaults (applyDefaults). It names every violation. The single pass must
-// accept exactly what this accepts (fastdecode_test.go).
-func (b *bodyPlan) reference(dec *jsontext.Decoder, data []byte, dst reflect.Value, limits Limits) []Violation {
+// defaults (applyDefaults). It names every violation, up to maxViolations,
+// and counts the rest. The single pass must accept exactly what this
+// accepts (fastdecode_test.go).
+func (b *bodyPlan) reference(dec *jsontext.Decoder, data []byte, dst reflect.Value, limits Limits) (errs []Violation, omitted int) {
 	// dec's offsets index data (spellings).
 	var sp *spellings
 	if b.defaults != nil {
@@ -646,12 +653,12 @@ func (b *bodyPlan) reference(dec *jsontext.Decoder, data []byte, dst reflect.Val
 	}
 	tree, err := parseJSONFrom(dec, limits.MaxDepth, sp)
 	if err != nil {
-		return []Violation{{In: "body", Path: "$", Message: err.Error()}}
+		return []Violation{{In: "body", Path: "$", Message: err.Error()}}, 0
 	}
 	d := &decoder{limits: limits, in: "body"}
 	d.check(b.c, b.use, tree, "$")
 	if len(d.errs) > 0 {
-		return d.errs
+		return d.errs, d.omitted
 	}
 	target := dst
 	if b.optional {
@@ -663,7 +670,7 @@ func (b *bodyPlan) reference(dec *jsontext.Decoder, data []byte, dst reflect.Val
 	if len(d.errs) == 0 && b.defaults != nil {
 		applyDefaults(b.c, tree, target, b.defaults, b.opts, sp)
 	}
-	return d.errs
+	return d.errs, d.omitted
 }
 
 var jsonNumberSyntax = regexp.MustCompile(`^-?(0|[1-9][0-9]*)(\.[0-9]+)?([eE][+-]?[0-9]+)?$`)

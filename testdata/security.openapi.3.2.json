@@ -32,6 +32,10 @@
             "format": "uri-reference",
             "type": "string"
           },
+          "omitted": {
+            "minimum": 1,
+            "type": "integer"
+          },
           "status": {
             "type": "integer"
           },

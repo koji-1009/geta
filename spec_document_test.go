@@ -181,7 +181,7 @@ func TestNoTitleIsWritten(t *testing.T) {
 // writes them.
 func TestTheProblemComponent(t *testing.T) {
 	m := doc(t, accepts(t, one("/x", get(okHandler))))
-	if got := compact(t, at(t, m, "components", "schemas", "Problem")); got != `{"properties":{"detail":{"type":"string"},"errors":{"items":{"properties":{"in":{"type":"string"},"message":{"type":"string"},"path":{"type":"string"}},"required":["in","path","message"],"type":"object"},"type":"array"},"instance":{"format":"uri-reference","type":"string"},"status":{"type":"integer"},"title":{"type":"string"},"type":{"format":"uri-reference","type":"string"}},"required":["type","title","status"],"type":"object"}` {
+	if got := compact(t, at(t, m, "components", "schemas", "Problem")); got != `{"properties":{"detail":{"type":"string"},"errors":{"items":{"properties":{"in":{"type":"string"},"message":{"type":"string"},"path":{"type":"string"}},"required":["in","path","message"],"type":"object"},"type":"array"},"instance":{"format":"uri-reference","type":"string"},"omitted":{"minimum":1,"type":"integer"},"status":{"type":"integer"},"title":{"type":"string"},"type":{"format":"uri-reference","type":"string"}},"required":["type","title","status"],"type":"object"}` {
 		t.Error(got)
 	}
 }

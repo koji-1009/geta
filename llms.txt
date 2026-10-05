@@ -373,6 +373,7 @@ func (h Handler) Delete(ctx context.Context, in *DeleteIn) error {
 - Bounds looser than a fixed-size integer's or float32's range are documented as that range.
 - `enum` takes strings, integers, and numbers. Number members are JSON numbers (`enum=1|2|3`, `enum=0.5|1.5`), documented as given. Request numbers match by exact value (`1.50` is `1.5`, and `9007199254740992` is not `9007199254740993`). `geta.New` fails a member that is not a JSON number of the type (`1.0`, `01`, or `+1` on an integer), is past the Go type's range, is held by a float as another number, is outside the field's bounds or `multipleOf`, or is a string that the field's `format` or the text type's `UnmarshalText` refuses (`enum=foo` on `geta.Date`).
 - Violations come in one 400 that lists them all, parameters first and then the body, 50 at most. A 413 or 415 for the body is answered alone, without parameter violations.
+- The list is bounded in bytes too, since a request chooses its paths and quoted values. A path longer than 256 bytes keeps its end, from a rune boundary, after `…` (`…kkk.v07`). The listed violations stop before 16 KiB of JSON, though the first is always listed. The problem's `omitted` member counts the violations found but not listed, past 50 or past 16 KiB; it is absent when none were. A problem under both bounds is unchanged.
 
 ### Element, value, and key keywords
 
@@ -662,14 +663,14 @@ func (h Handler) Put(ctx context.Context, in *PutIn) (*Tagged, error) {
 - Every 500 (unmatched error, panic, verifier defect) carries `instance: "urn:uuid:..."`, also in its log line.
 - Logged 500 whatever the rows (catch-all `OnAs[error]` included): nil output with nil error; `Conditional.Check` given an etag not one entity tag; `*geta.PreconditionError` from an operation not answering it.
 - `context.DeadlineExceeded`: 504, documented on every operation (geta's `options` operation only where a root middleware answers one); likewise a derived context's `context.Canceled` after the request deadline passed. `context.Canceled` with the client gone writes nothing. Judged before rows: a row for `context.DeadlineExceeded` (wrapped or not) fails `geta.New`. `context.Canceled` with the request alive (handler cancelled its own context) reaches the rows.
-- Bodies: RFC 9457 `application/problem+json` (`geta.Problem`). Middleware answering itself uses `geta.WriteProblem(w, status, detail)`; non-UTF-8 detail bytes become U+FFFD.
+- Bodies: RFC 9457 `application/problem+json` (`geta.Problem`): `type`, `title`, `status`, `detail`, `instance`, and for a 400 of violations `errors` (each `in`, `path`, `message`) and `omitted` (the count not listed, at least 1, absent at 0). Middleware answering itself uses `geta.WriteProblem(w, status, detail)`; non-UTF-8 detail bytes become U+FFFD.
 
 ### Problems that carry the error's data: `geta.OnAsProblem`
 
 - `geta.OnAsProblem(status, detail, func(e *store.QuotaError) Quota {...})`: the function lives in the route; the error type stays HTTP-free.
 - The returned P is written as an output. A plain struct's JSON members, or an envelope's `body:"json"` struct's, are RFC 9457 extension members beside `type`/`title`/`status`. Member `detail` (string; nil `*string` keeps the row's) is the problem's detail. Envelope `header` fields (``RetryAfter int `header:"Retry-After"` ``) are response headers. Nothing of `err.Error()` is sent.
 - Documented on that status: `allOf` Problem plus an open object of the members, in place (P is a component only if a request or response refers to it); `anyOf` with Problem where other causes share the status; a header required only where every cause sets it. CORS exposes the headers.
-- Refused by `geta.New` and getavet: non-struct P or body; members `type`, `title`, `status`, `instance`, `errors`; non-string `detail`; cookie, status, or raw body field; two schemas for one header on a status; no function.
+- Refused by `geta.New` and getavet: non-struct P or body; members `type`, `title`, `status`, `instance`, `errors`, `omitted`; non-string `detail`; cookie, status, or raw body field; two schemas for one header on a status; no function.
 - Unwritable description (header no header carries, required sealed member nil, member not encoding): logged 500, none of its headers.
 - Read back: `getaclient.ProblemAs[Quota](err)` (and `Error.Header`), getatest `res.ProblemAs[Quota]()`. `res.Problem()` ignores extension members.
 
@@ -737,7 +738,7 @@ func Scope(env Env) geta.Scope {
 - `geta.Recover(log)`: panic (`Key.Must` included) becomes 500 with logged stack and CORS headers. Panic after the response started (streamed body included): logged, connection aborted. `http.ErrAbortHandler` passes unchanged.
 - `geta.ConcurrencyLimit(n)`: sheds with 503, no `Retry-After`, documented. Slots freed on return and panic; every nested limit's slot freed when a stream starts or a connection switches.
 - `geta.AccessLog(log)`: logs method and route template served (after root rewrite), never the raw path, and status sent (net/http's 200 when nothing wrote). Streams and upgrades marked. A passing panic (`http.ErrAbortHandler`, or uncaught by an inner `Recover`): logged `aborted=true` with the status written before it (500 if none), and goes on unchanged. An inner `Recover`'s 500 logs as any status.
-- geta's own client errors (400 of binding, precondition list, or asterisk form; 408; `Conditional`'s 412, 428; 413; 415; 426): logged at Debug on the App's logger (`WithLogger`, else `slog.Default()`) as "geta: request refused" with `method`, `route`, `status`, `detail`, plus for violations `violations` (count) and `in` (places, e.g. `query,body`). No request values or violation text. Not logged: 404, 405, middleware answers, 5xx. A defect's 500 logs at Error.
+- geta's own client errors (400 of binding, precondition list, or asterisk form; 408; `Conditional`'s 412, 428; 413; 415; 426): logged at Debug on the App's logger (`WithLogger`, else `slog.Default()`) as "geta: request refused" with `method`, `route`, `status`, `detail`, plus for violations `violations` (count listed), `in` (places, e.g. `query,body`), and `omitted` (count not listed, when any). No request values or violation text. Not logged: 404, 405, middleware answers, 5xx. A defect's 500 logs at Error.
 - `AccessLog`, `Recover`, `ETag`, `Compress` writers unwrap: `http.ResponseController`'s `SetWriteDeadline`, `SetReadDeadline`, `EnableFullDuplex` reach the server's writer.
 
 ### CORS

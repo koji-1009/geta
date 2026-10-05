@@ -578,7 +578,7 @@ func (p *formPlan) fill(dst reflect.Value, fv *formValues, limits Limits) *bindE
 	}
 	if len(d.errs) > 0 {
 		dst.SetZero()
-		return &bindError{status: http.StatusBadRequest, errs: d.errs}
+		return &bindError{status: http.StatusBadRequest, errs: d.errs, omitted: d.omitted}
 	}
 	return nil
 }
