@@ -1,6 +1,7 @@
 package geta
 
 import (
+	"bytes"
 	"encoding/json/jsontext"
 	"encoding/json/v2"
 	"errors"
@@ -8,6 +9,7 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 // Variant is one case of a sealed type: a struct type and the discriminator
@@ -67,31 +69,197 @@ func Sealed[T any](discriminator string, cases ...Variant) Union {
 		}
 		return errors.ErrUnsupported
 	})
+	s := &sealedReader{t: u.t, disc: discriminator, types: types}
 	u.dec = json.UnmarshalFromFunc(func(dec *jsontext.Decoder, v *T) error {
-		raw, err := dec.ReadValue()
+		x, err := s.read(dec)
 		if err != nil {
 			return err
 		}
-		var members map[string]jsontext.Value
-		if err := json.Unmarshal(raw, &members); err != nil {
-			return err
-		}
-		var tag string
-		if err := json.Unmarshal(members[discriminator], &tag); err != nil {
-			return fmt.Errorf("%s: discriminator must be a string", discriminator)
-		}
-		vt, ok := types[tag]
-		if !ok {
-			return fmt.Errorf("%s: unknown %s %q", discriminator, u.t.Name(), tag)
-		}
-		nv := reflect.New(vt)
-		if err := json.Unmarshal(raw, nv.Interface(), dec.Options()); err != nil {
-			return err
-		}
-		*v = nv.Elem().Interface().(T)
+		*v = x.(T)
 		return nil
 	})
 	return u
+}
+
+// A sealedReader reads a sealed type's values (Sealed's unmarshaler).
+type sealedReader struct {
+	t     reflect.Type // the interface
+	disc  string
+	types map[string]reflect.Type
+}
+
+// read reads the next value of dec as the variant its discriminator selects.
+//
+// Reading the object whole, finding the discriminator, and reading the
+// object again (whole) costs, for sealed values nested in one another, time
+// proportional to the depth times the input. So where it can, read checks
+// the outermost sealed object once, finds each discriminator with a
+// lookahead, and reads each variant from dec itself. An error is then
+// reported at the offset and pointer whole reports it at: relative to the
+// sealed object whose variant was being read.
+func (s *sealedReader) read(dec *jsontext.Decoder) (any, error) {
+	st, nested := sealedStates.Load(dec)
+	if !nested {
+		st = s.begin(dec)
+		if st == nil {
+			return s.whole(dec, nil)
+		}
+		defer sealedStates.Delete(dec)
+	}
+	return s.stream(dec, st.(*sealedState))
+}
+
+// sealedStates holds, for a decoder inside an outermost sealed object read
+// by sealedReader.stream, what the reads of the sealed values in it share.
+var sealedStates sync.Map // *jsontext.Decoder → *sealedState
+
+type sealedState struct {
+	ahead lookahead
+	// levels are the sealed objects being read, outermost first: the offset
+	// of each one's '{' and the depth of dec before it.
+	levels []sealedLevel
+	// final is the error last made relative; the sealed objects around it
+	// pass it on as it is.
+	final error
+}
+
+type sealedLevel struct{ start, depth int }
+
+// begin checks that the object dec is about to read is valid JSON as dec
+// would read it, all in dec's buffer, and returns the state of the reads in
+// it; nil when it cannot tell, and whole reads the value instead.
+func (s *sealedReader) begin(dec *jsontext.Decoder) any {
+	if dec.PeekKind() != '{' {
+		return nil
+	}
+	// whole reads the members into a map with default options, which
+	// refuse what these allow.
+	opts := dec.Options()
+	if v, _ := json.GetOption(opts, jsontext.AllowDuplicateNames); v {
+		return nil
+	}
+	if v, _ := json.GetOption(opts, jsontext.AllowInvalidUTF8); v {
+		return nil
+	}
+	buf := dec.UnreadBuffer()
+	i := bytes.IndexByte(buf, '{')
+	if i < 0 {
+		return nil
+	}
+	raw, err := jsontext.NewDecoder(bytes.NewReader(buf[i:])).ReadValue()
+	// dec refuses nesting past jsontext's ceiling of 10000, counted from its
+	// own root.
+	if err != nil || dec.StackDepth()+nesting(raw) >= 9990 {
+		return nil
+	}
+	st := new(sealedState)
+	sealedStates.Store(dec, st)
+	return st
+}
+
+// stream reads the sealed object dec is about to read, inside the object
+// begin checked, as the variant its discriminator selects, from dec itself.
+func (s *sealedReader) stream(dec *jsontext.Decoder, st *sealedState) (any, error) {
+	if dec.PeekKind() != '{' {
+		return s.whole(dec, st) // whole reports why
+	}
+	buf, base := dec.UnreadBuffer(), int(dec.InputOffset())
+	tag, ok := st.ahead.tag(buf, base, 0, s.disc)
+	vt := s.types[string(tag)]
+	if !ok || vt == nil {
+		return s.whole(dec, st) // whole reports why
+	}
+	level := sealedLevel{base + bytes.IndexByte(buf, '{'), dec.StackDepth()}
+	st.levels = append(st.levels, level)
+	nv := reflect.New(vt)
+	err := json.UnmarshalDecode(dec, nv.Interface())
+	st.levels = st.levels[:len(st.levels)-1]
+	if err != nil {
+		return nil, st.relative(err, level)
+	}
+	return nv.Elem().Interface(), nil
+}
+
+// relative makes err, from reading the variant of the sealed object at
+// level, relative to that object, as whole reports it, unless a sealed
+// object inside already did.
+func (st *sealedState) relative(err error, level sealedLevel) error {
+	if err == st.final {
+		return err
+	}
+	var parent sealedLevel // the decoder's root for the outermost
+	if n := len(st.levels); n > 0 {
+		parent = st.levels[n-1]
+	}
+	switch e := err.(type) {
+	case *json.SemanticError:
+		e.ByteOffset, e.JSONPointer = relativeTo(e.ByteOffset, e.JSONPointer, level, parent)
+	case *jsontext.SyntacticError:
+		e.ByteOffset, e.JSONPointer = relativeTo(e.ByteOffset, e.JSONPointer, level, parent)
+	default:
+		return err
+	}
+	st.final = err
+	return err
+}
+
+// relativeTo returns the offset and pointer of an error at off and ptr in
+// the input relative to the sealed object at level. Where the relative
+// offset is 0 or the pointer empty, the error is at the object itself, and
+// v2 positions it in the sealed object around it, parent.
+func relativeTo(off int64, ptr jsontext.Pointer, level, parent sealedLevel) (int64, jsontext.Pointer) {
+	rel := off - int64(level.start)
+	if rel == 0 {
+		rel = int64(level.start - parent.start)
+	}
+	p := trimPointer(ptr, level.depth)
+	if p == "" {
+		p = trimPointer(ptr, parent.depth)
+	}
+	return rel, p
+}
+
+// trimPointer drops the first n reference tokens of p.
+func trimPointer(p jsontext.Pointer, n int) jsontext.Pointer {
+	for range n {
+		i := strings.IndexByte(string(p[min(1, len(p)):]), '/')
+		if i < 0 {
+			return ""
+		}
+		p = p[i+1:]
+	}
+	return p
+}
+
+// whole reads the next value of dec whole, finds its discriminator, and
+// reads the value again as the variant it selects. Inside an object begin
+// checked (st non-nil), an error from reading the variant is already
+// relative to it.
+func (s *sealedReader) whole(dec *jsontext.Decoder, st *sealedState) (any, error) {
+	raw, err := dec.ReadValue()
+	if err != nil {
+		return nil, err
+	}
+	var members map[string]jsontext.Value
+	if err := json.Unmarshal(raw, &members); err != nil {
+		return nil, err
+	}
+	var tag string
+	if err := json.Unmarshal(members[s.disc], &tag); err != nil {
+		return nil, fmt.Errorf("%s: discriminator must be a string", s.disc)
+	}
+	vt, ok := s.types[tag]
+	if !ok {
+		return nil, fmt.Errorf("%s: unknown %s %q", s.disc, s.t.Name(), tag)
+	}
+	nv := reflect.New(vt)
+	if err := json.Unmarshal(raw, nv.Interface(), dec.Options()); err != nil {
+		if st != nil {
+			st.final = err
+		}
+		return nil, err
+	}
+	return nv.Elem().Interface(), nil
 }
 
 // JSONOptions returns the encoding/json/v2 options that read and write the
@@ -229,25 +397,25 @@ func (r *registry) unionOptions() (enc, dec json.Options) {
 }
 
 // checkOneOf validates v against the variant its discriminator selects.
-func (d *decoder) checkOneOf(c *codec, v any, path string) {
+func (d *decoder) checkOneOf(c *codec, v any, p *vpath) {
 	m, ok := v.(map[string]any)
 	if !ok {
-		d.fail(path, "expected object, got %s", jsonType(v))
+		d.failAt(p, "expected object, got %s", jsonType(v))
 		return
 	}
 	raw, ok := m[c.disc]
 	if !ok {
-		d.fail(path+"."+c.disc, "missing required member")
+		d.failAt(p.member(c.disc), "missing required member")
 		return
 	}
 	tag, ok := raw.(string)
 	if !ok {
-		d.fail(path+"."+c.disc, "discriminator must be a string")
+		d.failAt(p.member(c.disc), "discriminator must be a string")
 		return
 	}
 	for _, vc := range c.variants {
 		if vc.tag == tag {
-			d.check(vc.c, vc.c.use(), v, path)
+			d.checkAt(vc.c, vc.c.use(), v, p)
 			return
 		}
 	}
@@ -255,7 +423,7 @@ func (d *decoder) checkOneOf(c *codec, v any, path string) {
 	for i, vc := range c.variants {
 		tags[i] = vc.tag
 	}
-	d.fail(path+"."+c.disc, "unknown %s %q; one of %s", c.t.Name(), tag, strings.Join(tags, ", "))
+	d.failAt(p.member(c.disc), "unknown %s %q; one of %s", c.t.Name(), tag, strings.Join(tags, ", "))
 }
 
 // hasUnion reports whether a value of c can hold a sealed type.

@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"cmp"
 	"encoding/base64"
+	"encoding/binary"
 	"encoding/json/jsontext"
 	"encoding/json/v2"
 	"errors"
 	"fmt"
+	"hash/maphash"
 	"maps"
 	"math"
 	"reflect"
@@ -124,6 +126,9 @@ type decoder struct {
 	// written is set when checking a response (Conforms); the pattern
 	// ceiling does not apply.
 	written bool
+	// hashes holds the hashes of the values uniqueItems compares
+	// (duplicate), made at the first such array.
+	hashes *hashMemo
 }
 
 // unbounded are the limits a response is checked under (Conforms).
@@ -135,22 +140,74 @@ func (d *decoder) fail(path, format string, args ...any) {
 	}
 }
 
+// failAt is fail at p, rendering p only for a violation that is kept.
+func (d *decoder) failAt(p *vpath, format string, args ...any) {
+	if len(d.errs) < maxViolations {
+		d.errs = append(d.errs, Violation{In: d.in, Path: p.String(), Message: fmt.Sprintf(format, args...)})
+	}
+}
+
+// A vpath is the path of the value check is at, such as $.a[0]. It is
+// rendered only for a violation that is kept: rendering it at every value
+// would cost its length there, and a path grows with the nesting and with
+// the member names a request chooses, so a body would cost depth × length.
+type vpath struct {
+	up    *vpath
+	name  string // a member's name; the whole path when up is nil
+	index int    // an element's index, or -1 for a member
+}
+
+// rootPath is the vpath of a value whose path is path.
+func rootPath(path string) *vpath { return &vpath{name: path, index: -1} }
+
+// member is the path of p's member name: path + "." + name.
+func (p *vpath) member(name string) *vpath { return &vpath{up: p, name: name, index: -1} }
+
+// item is the path of p's element i: path + "[i]".
+func (p *vpath) item(i int) *vpath { return &vpath{up: p, index: i} }
+
+func (p *vpath) String() string {
+	var steps []*vpath
+	root := p
+	for ; root.up != nil; root = root.up {
+		steps = append(steps, root)
+	}
+	var b strings.Builder
+	b.WriteString(root.name)
+	for i := len(steps) - 1; i >= 0; i-- {
+		if s := steps[i]; s.index < 0 {
+			b.WriteByte('.')
+			b.WriteString(s.name)
+		} else {
+			b.WriteByte('[')
+			b.WriteString(strconv.Itoa(s.index))
+			b.WriteByte(']')
+		}
+	}
+	return b.String()
+}
+
 // check validates the parsed value v against s and c: type, required
 // members, nulls, unknown members, and every schema keyword, including what
 // v2 would silently accept (a missing member, an unwanted null). s is the
 // schema at this use site; a reference resolves to c's own. The recursion
 // depth is bounded by v's nesting, which its parser bounded.
 func (d *decoder) check(c *codec, s *schema, v any, path string) {
+	d.checkAt(c, s, v, rootPath(path))
+}
+
+// checkAt is check at the path p.
+func (d *decoder) checkAt(c *codec, s *schema, v any, p *vpath) {
 	if s.Ref != "" {
 		s = c.schema
 	}
 	if c.kind == kOneOf {
-		d.checkOneOf(c, v, path)
+		d.checkOneOf(c, v, p)
 		return
 	}
 	if c.kind == kNull {
 		if v != nil {
-			d.check(c.elem, s, v, path)
+			d.checkAt(c.elem, s, v, p)
 		}
 		return
 	}
@@ -160,15 +217,15 @@ func (d *decoder) check(c *codec, s *schema, v any, path string) {
 	want := s.Type
 	got := jsonType(v)
 	if got != want && !(want == "number" && got == "integer") {
-		d.fail(path, "expected %s, got %s", want, got)
+		d.failAt(p, "expected %s, got %s", want, got)
 		return
 	}
 	switch c.kind {
 	case kString:
-		d.str(s, v.(string), path)
+		d.text(s, v.(string), p, "string", "")
 	case kText:
 		str := v.(string)
-		if !d.str(s, str, path) {
+		if !d.text(s, str, p, "string", "") {
 			return
 		}
 		if err := unmarshalText(reflect.New(c.t).Interface(), []byte(str)); err != nil {
@@ -176,81 +233,82 @@ func (d *decoder) check(c *codec, s *schema, v any, path string) {
 			if what == "" {
 				what = c.t.Name()
 			}
-			d.fail(path, "%q is not a valid %s", str, what)
+			d.failAt(p, "%q is not a valid %s", str, what)
 		}
 	case kBytes:
 		str := v.(string)
-		if !d.str(s, str, path) {
+		if !d.text(s, str, p, "string", "") {
 			return
 		}
 		if _, err := base64.StdEncoding.DecodeString(str); err != nil {
-			d.fail(path, "%q is not valid base64", str)
+			d.failAt(p, "%q is not valid base64", str)
 		}
 	case kInt:
 		lit := string(v.(number))
 		n, err := strconv.ParseInt(lit, 10, c.t.Bits())
 		if err != nil {
-			d.fail(path, "%s is out of range for %s", lit, c.t.Kind())
+			d.failAt(p, "%s is out of range for %s", lit, c.t.Kind())
 			return
 		}
-		d.num(s, float64(n), lit, path)
+		d.num(s, float64(n), lit, p)
 	case kUint:
 		lit := string(v.(number))
 		n, err := strconv.ParseUint(lit, 10, c.t.Bits())
 		if err != nil {
-			d.fail(path, "%s is out of range for %s", lit, c.t.Kind())
+			d.failAt(p, "%s is out of range for %s", lit, c.t.Kind())
 			return
 		}
-		d.num(s, float64(n), lit, path)
+		d.num(s, float64(n), lit, p)
 	case kFloat:
 		lit := string(v.(number))
 		_, f, err := parseFloat(lit, c.t.Bits())
 		if err != nil {
-			d.fail(path, "%s is out of range for %s", lit, c.t.Kind())
+			d.failAt(p, "%s is out of range for %s", lit, c.t.Kind())
 			return
 		}
-		d.num(s, f, lit, path)
+		d.num(s, f, lit, p)
 	case kJSON:
 		// The declared keywords; UnmarshalJSON judges the rest (decodeJSON).
 		switch s.Type {
 		case "string":
-			d.str(s, v.(string), path)
+			d.text(s, v.(string), p, "string", "")
 		case "integer", "number":
 			lit := string(v.(number))
 			f, err := strconv.ParseFloat(lit, 64)
 			if err != nil {
-				d.fail(path, "%s is out of range", lit)
+				d.failAt(p, "%s is out of range", lit)
 				return
 			}
-			d.num(s, f, lit, path)
+			d.num(s, f, lit, p)
 		case "array":
-			d.array(s, v.([]any), path)
+			d.array(s, v.([]any), p)
 		case "object":
 			// Member count and names are checked as a map's are.
 			m := v.(map[string]any)
-			if d.objectLen(s, len(m), path) {
+			if d.objectLen(s, len(m), p) {
 				for _, k := range slices.Sorted(maps.Keys(m)) {
-					d.key(s, k, path+"."+k)
+					d.key(s, k, p.member(k))
 				}
 			}
 		}
 	case kSlice:
 		a := v.([]any)
-		if !d.array(s, a, path) {
+		if !d.array(s, a, p) {
 			return
 		}
 		for i, el := range a {
-			d.check(c.elem, s.Items, el, fmt.Sprintf("%s[%d]", path, i))
+			d.checkAt(c.elem, s.Items, el, p.item(i))
 		}
 	case kMap:
 		m := v.(map[string]any)
-		if !d.objectLen(s, len(m), path) {
+		if !d.objectLen(s, len(m), p) {
 			return
 		}
 		// A value is checked only if its key passes.
 		for _, k := range slices.Sorted(maps.Keys(m)) {
-			if d.key(s, k, path+"."+k) && d.keyText(c.key, k, path+"."+k) {
-				d.check(c.elem, s.Additional, m[k], path+"."+k)
+			kp := p.member(k)
+			if d.key(s, k, kp) && d.keyText(c.key, k, kp) {
+				d.checkAt(c.elem, s.Additional, m[k], kp)
 			}
 		}
 	case kStruct:
@@ -259,16 +317,16 @@ func (d *decoder) check(c *codec, s *schema, v any, path string) {
 		for _, f := range c.fields {
 			known[f.json] = true
 			fv, ok := m[f.json]
-			fpath := path + "." + f.json
+			fp := p.member(f.json)
 			if !ok {
 				// A request may omit a member with a default (applyDefaults);
 				// a response may not.
 				if !f.optional && (f.use.Default == nil || d.written) {
-					d.fail(fpath, "missing required member")
+					d.failAt(fp, "missing required member")
 				}
 				continue
 			}
-			d.check(f.c, f.use, fv, fpath)
+			d.checkAt(f.c, f.use, fv, fp)
 		}
 		var unknown []string
 		for k := range m {
@@ -278,7 +336,7 @@ func (d *decoder) check(c *codec, s *schema, v any, path string) {
 		}
 		slices.Sort(unknown)
 		for _, k := range unknown {
-			d.fail(path+"."+k, "unknown member")
+			d.failAt(p.member(k), "unknown member")
 		}
 	}
 }
@@ -431,18 +489,20 @@ func defaultsUnder(c *codec) map[*codec]bool {
 }
 
 // str checks the string keywords. It reports whether the value passed.
-func (d *decoder) str(s *schema, v, path string) bool { return d.text(s, v, path, "string", "") }
+func (d *decoder) str(s *schema, v, path string) bool {
+	return d.text(s, v, rootPath(path), "string", "")
+}
 
 // key checks a map's or WithSchema object's member name k against the keys'
 // schema (schema.keys). It reports whether the key passed.
-func (d *decoder) key(s *schema, k, path string) bool {
-	return d.text(s.keys(), k, path, "key", "key ")
+func (d *decoder) key(s *schema, k string, p *vpath) bool {
+	return d.text(s.keys(), k, p, "key", "key ")
 }
 
 // keyText checks a map key k of a text type (codec kc) with the type's
 // UnmarshalText, as check does for a value. It reports whether the key
 // passed.
-func (d *decoder) keyText(kc *codec, k, path string) bool {
+func (d *decoder) keyText(kc *codec, k string, p *vpath) bool {
 	if kc == nil || kc.kind != kText {
 		return true
 	}
@@ -451,7 +511,7 @@ func (d *decoder) keyText(kc *codec, k, path string) bool {
 		if what == "" {
 			what = kc.t.Name()
 		}
-		d.fail(path, "key %q is not a valid %s", k, what)
+		d.failAt(p, "key %q is not a valid %s", k, what)
 		return false
 	}
 	return true
@@ -459,45 +519,45 @@ func (d *decoder) keyText(kc *codec, k, path string) bool {
 
 // text implements str and key. what names the thing in length messages, and
 // lead prefixes the quoted value.
-func (d *decoder) text(s *schema, v, path, what, lead string) bool {
+func (d *decoder) text(s *schema, v string, p *vpath, what, lead string) bool {
 	// A body's strings are valid UTF-8 already; parameter text may not be.
 	if !utf8.ValidString(v) {
-		d.fail(path, "the text is not valid UTF-8")
+		d.failAt(p, "the text is not valid UTF-8")
 		return false
 	}
 	n := utf8.RuneCountInString(v)
 	switch {
 	case s.MaxLength != nil && n > *s.MaxLength:
-		d.fail(path, "%s length %d exceeds maxLength %d", what, n, *s.MaxLength)
+		d.failAt(p, "%s length %d exceeds maxLength %d", what, n, *s.MaxLength)
 		return false
 	case s.MaxLength == nil && n > d.limits.MaxStringLength:
-		d.fail(path, "%s length %d exceeds the ceiling of %d code points", what, n, d.limits.MaxStringLength)
+		d.failAt(p, "%s length %d exceeds the ceiling of %d code points", what, n, d.limits.MaxStringLength)
 		return false
 	case s.MinLength != nil && n < *s.MinLength:
-		d.fail(path, "%s length %d is shorter than minLength %d", what, n, *s.MinLength)
+		d.failAt(p, "%s length %d is shorter than minLength %d", what, n, *s.MinLength)
 		return false
 	}
 	if len(s.Enum) > 0 && !slices.Contains(s.Enum, v) {
-		d.fail(path, "%s%q is not one of %s", lead, v, strings.Join(s.Enum, ", "))
+		d.failAt(p, "%s%q is not one of %s", lead, v, strings.Join(s.Enum, ", "))
 		return false
 	}
 	if !s.validFormat(v) {
-		d.fail(path, "%s%q is not a valid %s", lead, v, s.Format)
+		d.failAt(p, "%s%q is not a valid %s", lead, v, s.Format)
 		return false
 	}
 	if s.re != nil {
 		if n > patternCeiling && !d.written {
-			d.fail(path, "%s length %d exceeds the pattern-validation ceiling of %d code points", what, n, patternCeiling)
+			d.failAt(p, "%s length %d exceeds the pattern-validation ceiling of %d code points", what, n, patternCeiling)
 			return false
 		}
 		if !s.re.MatchString(v) {
-			d.fail(path, "%s%q does not match pattern %s", lead, v, s.Pattern)
+			d.failAt(p, "%s%q does not match pattern %s", lead, v, s.Pattern)
 			return false
 		}
 	}
-	for _, p := range s.implied {
-		if !p.holds(v) {
-			d.fail(path, "%s%q %s", lead, v, p.why)
+	for _, ip := range s.implied {
+		if !ip.holds(v) {
+			d.failAt(p, "%s%q %s", lead, v, ip.why)
 			return false
 		}
 	}
@@ -512,30 +572,30 @@ func (s *schema) validFormat(v string) bool {
 
 // num checks the numeric keywords. lit is the value as written, and f the
 // float64 nearest it, whatever the target Go type.
-func (d *decoder) num(s *schema, f float64, lit, path string) bool {
+func (d *decoder) num(s *schema, f float64, lit string, p *vpath) bool {
 	ok := true
 	if s.Minimum != nil && cmpNum(lit, f, *s.Minimum) < 0 {
-		d.fail(path, "%s is less than minimum %s", lit, fmtNum(*s.Minimum))
+		d.failAt(p, "%s is less than minimum %s", lit, fmtNum(*s.Minimum))
 		ok = false
 	}
 	if s.Maximum != nil && cmpNum(lit, f, *s.Maximum) > 0 {
-		d.fail(path, "%s is greater than maximum %s", lit, fmtNum(*s.Maximum))
+		d.failAt(p, "%s is greater than maximum %s", lit, fmtNum(*s.Maximum))
 		ok = false
 	}
 	if s.ExclusiveMinimum != nil && cmpNum(lit, f, *s.ExclusiveMinimum) <= 0 {
-		d.fail(path, "%s is not greater than exclusiveMinimum %s", lit, fmtNum(*s.ExclusiveMinimum))
+		d.failAt(p, "%s is not greater than exclusiveMinimum %s", lit, fmtNum(*s.ExclusiveMinimum))
 		ok = false
 	}
 	if s.ExclusiveMaximum != nil && cmpNum(lit, f, *s.ExclusiveMaximum) >= 0 {
-		d.fail(path, "%s is not less than exclusiveMaximum %s", lit, fmtNum(*s.ExclusiveMaximum))
+		d.failAt(p, "%s is not less than exclusiveMaximum %s", lit, fmtNum(*s.ExclusiveMaximum))
 		ok = false
 	}
 	if s.MultipleOf != nil && !isMultiple(lit, *s.MultipleOf) {
-		d.fail(path, "%s is not a multiple of %s", lit, fmtNum(*s.MultipleOf))
+		d.failAt(p, "%s is not a multiple of %s", lit, fmtNum(*s.MultipleOf))
 		ok = false
 	}
 	if len(s.numEnum) > 0 && !s.inNumEnum(lit) {
-		d.fail(path, "%s is not one of %s", lit, strings.Join(s.Enum, ", "))
+		d.failAt(p, "%s is not one of %s", lit, strings.Join(s.Enum, ", "))
 		ok = false
 	}
 	return ok
@@ -778,36 +838,206 @@ func (d decimal) exactExp(b []byte) []byte {
 
 // array checks the array keywords and reports whether to check the
 // elements: false only for an array past its upper bound.
-func (d *decoder) array(s *schema, a []any, path string) bool {
-	if !d.arrayLen(s, len(a), path) {
+func (d *decoder) array(s *schema, a []any, p *vpath) bool {
+	if !d.arrayLenAt(s, len(a), p) {
 		return false
 	}
 	if s.UniqueItems {
-		seen := make(map[string]int, len(a))
-		for i, el := range a {
-			k := canonical(el)
-			if j, dup := seen[k]; dup {
-				d.fail(path, "array items at [%d] and [%d] are equal (uniqueItems)", j, i)
-				break
-			}
-			seen[k] = i
+		if d.hashes == nil {
+			d.hashes = &hashMemo{arrays: map[*any]uint64{}, objects: map[uintptr]uint64{}}
+		}
+		if j, i, dup := duplicate(a, d.hashes); dup {
+			d.failAt(p, "array items at [%d] and [%d] are equal (uniqueItems)", j, i)
 		}
 	}
 	return true
 }
 
+// duplicate finds the first element of a equal to an earlier one, as
+// canonical compares them, and the first such earlier one. Elements are told
+// apart by valueHash, and canonical decides a match, so an array nested in
+// a's elements is hashed once (memo) rather than rendered again for each
+// enclosing uniqueItems array.
+func duplicate(a []any, memo *hashMemo) (j, i int, dup bool) {
+	seen := make(map[uint64]int, len(a))
+	for i, el := range a {
+		h := valueHash(el, memo)
+		j, ok := seen[h]
+		if !ok {
+			seen[h] = i
+			continue
+		}
+		if canonical(a[j]) == canonical(el) {
+			return j, i, true
+		}
+		return duplicateExact(a) // two values share a hash
+	}
+	return 0, 0, false
+}
+
+// duplicateExact is duplicate by canonical alone.
+func duplicateExact(a []any) (j, i int, dup bool) {
+	seen := make(map[string]int, len(a))
+	for i, el := range a {
+		k := canonical(el)
+		if j, ok := seen[k]; ok {
+			return j, i, true
+		}
+		seen[k] = i
+	}
+	return 0, 0, false
+}
+
+// uniqueSeed keys the hashes uniqueItems compares, so that a request cannot
+// choose values whose hashes collide.
+var uniqueSeed = maphash.MakeSeed()
+
+// Tags that keep the hashes of values of different kinds apart.
+const (
+	tagNull byte = iota + 1
+	tagFalse
+	tagTrue
+	tagString
+	tagNumber
+	tagArray
+	tagObject
+	tagMember
+)
+
+func hashBytes(tag byte, b []byte) uint64 {
+	var h maphash.Hash
+	h.SetSeed(uniqueSeed)
+	h.WriteByte(tag)
+	h.Write(b)
+	return h.Sum64()
+}
+
+func hashString(tag byte, s string) uint64 {
+	var h maphash.Hash
+	h.SetSeed(uniqueSeed)
+	h.WriteByte(tag)
+	h.WriteString(s)
+	return h.Sum64()
+}
+
+// hashNumber hashes the number written lit by its exact value.
+func hashNumber(lit string) uint64 {
+	var buf [32]byte
+	return hashBytes(tagNumber, parseDecimal(lit).appendCanonical(buf[:0]))
+}
+
+// writeWord adds x to h.
+func writeWord(h *maphash.Hash, x uint64) {
+	var b [8]byte
+	binary.LittleEndian.PutUint64(b[:], x)
+	h.Write(b[:])
+}
+
+// startArray begins the hash of an array; each element's hash follows
+// (writeWord).
+func startArray(h *maphash.Hash) {
+	h.SetSeed(uniqueSeed)
+	h.WriteByte(tagArray)
+}
+
+// memberHash hashes a member from its name's hash and its value's. An
+// object's members are summed, so that their order does not count.
+func memberHash(name, value uint64) uint64 {
+	var h maphash.Hash
+	h.SetSeed(uniqueSeed)
+	h.WriteByte(tagMember)
+	writeWord(&h, name)
+	writeWord(&h, value)
+	return h.Sum64()
+}
+
+// objectHash hashes an object from the sum of its memberHash values.
+func objectHash(sum uint64) uint64 {
+	var h maphash.Hash
+	h.SetSeed(uniqueSeed)
+	h.WriteByte(tagObject)
+	writeWord(&h, sum)
+	return h.Sum64()
+}
+
+// A hashMemo holds the valueHash of each array and object hashed, by
+// identity.
+type hashMemo struct {
+	arrays  map[*any]uint64    // by the first element
+	objects map[uintptr]uint64 // by the map (reflect's Pointer)
+}
+
+// valueHash hashes a parsed value so that values canonical renders alike
+// hash alike. A non-nil memo keeps the hash of each array and object, so
+// that one nested in another is hashed once.
+func valueHash(v any, memo *hashMemo) uint64 {
+	switch v := v.(type) {
+	case nil:
+		return hashBytes(tagNull, nil)
+	case bool:
+		if v {
+			return hashBytes(tagTrue, nil)
+		}
+		return hashBytes(tagFalse, nil)
+	case string:
+		return hashString(tagString, v)
+	case number:
+		return hashNumber(string(v))
+	case []any:
+		if len(v) > 0 && memo != nil {
+			if x, ok := memo.arrays[&v[0]]; ok {
+				return x
+			}
+		}
+		var h maphash.Hash
+		startArray(&h)
+		for _, el := range v {
+			writeWord(&h, valueHash(el, memo))
+		}
+		x := h.Sum64()
+		if len(v) > 0 && memo != nil {
+			memo.arrays[&v[0]] = x
+		}
+		return x
+	case map[string]any:
+		var id uintptr
+		if memo != nil {
+			id = reflect.ValueOf(v).Pointer()
+			if x, ok := memo.objects[id]; ok {
+				return x
+			}
+		}
+		var sum uint64
+		for k, el := range v {
+			sum += memberHash(hashString(tagString, k), valueHash(el, memo))
+		}
+		x := objectHash(sum)
+		if memo != nil {
+			memo.objects[id] = x
+		}
+		return x
+	}
+	// Unreachable: the cases cover every type parseJSON makes.
+	return 0
+}
+
 // arrayLen checks the length keywords of an array of n items.
 func (d *decoder) arrayLen(s *schema, n int, path string) bool {
+	return d.arrayLenAt(s, n, rootPath(path))
+}
+
+// arrayLenAt is arrayLen at the path p.
+func (d *decoder) arrayLenAt(s *schema, n int, p *vpath) bool {
 	switch {
 	case s.MaxItems != nil && n > *s.MaxItems:
-		d.fail(path, "array length %d exceeds maxItems %d", n, *s.MaxItems)
+		d.failAt(p, "array length %d exceeds maxItems %d", n, *s.MaxItems)
 		return false
 	case s.MaxItems == nil && n > d.limits.MaxItems:
-		d.fail(path, "array length %d exceeds the ceiling of %d items", n, d.limits.MaxItems)
+		d.failAt(p, "array length %d exceeds the ceiling of %d items", n, d.limits.MaxItems)
 		return false
 	}
 	if s.MinItems != nil && n < *s.MinItems {
-		d.fail(path, "array length %d is shorter than minItems %d", n, *s.MinItems)
+		d.failAt(p, "array length %d is shorter than minItems %d", n, *s.MinItems)
 	}
 	return true
 }
@@ -815,17 +1045,17 @@ func (d *decoder) arrayLen(s *schema, n int, path string) bool {
 // objectLen checks the member-count keywords of a map or WithSchema object
 // of n members, with MaxItems as the backstop. It reports false when the
 // object is past its upper bound.
-func (d *decoder) objectLen(s *schema, n int, path string) bool {
+func (d *decoder) objectLen(s *schema, n int, p *vpath) bool {
 	switch {
 	case s.MaxProperties != nil && n > *s.MaxProperties:
-		d.fail(path, "object has %d members, more than maxProperties %d", n, *s.MaxProperties)
+		d.failAt(p, "object has %d members, more than maxProperties %d", n, *s.MaxProperties)
 		return false
 	case s.MaxProperties == nil && n > d.limits.MaxItems:
-		d.fail(path, "object has %d members, over the ceiling of %d", n, d.limits.MaxItems)
+		d.failAt(p, "object has %d members, over the ceiling of %d", n, d.limits.MaxItems)
 		return false
 	}
 	if s.MinProperties != nil && n < *s.MinProperties {
-		d.fail(path, "object has %d members, fewer than minProperties %d", n, *s.MinProperties)
+		d.failAt(p, "object has %d members, fewer than minProperties %d", n, *s.MinProperties)
 	}
 	return true
 }

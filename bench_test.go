@@ -3,6 +3,7 @@ package geta_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -176,6 +177,169 @@ func BenchmarkPostSealedLate(b *testing.B) {
 			b.Fatal(rec.Code, rec.Body)
 		}
 	}
+}
+
+// A nested body: an order of 20 line items, each with a product and its
+// options (about 2.9 KB, 147 leaves), as in the comparison with other
+// frameworks.
+
+type benchCustomer struct {
+	Name  string `json:"name" schema:"minLength=1,maxLength=100"`
+	Email string `json:"email" schema:"minLength=3,maxLength=254"`
+}
+
+type benchAddress struct {
+	Line1      string `json:"line1" schema:"minLength=1,maxLength=200"`
+	City       string `json:"city" schema:"minLength=1,maxLength=100"`
+	PostalCode string `json:"postalCode" schema:"minLength=1,maxLength=16"`
+	Country    string `json:"country" schema:"minLength=2,maxLength=2"`
+}
+
+type benchProduct struct {
+	SKU     string   `json:"sku" schema:"minLength=1,maxLength=32"`
+	Name    string   `json:"name" schema:"minLength=1,maxLength=100"`
+	Price   float64  `json:"price" schema:"minimum=0,maximum=1000000"`
+	Options []string `json:"options" schema:"maxItems=8,items.minLength=1,items.maxLength=32"`
+}
+
+type benchLineItem struct {
+	Qty     int          `json:"qty" schema:"minimum=1,maximum=1000"`
+	Product benchProduct `json:"product"`
+}
+
+type benchOrder struct {
+	ID       string          `json:"id" schema:"minLength=1,maxLength=64"`
+	Customer benchCustomer   `json:"customer"`
+	Address  benchAddress    `json:"address"`
+	Items    []benchLineItem `json:"items" schema:"minItems=1,maxItems=50"`
+}
+
+type benchOrderIn struct {
+	Body benchOrder `body:"json"`
+}
+
+// A sealed body: a circle, a rectangle, or a polygon of points.
+
+type benchFigure interface{ isBenchFigure() }
+
+type benchDisc struct {
+	Kind   string  `json:"kind"`
+	Radius float64 `json:"radius" schema:"exclusiveMinimum=0,maximum=1000000"`
+}
+
+type benchRect struct {
+	Kind   string  `json:"kind"`
+	Width  float64 `json:"width" schema:"exclusiveMinimum=0,maximum=1000000"`
+	Height float64 `json:"height" schema:"exclusiveMinimum=0,maximum=1000000"`
+}
+
+type benchPoint struct {
+	X float64 `json:"x" schema:"minimum=-1000000,maximum=1000000"`
+	Y float64 `json:"y" schema:"minimum=-1000000,maximum=1000000"`
+}
+
+type benchPolygon struct {
+	Kind   string       `json:"kind"`
+	Points []benchPoint `json:"points" schema:"minItems=3,maxItems=32"`
+}
+
+func (benchDisc) isBenchFigure()    {}
+func (benchRect) isBenchFigure()    {}
+func (benchPolygon) isBenchFigure() {}
+
+var benchFigures = geta.Sealed[benchFigure]("kind",
+	geta.Case[benchDisc]("circle"), geta.Case[benchRect]("rect"), geta.Case[benchPolygon]("polygon"))
+
+type benchFigureIn struct {
+	Body benchFigure `body:"json"`
+}
+
+func benchBodiesApp(b *testing.B) http.Handler {
+	b.Helper()
+	orders := func(ctx context.Context, in *benchOrderIn) (*benchCreated, error) {
+		return &benchCreated{Location: "/orders/" + in.Body.ID}, nil
+	}
+	figures := func(ctx context.Context, in *benchFigureIn) (*benchCreated, error) {
+		if _, ok := in.Body.(benchPolygon); !ok {
+			return nil, errBenchMissing
+		}
+		return &benchCreated{Location: "/shapes/polygon"}, nil
+	}
+	a, err := geta.New(geta.Table{Routes: []geta.Entry{
+		{Path: "/orders", Route: geta.Route{Post: geta.Op(http.StatusCreated, orders, geta.Doc{})}},
+		{Path: "/shapes", Route: geta.Route{Post: geta.Op(http.StatusCreated, figures, geta.Doc{})}},
+	}}, geta.WithUnion(benchFigures))
+	if err != nil {
+		b.Fatal(err)
+	}
+	return a
+}
+
+// benchOrderJSON is an order of n line items.
+func benchOrderJSON(id string, n int) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, `{"id":%q,"customer":{"name":"Ada Lovelace","email":"ada@example.com"},`+
+		`"address":{"line1":"12 St James's Square","city":"London","postalCode":"SW1Y 4JH","country":"GB"},"items":[`, id)
+	for i := range n {
+		if i > 0 {
+			b.WriteByte(',')
+		}
+		fmt.Fprintf(&b, `{"qty":%d,"product":{"sku":"SKU-%06d","name":"Stainless steel bottle 750ml","price":%d.99,"options":["blue","engraved","gift-wrap"]}}`,
+			i%5+1, 1000+i, 10+i)
+	}
+	b.WriteString(`]}`)
+	return b.String()
+}
+
+// benchPolygonJSON is a polygon of n points with its discriminator first or
+// last.
+func benchPolygonJSON(n int, kindFirst bool) string {
+	var pts strings.Builder
+	for i := range n {
+		if i > 0 {
+			pts.WriteByte(',')
+		}
+		fmt.Fprintf(&pts, `{"x":%d.5,"y":-%d.25}`, i*10, i*7)
+	}
+	if kindFirst {
+		return `{"kind":"polygon","points":[` + pts.String() + `]}`
+	}
+	return `{"points":[` + pts.String() + `],"kind":"polygon"}`
+}
+
+// benchBodies posts bodies in turn to path.
+func benchBodies(b *testing.B, h http.Handler, path string, bodies []string) {
+	b.ReportAllocs()
+	i := 0
+	for b.Loop() {
+		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(bodies[i%len(bodies)]))
+		req.Header.Set("Content-Type", "application/json")
+		i++
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		if rec.Code != http.StatusCreated {
+			b.Fatal(rec.Code, rec.Body)
+		}
+	}
+}
+
+// BenchmarkOrders measures a valid 20-item order (about 2.9 KB), with ids
+// that differ between requests.
+func BenchmarkOrders(b *testing.B) {
+	h := benchBodiesApp(b)
+	bodies := make([]string, 1024)
+	for i := range bodies {
+		bodies[i] = benchOrderJSON("o"+strconv.Itoa(i), 20)
+	}
+	benchBodies(b, h, "/orders", bodies)
+}
+
+// BenchmarkShapes measures a sealed body, a polygon of 8 points (about 200
+// bytes), with its discriminator first and last.
+func BenchmarkShapes(b *testing.B) {
+	h := benchBodiesApp(b)
+	b.Run("first", func(b *testing.B) { benchBodies(b, h, "/shapes", []string{benchPolygonJSON(8, true)}) })
+	b.Run("last", func(b *testing.B) { benchBodies(b, h, "/shapes", []string{benchPolygonJSON(8, false)}) })
 }
 
 // BenchmarkLargeGet answers a 4 MiB body under the default limits, to a

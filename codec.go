@@ -40,6 +40,12 @@ type codec struct {
 	// unions reports that a value of the type can hold a sealed type. Set by
 	// markUnions for nilUnion.
 	unions bool
+
+	// direct reports that the single pass sets a string, bool, integer, or
+	// float value itself, as encoding/json/v2 would: neither the type nor its
+	// pointer has a method v2 reads, and no unmarshaler in the body options
+	// applies to it (registry.setsDirectly).
+	direct bool
 }
 
 type ckind int
@@ -79,6 +85,9 @@ type registry struct {
 	// encOpts and decOpts write and read bodies, including the sealed
 	// types' marshalers and unmarshalers.
 	encOpts, decOpts json.Options
+	// unmarshaled are the types of the unmarshalers in decOpts, as each
+	// unmarshaler names them (*time.Time, *T for a sealed type T).
+	unmarshaled []reflect.Type
 
 	// limits are the App's backstops that readable checks request schemas
 	// against; nil when unknown.
@@ -154,7 +163,28 @@ func (r *registry) checkRead(c *codec) error {
 func newRegistry() *registry {
 	return &registry{codecs: map[reflect.Type]*codec{}, names: map[string]reflect.Type{}, read: map[readLimits]bool{},
 		declared: map[reflect.Type]*schema{}, unions: map[reflect.Type]Union{},
-		encOpts: marshalOptions, decOpts: json.JoinOptions(json.RejectUnknownMembers(true), json.WithUnmarshalers(timeUnmarshaler))}
+		encOpts: marshalOptions, decOpts: json.JoinOptions(json.RejectUnknownMembers(true), json.WithUnmarshalers(timeUnmarshaler)),
+		unmarshaled: []reflect.Type{reflect.PointerTo(timeType)}}
+}
+
+// setsDirectly reports whether the single pass may set a value of t, of a
+// string, bool, integer, or float kind, itself rather than through
+// encoding/json/v2: v2 reads t by its kind alone when neither t nor *t has a
+// method v2 reads and no unmarshaler in decOpts applies to t, as v2 matches
+// them (castableTo in encoding/json/v2).
+func (r *registry) setsDirectly(t reflect.Type) bool {
+	if v2Reads(t) {
+		return false
+	}
+	for _, u := range r.unmarshaled {
+		switch {
+		case u.Kind() == reflect.Interface && reflect.PointerTo(t).Implements(u),
+			u.Kind() == reflect.Pointer && reflect.PointerTo(t) == u,
+			u == t:
+			return false
+		}
+	}
+	return true
 }
 
 // timeUnmarshaler reads a JSON string into a time.Time with readTime, as geta
@@ -181,6 +211,16 @@ func (r *registry) sealDeclarations() {
 	enc, dec := r.unionOptions()
 	r.encOpts = json.JoinOptions(marshalOptions, enc)
 	r.decOpts = json.JoinOptions(json.RejectUnknownMembers(true), dec)
+	r.unmarshaled = []reflect.Type{reflect.PointerTo(timeType)}
+	for t := range r.unions {
+		r.unmarshaled = append(r.unmarshaled, reflect.PointerTo(t))
+	}
+	// A codec analysed before now is judged again with these options.
+	for _, c := range r.codecs {
+		if c.direct {
+			c.direct = r.setsDirectly(c.t)
+		}
+	}
 }
 
 var (
@@ -391,6 +431,10 @@ func (r *registry) codecFor(t reflect.Type) (*codec, error) {
 		}
 	}
 	// No default: CheckJSONType passes only the kinds above.
+	switch c.kind {
+	case kString, kBool, kInt, kUint, kFloat:
+		c.direct = r.setsDirectly(t)
+	}
 	r.codecs[t] = c
 	return c, nil
 }

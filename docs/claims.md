@@ -112,7 +112,7 @@ Every behaviour geta states has a test or a command that checks it. [`llms.txt`]
 | `time.Time` is read by RFC 3339's grammar | `TestTimeTakesExactlyRFC3339DateTimes`, `TestDateTimeIsRFC3339` |
 | `geta.Password` is written in full as JSON but printed `[redacted]` | `TestPasswordIsRedacted`, `TestFormatTypesInTheDocument` |
 | Path parameter names follow ServeMux's rule, in any script | `TestPathParameterNamesInAnyScript` |
-| Backstops: string, pattern, array, nesting, body size | `TestStringBackstop`, `TestPatternCeiling`, `TestArrayBackstop`, `TestNestingCeiling`, `TestBodyLimitIs413AtTheExactBoundary` |
+| Backstops: string, pattern, array, nesting, body size | `TestStringBackstop`, `TestPatternCeiling`, `TestArrayBackstop`, `TestNestingCeiling`, `TestSinglePassHoldsMaxDepthInsideAnyJSON`, `TestBodyLimitIs413AtTheExactBoundary` |
 | `Doc.Limits` are the operation's own, in reading, buffering, and the document | `TestOperationLimitsAreTheOperationsOwn`, `TestOperationLimitsKeepComponentsTruthful`, `TestOperationLimitsBufferTheResponse` |
 | `WithLimits` replaces `DefaultLimits` whole; a zero cap is refused | `TestWithLimitsRefusesAZeroCap` |
 | Content of the wrong media type is a 415 naming the right one | `TestUnsupportedMediaTypeIs415` |
@@ -144,8 +144,11 @@ Every behaviour geta states has a test or a command that checks it. [`llms.txt`]
 | A response header is stated once, whatever its case | `TestAHeaderIsStatedOnceWhateverItsCase` |
 | Declarations of one response header must agree on one schema | `TestMiddlewareHeaderSchemasAgree` |
 | Body values are checked in tests, not at runtime; unwritable outputs and bad headers are runtime 500s | `TestGetatestChecksBodiesAgainstTheDocument`, `TestSealedTypeOutputDefects`, `TestOwnJSONOutputThatIsNotJSONIsADefect`, `TestOutputHeadersHoldToWhatAHeaderCarries` |
-| The one-pass read accepts exactly what the reference path accepts | `FuzzSinglePass`, `FuzzSinglePassSealed`, `FuzzParamFastPath`, `TestSinglePassAgreesOnSealedTypes`, `TestSinglePassReadsOpaqueTypesWithTheBodyOptions`, `fastdecode_test.go` |
-| Sealed bodies are read in one pass: 38 allocs/op against 131 | `BenchmarkPostSealed`, `BenchmarkPostSealedLate` |
+| The one-pass read accepts exactly what the reference path accepts | `FuzzSinglePass`, `FuzzSinglePassSealed`, `FuzzParamFastPath`, `TestSinglePassAgreesOnSealedTypes`, `TestSinglePassFindsLateDiscriminators`, `TestLateDiscriminatorLookAheadIsLinear`, `TestSinglePassReadsOpaqueTypesWithTheBodyOptions`, `TestSinglePassHoldsMaxDepthInsideAnyJSON`, `fastdecode_test.go`, `fastdecode_edges_test.go` |
+| The one-pass read sets a plain string, bool, integer, or float itself, as encoding/json/v2 would; a type with JSON or text methods, or one an unmarshaler in the options applies to, is read by v2; the strings it keeps are cleared when the decoder is released | `TestSinglePassSetsPlainLeavesItself`, `TestSinglePassYieldsToUnmarshalers`, `TestSinglePassAgreesOnPlainLeafBounds`, `TestInternKeepsStringsApart`, `TestReleaseClearsInternedStrings` |
+| A body's work is linear in its size: a violation's path is rendered only when the violation is kept, `uniqueItems` compares elements by a keyed hash made once per element and confirms a match canonically, defaults at depth and nested sealed values cost no more per level | `TestBodyWorkIsLinear`, `TestViolationPathRendering`, `TestNestedUniqueItems`, `TestUniqueItemsHashCollision`, `BenchmarkLinearMapPaths`, `BenchmarkLinearUniqueReference`, `BenchmarkLinearUniqueDepth`, `BenchmarkLinearUniqueSinglePass` |
+| Sealed values nested in one another are read in time linear in the body on both paths, and a sealed type's unmarshaler reports the errors it reported reading each value whole | `TestLateDiscriminatorLookAheadIsLinear`, `TestReferencePathReadsNestedSealedValuesInLinearTime`, `TestSealedReaderAgreesWithWhole`, `FuzzSealedReaderAgreesWithWhole` |
+| Sealed bodies are read in one pass: 41 allocs/op against 131 | `BenchmarkPostSealed`, `BenchmarkPostSealedLate` |
 | Output has the schema's shape: `[]`, `{}`, HTML-safe, sorted keys | `TestEncodeShapesMatchTheSchema`, `TestBodiesAreHTMLSafeAndNeverNull`, `TestProblemBodiesAreHTMLSafe`, `TestMapKeysAreWrittenSorted` |
 | Output headers are written as text; a bodiless envelope writes headers alone | `TestScalarHeadersAndABodilessEnvelope` |
 | A struct query parameter is a deepObject | `TestDeepObjectQueryParameters` |

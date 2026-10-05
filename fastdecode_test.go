@@ -53,6 +53,10 @@ type fastLeaf struct {
 	F32b *float32    `json:"f32b,omitzero" schema:"maximum=0.1,exclusiveMinimum=-0.1"`
 	Big  *int64      `json:"big,omitzero" schema:"maximum=9007199254740992,multipleOf=3"`
 	O    *fastOpaque `json:"o,omitzero"`
+	// Integers with no bounds but their width, a named one too.
+	I32 *int32       `json:"i32,omitzero"`
+	U64 *uint64      `json:"u64,omitzero"`
+	Cnt *directCount `json:"cnt,omitzero"`
 	// The format types, and a map whose key reads itself.
 	Fd   *Date                           `json:"fd,omitzero"`
 	Ft   *TimeOfDay                      `json:"ft,omitzero"`
@@ -413,6 +417,13 @@ var keywordSeeds = map[string]bool{
 	`{"leaf":{"s":"abc","nulm":{"k":2}},"list":[{"s":"a"}]}`:                                                              false,
 	`{"leaf":{"s":"abc","nul":nul},"list":[{"s":"a"}]}`:                                                                   false,
 	`{"leaf":{"s":"abc","os":[null,{"b":1}]},"list":[{"s":"a"}]}`:                                                         false,
+	// Integers at the ends of their widths, and escaped strings.
+	`{"leaf":{"s":"abc","i32":-2147483648,"u64":18446744073709551615,"cnt":65535},"list":[{"s":"a"}]}`:             true,
+	jsonEsc(`{"leaf":{"s":"ab%u0063","e":"%u00e9","fpw":"\"\\\/\b\f\n\r\t%ud83d%ude00"},"list":[{"s":"%u0061"}]}`): true,
+	`{"leaf":{"s":"abc","i32":2147483648},"list":[{"s":"a"}]}`:                                                     false,
+	`{"leaf":{"s":"abc","u64":18446744073709551616},"list":[{"s":"a"}]}`:                                           false,
+	`{"leaf":{"s":"abc","cnt":-0},"list":[{"s":"a"}]}`:                                                             false,
+	`{"leaf":{"s":"abc","fpw":"\ud800x"},"list":[{"s":"a"}]}`:                                                      false,
 }
 
 func TestSinglePassAgreesOnKeywords(t *testing.T) {
@@ -653,6 +664,37 @@ var defaultSealedSeeds = map[string]bool{
 	`{"main":{"kind":"circle","r":1},"others":[],"set":[{"kind":"circle","r":1},{"kind":"circle","r":1,"fill":"none"}]}`: true, // as sent, they differ
 }
 
+// lateSealedSeeds put the discriminator after members that hold strings with
+// quotes, backslashes, and brackets, after nested objects and arrays, or
+// escape it; each with whether it is valid.
+var lateSealedSeeds = map[string]bool{
+	`{"main":{"leaf":{"s":"abc","fpw":"x\"},\"kind\":\"square\\"},"r":1,"kind":"circle"},"others":[]}`: true,
+	`{"main":{"leaf":{"s":"abc","fpw":"]}[{,:"},"r":1,"kind":"circle"},"others":[]}`:                   true,
+	`{"main":{"side":1,"many":[{"kind":"döt"},{"r":2,"kind":"circle"}],"kind":"square"},"others":[]}`:  true,
+	jsonEsc(`{"main":{"r":1,"%u006bind":"circle"},"others":[]}`):                                       true,
+	jsonEsc(`{"main":{"r":1,"kind":"circl%u0065"},"others":[]}`):                                       true,
+	jsonEsc(`{"main":{"kind":"d%u00f6t"},"others":[]}`):                                                true,
+	jsonEsc(`{"main":{"%u006bind":"d%u00f6t"},"others":[]}`):                                           true,
+	"{\"main\":{\"r\":1 ,\n\t\"kind\" : \"circle\" },\"others\":[]}":                                   true,
+	`{"main":{"r":1,"kind":"circle\u0000"},"others":[]}`:                                               false,
+	`{"main":{"r":1,"kind":"\ud800"},"others":[]}`:                                                     false,
+	`{"main":{"r":1,"kind":"circle","kind":"square"},"others":[]}`:                                     false,
+	`{"main":{"r":1,"kind\"":"circle"},"others":[]}`:                                                   false,
+	`{"main":{"r":[1,"kind","circle"],"kind":"circle"},"others":[]}`:                                   false,
+	`{"main":{"r":1,"x":{"kind":"circle"}},"others":[]}`:                                               false,
+	`{"main":{"r":1 "kind":"circle"},"others":[]}`:                                                     false,
+	`{"main":{"r":1,"kind":"circle"`:                                                                   false,
+}
+
+func TestSinglePassFindsLateDiscriminators(t *testing.T) {
+	r := sealedRegistry(t)
+	for s, valid := range lateSealedSeeds {
+		if agreeIn[fastScene](t, r, []byte(s), DefaultLimits) != valid {
+			t.Errorf("%s: want accepted %v", s, valid)
+		}
+	}
+}
+
 func TestSinglePassAgreesOnSealedDefaults(t *testing.T) {
 	r := sealedRegistry(t)
 	for s, valid := range defaultSealedSeeds {
@@ -710,6 +752,9 @@ func FuzzSinglePassSealed(f *testing.F) {
 		f.Add([]byte(s))
 	}
 	for s := range defaultSealedSeeds {
+		f.Add([]byte(s))
+	}
+	for s := range lateSealedSeeds {
 		f.Add([]byte(s))
 	}
 	r := sealedRegistry(f)
