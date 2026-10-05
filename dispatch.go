@@ -70,7 +70,7 @@ func sentPath(r *http.Request) (target string, unclean bool) {
 	target = cleanPath(r.Method, p)
 	unclean = target != p
 	if q != "" {
-		target += "?" + escapeNonASCII(q)
+		target += "?" + escapeQuery(q)
 	}
 	return target, unclean
 }
@@ -89,11 +89,14 @@ func escapedPath(u *url.URL) string {
 	return u.EscapedPath()
 }
 
-// escapeNonASCII percent-encodes the bytes of s above 0x7F in lower-case hex,
-// as http.Redirect does.
-func escapeNonASCII(s string) string {
+// escapeQuery percent-encodes the bytes of query s above 0x7F in lower-case
+// hex, as http.Redirect does, and each '#' and each '%' that does not begin
+// an escape, which a request-target's query may hold as net/http reads it:
+// in Location, '#' would begin a fragment, cutting the query, and a stray
+// '%' would make it no URI.
+func escapeQuery(s string) string {
 	i := 0
-	for i < len(s) && s[i] < 0x80 {
+	for i < len(s) && !escapedQueryByte(s, i) {
 		i++
 	}
 	if i == len(s) {
@@ -102,13 +105,25 @@ func escapeNonASCII(s string) string {
 	const hex = "0123456789abcdef"
 	b := []byte(s[:i])
 	for ; i < len(s); i++ {
-		if c := s[i]; c >= 0x80 {
+		if c := s[i]; escapedQueryByte(s, i) {
 			b = append(b, '%', hex[c>>4], hex[c&15])
 		} else {
 			b = append(b, c)
 		}
 	}
 	return string(b)
+}
+
+// escapedQueryByte reports whether q[i] goes out of a query escaped.
+func escapedQueryByte(q string, i int) bool {
+	switch c := q[i]; c {
+	case '#':
+		return true
+	case '%':
+		return i+2 >= len(q) || !isHex(q[i+1]) || !isHex(q[i+2])
+	default:
+		return c >= 0x80
+	}
 }
 
 // escapeSent percent-encodes each byte of path p that is not unreserved, a
