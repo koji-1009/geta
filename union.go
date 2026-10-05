@@ -6,6 +6,7 @@ import (
 	"encoding/json/v2"
 	"errors"
 	"fmt"
+	"math"
 	"reflect"
 	"strconv"
 	"strings"
@@ -146,7 +147,8 @@ func (s *sealedReader) begin(dec *jsontext.Decoder) any {
 	if i < 0 {
 		return nil
 	}
-	raw, err := jsontext.NewDecoder(bytes.NewReader(buf[i:])).ReadValue()
+	// A decoder reads a bytes.Buffer in place; a bytes.Reader it would copy.
+	raw, err := jsontext.NewDecoder(bytes.NewBuffer(buf[i:])).ReadValue()
 	// dec refuses nesting past jsontext's ceiling of 10000, counted from its
 	// own root.
 	if err != nil || dec.StackDepth()+nesting(raw) >= 9990 {
@@ -164,7 +166,8 @@ func (s *sealedReader) stream(dec *jsontext.Decoder, st *sealedState) (any, erro
 		return s.whole(dec, st) // whole reports why
 	}
 	buf, base := dec.UnreadBuffer(), int(dec.InputOffset())
-	tag, ok := st.ahead.tag(buf, base, 0, s.disc)
+	// begin held the nesting of the whole object to jsontext's ceiling.
+	tag, ok := st.ahead.tag(buf, base, 0, s.disc, math.MaxInt)
 	vt := s.types[string(tag)]
 	if !ok || vt == nil {
 		return s.whole(dec, st) // whole reports why
@@ -397,7 +400,8 @@ func (r *registry) unionOptions() (enc, dec json.Options) {
 }
 
 // checkOneOf validates v against the variant its discriminator selects.
-func (d *decoder) checkOneOf(c *codec, v any, p *vpath) {
+func (d *decoder) checkOneOf(c *codec, v any, at vpath) {
+	p := &at
 	m, ok := v.(map[string]any)
 	if !ok {
 		d.failAt(p, "expected object, got %s", jsonType(v))
@@ -415,7 +419,7 @@ func (d *decoder) checkOneOf(c *codec, v any, p *vpath) {
 	}
 	for _, vc := range c.variants {
 		if vc.tag == tag {
-			d.checkAt(vc.c, vc.c.use(), v, p)
+			d.checkAt(vc.c, vc.c.use(), v, at)
 			return
 		}
 	}

@@ -167,24 +167,27 @@ func (p *vpath) member(name string) *vpath { return &vpath{up: p, name: name, in
 func (p *vpath) item(i int) *vpath { return &vpath{up: p, index: i} }
 
 func (p *vpath) String() string {
-	var steps []*vpath
-	root := p
-	for ; root.up != nil; root = root.up {
-		steps = append(steps, root)
-	}
 	var b strings.Builder
-	b.WriteString(root.name)
-	for i := len(steps) - 1; i >= 0; i-- {
-		if s := steps[i]; s.index < 0 {
-			b.WriteByte('.')
-			b.WriteString(s.name)
-		} else {
-			b.WriteByte('[')
-			b.WriteString(strconv.Itoa(s.index))
-			b.WriteByte(']')
-		}
-	}
+	p.writeTo(&b)
 	return b.String()
+}
+
+// writeTo writes p to b, its root first. It keeps no pointer to p, so that
+// the vpaths check makes stay on its stack.
+func (p *vpath) writeTo(b *strings.Builder) {
+	if p.up == nil {
+		b.WriteString(p.name)
+		return
+	}
+	p.up.writeTo(b)
+	if p.index < 0 {
+		b.WriteByte('.')
+		b.WriteString(p.name)
+		return
+	}
+	b.WriteByte('[')
+	b.WriteString(strconv.Itoa(p.index))
+	b.WriteByte(']')
 }
 
 // check validates the parsed value v against s and c: type, required
@@ -193,21 +196,24 @@ func (p *vpath) String() string {
 // schema at this use site; a reference resolves to c's own. The recursion
 // depth is bounded by v's nesting, which its parser bounded.
 func (d *decoder) check(c *codec, s *schema, v any, path string) {
-	d.checkAt(c, s, v, rootPath(path))
+	d.checkAt(c, s, v, vpath{name: path, index: -1})
 }
 
-// checkAt is check at the path p.
-func (d *decoder) checkAt(c *codec, s *schema, v any, p *vpath) {
+// checkAt is check at the path at. It takes the path by value, so that
+// escape analysis, which cannot tell one level of the recursion from the
+// next, keeps each level's path on the stack.
+func (d *decoder) checkAt(c *codec, s *schema, v any, at vpath) {
+	p := &at
 	if s.Ref != "" {
 		s = c.schema
 	}
 	if c.kind == kOneOf {
-		d.checkOneOf(c, v, p)
+		d.checkOneOf(c, v, at)
 		return
 	}
 	if c.kind == kNull {
 		if v != nil {
-			d.checkAt(c.elem, s, v, p)
+			d.checkAt(c.elem, s, v, at)
 		}
 		return
 	}
@@ -297,7 +303,7 @@ func (d *decoder) checkAt(c *codec, s *schema, v any, p *vpath) {
 			return
 		}
 		for i, el := range a {
-			d.checkAt(c.elem, s.Items, el, p.item(i))
+			d.checkAt(c.elem, s.Items, el, *p.item(i))
 		}
 	case kMap:
 		m := v.(map[string]any)
@@ -308,7 +314,7 @@ func (d *decoder) checkAt(c *codec, s *schema, v any, p *vpath) {
 		for _, k := range slices.Sorted(maps.Keys(m)) {
 			kp := p.member(k)
 			if d.key(s, k, kp) && d.keyText(c.key, k, kp) {
-				d.checkAt(c.elem, s.Additional, m[k], kp)
+				d.checkAt(c.elem, s.Additional, m[k], *kp)
 			}
 		}
 	case kStruct:
@@ -326,7 +332,7 @@ func (d *decoder) checkAt(c *codec, s *schema, v any, p *vpath) {
 				}
 				continue
 			}
-			d.checkAt(f.c, f.use, fv, fp)
+			d.checkAt(f.c, f.use, fv, *fp)
 		}
 		var unknown []string
 		for k := range m {

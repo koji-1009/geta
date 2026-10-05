@@ -216,7 +216,8 @@ const fzMaxViolations = 50
 // name[i], and a list of no element is absent. Every header the reference
 // takes binds the reference's value; a request with any it refuses is a 400
 // problem whose violations name exactly the refused (the first 50, as geta
-// reports no more), and the handler does not run. A bound list, joined again with ", ", reads back as itself.
+// reports no more), and the handler does not run. A bound list, joined again
+// with ", ", reads back as itself.
 func FuzzHeaderParameters(f *testing.F) {
 	var got *fzHeaderIn
 	app, err := geta.New(one("/h", get(func(_ context.Context, in *fzHeaderIn) (*ok, error) {

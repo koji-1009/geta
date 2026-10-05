@@ -317,9 +317,76 @@ func TestLateDiscriminatorLookAheadIsLinear(t *testing.T) {
 	}
 }
 
+// The look-ahead for a late discriminator holds MaxDepth: past it, it
+// stops, and the reference path names the nesting. A 1 MiB body nested
+// as deep as it is long allocates a small multiple of itself.
+func TestLateDiscriminatorLookAheadHoldsMaxDepth(t *testing.T) {
+	r := sealedRegistry(t)
+	c, err := r.codecFor(reflect.TypeFor[fastScene]())
+	if err != nil {
+		t.Fatal(err)
+	}
+	head, tail := `{"others":[],"main":{"r":`, `,"kind":"circle"}}`
+	n := (int(DefaultLimits.MaxBodyBytes) - len(head) - len(tail)) / 2
+	data := []byte(head + strings.Repeat("[", n) + strings.Repeat("]", n) + tail)
+	var errs []Violation
+	alloc := allocOf(func() {
+		// As bodyPlan.bind reads it: the single pass, then the reference.
+		var v fastScene
+		if singlePassIn(r, c, c.use(), data, DefaultLimits, reflect.ValueOf(&v).Elem()) {
+			t.Fatal("accepted")
+		}
+		errs = reference(r, c, c.use(), data, DefaultLimits, reflect.ValueOf(&v).Elem())
+	})
+	want := []Violation{{In: "body", Path: "$", Message: "JSON nesting exceeds the ceiling of 512"}}
+	if !reflect.DeepEqual(errs, want) {
+		t.Fatalf("%v", errs)
+	}
+	t.Logf("a %d-byte body allocated %d bytes", len(data), alloc)
+	// About 1× here, 2× under the race detector, which pools less.
+	if alloc > 4*uint64(len(data)) {
+		t.Errorf("a %d-byte body allocated %d bytes", len(data), alloc)
+	}
+	// The look-ahead reads as deep as the ceiling allows: nestedLate(depth)
+	// nests depth+2 deep.
+	for depth, valid := range map[int]bool{DefaultLimits.MaxDepth - 2: true, DefaultLimits.MaxDepth - 1: false} {
+		if agreeIn[fastScene](t, r, nestedLate(depth), DefaultLimits) != valid {
+			t.Errorf("depth %d: want accepted %v", depth, valid)
+		}
+	}
+}
+
+// The look-ahead records at most one span per minSpan bytes it steps over,
+// whatever the arrays and objects before the discriminator: many small
+// ones, ones nested to the ceiling, or ones just past minSpan.
+func TestLookAheadRecordsBoundedSpans(t *testing.T) {
+	chain := strings.Repeat("[", 500) + strings.Repeat("]", 500)
+	for name, value := range map[string]string{
+		"small":  "[" + strings.Repeat("[],{},", 100000) + "[]]",
+		"chains": "[" + strings.Repeat(chain+",", 500) + "[]]",
+		"sized":  "[" + strings.Repeat(`{"a":"`+strings.Repeat("x", minSpan)+`"},`, 20000) + "[]]",
+		"nested": "[" + strings.Repeat(`{"a":"`+strings.Repeat("x", minSpan)+`","b":[`, 200) + strings.Repeat("]}", 200) + "]",
+	} {
+		b := []byte(`{"v":` + value + `,"kind":"circle"}`)
+		var l lookahead
+		tag, ok := l.tag(b, 0, 0, "kind", DefaultLimits.MaxDepth)
+		if !ok || string(tag) != "circle" {
+			t.Fatalf("%s: %q %v", name, tag, ok)
+		}
+		if len(l.spans) > len(b)/minSpan {
+			t.Errorf("%s: %d spans recorded over %d bytes", name, len(l.spans), len(b))
+		}
+		for i := 1; i < len(l.spans); i++ {
+			if l.spans[i-1].start >= l.spans[i].start || l.spans[i].end < 0 {
+				t.Fatalf("%s: spans out of order or open at %d", name, i)
+			}
+		}
+	}
+}
+
 // wholeOptions are r's body options with fastShapes read by
-// sealedReader.whole alone, as Sealed read them before reading from the
-// decoder itself.
+// sealedReader.whole alone: each sealed object read whole, then read again
+// as the variant its discriminator selects.
 func wholeOptions() json.Options {
 	types := map[string]reflect.Type{}
 	for _, c := range fastShapes.cases {
@@ -395,6 +462,70 @@ func TestSealedReaderAgreesWithWhole(t *testing.T) {
 	}
 }
 
+// stateShape is a sealed type whose variant holds a value that panics when
+// read, nested in another.
+type stateShape interface{ isStateShape() }
+
+type stateBox struct {
+	Kind  string      `json:"kind"`
+	Inner stateShape  `json:"inner,omitzero"`
+	Boom  *statePanic `json:"boom,omitzero"`
+}
+
+func (stateBox) isStateShape() {}
+
+// statePanic panics with the number of states sealedStates holds.
+type statePanic struct{}
+
+func (*statePanic) UnmarshalJSON([]byte) error { panic(sealedStateCount()) }
+
+// sealedStateCount counts the decoders sealedStates holds.
+func sealedStateCount() int {
+	n := 0
+	sealedStates.Range(func(any, any) bool { n++; return true })
+	return n
+}
+
+// Sealed's unmarshaler leaves no state behind, whether it reads a value,
+// refuses one, finds no discriminator, or a nested variant panics.
+func TestSealedReaderLeavesNoState(t *testing.T) {
+	opts := sealedRegistry(t).decOpts
+	bodies := append(append(append([]string{}, sealedSeeds...), sealedErrorSeeds...), nullSealedSeeds...)
+	for s := range lateSealedSeeds {
+		bodies = append(bodies, s)
+	}
+	for _, depth := range []int{1, 50} {
+		late := nestedLate(depth)
+		bodies = append(bodies, string(late), string(late[:len(late)-1])+`,"bogus":1}`)
+	}
+	for _, s := range bodies {
+		var v fastScene
+		json.Unmarshal([]byte(s), &v, opts)
+		if n := sealedStateCount(); n != 0 {
+			t.Fatalf("%s: %d states left", s, n)
+		}
+	}
+	u := Sealed[stateShape]("kind", Case[stateBox]("box"))
+	for _, s := range []string{
+		`{"kind":"box","inner":{"kind":"box","boom":{}}}`,
+		`{"inner":{"boom":{},"kind":"box"},"kind":"box"}`,
+	} {
+		func() {
+			defer func() {
+				// The panic is inside the outermost sealed object's read.
+				if held := recover(); held != 1 {
+					t.Errorf("%s: panicked with %v states held", s, held)
+				}
+			}()
+			var v stateShape
+			json.Unmarshal([]byte(s), &v, u.JSONOptions())
+		}()
+		if n := sealedStateCount(); n != 0 {
+			t.Fatalf("%s: %d states left after a panic", s, n)
+		}
+	}
+}
+
 func FuzzSealedReaderAgreesWithWhole(f *testing.F) {
 	for _, s := range append(append([]string{}, sealedSeeds...), sealedErrorSeeds...) {
 		f.Add([]byte(s))
@@ -407,10 +538,10 @@ func FuzzSealedReaderAgreesWithWhole(f *testing.F) {
 }
 
 // The reference path reads sealed values nested in one another, each with
-// its discriminator last, in time linear in the body: Sealed's unmarshaler
-// once read each one whole, then again, at every level. A body the single
-// pass refuses only for an error at its very end is refused by the reference
-// path in linear time too.
+// its discriminator last, in time linear in the body: four times the depth
+// allocates about four times the bytes, not sixteen. A body the single pass
+// refuses only for an error at its very end is refused by the reference path
+// in linear time too.
 func TestReferencePathReadsNestedSealedValuesInLinearTime(t *testing.T) {
 	r := sealedRegistry(t)
 	c, err := r.codecFor(reflect.TypeFor[fastScene]())
@@ -418,8 +549,8 @@ func TestReferencePathReadsNestedSealedValuesInLinearTime(t *testing.T) {
 		t.Fatal(err)
 	}
 	// The bytes allocated stand for the work, and unlike time do not depend
-	// on what else the machine runs: the quadratic reads allocated copies
-	// at every level.
+	// on what else the machine runs: a read that copies each level's object
+	// allocates in proportion to the depth times the body.
 	cost := func(data []byte, valid bool) uint64 {
 		var before, after runtime.MemStats
 		runtime.ReadMemStats(&before)

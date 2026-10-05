@@ -9,6 +9,7 @@ import (
 	"io"
 	"math"
 	"reflect"
+	"slices"
 	"strconv"
 	"sync"
 	"unicode/utf8"
@@ -313,7 +314,9 @@ func setInteger(c *codec, raw jsontext.Value, dst reflect.Value) bool {
 // keeps the strings it made, up to 256 bytes each, in a small table, so that
 // a string that recurs in the body costs one allocation. Each slot holds the
 // two strings last used there, so two strings that share a slot do not evict
-// each other in turn. release clears the table.
+// each other in turn. release clears the table, so that a pooled decoder
+// keeps no request's strings; a string every request sends is then made
+// once per request, not once per decoder, an allocation accepted for that.
 func (f *fastDecoder) intern(b []byte) string {
 	if len(b) < 2 || len(b) > 256 {
 		return string(b) // the runtime interns single bytes
@@ -590,7 +593,11 @@ func (f *fastDecoder) oneOf(c *codec, dst reflect.Value) bool {
 		return false
 	}
 	off := int(f.dec.InputOffset())
-	tag, ok := f.ahead.tag(f.data, 0, off, c.disc)
+	// The members' values may nest as deep as MaxDepth allows inside the
+	// object; past that, the look-ahead stops and the reference path names
+	// the nesting.
+	depth := f.limits.MaxDepth - f.dec.StackDepth() - 1
+	tag, ok := f.ahead.tag(f.data, 0, off, c.disc, depth)
 	if !ok {
 		return false
 	}
@@ -608,32 +615,52 @@ func (f *fastDecoder) oneOf(c *codec, dst reflect.Value) bool {
 
 // A lookahead scans JSON ahead of a decoder, without reading it, to find a
 // sealed value's discriminator wherever it is among the members. It records
-// each object and array it steps over by its offset in the input, and jumps
-// over one it has recorded, so that the look-ahead of sealed values nested
-// in one another, each with its discriminator last, steps over the input a
-// bounded number of times rather than once per level. Each look-ahead begins
-// past the spans recorded before it, so spans stays in order of offset.
+// the objects and arrays it steps over by their offsets in the input, and
+// jumps over one it has recorded, so that the look-ahead of sealed values
+// nested in one another, each with its discriminator last, steps over the
+// input a bounded number of times rather than once per level.
+//
+// It records an object or array only where at least minSpan of its bytes lie
+// outside the ones it records inside it, so that spans holds at most one
+// entry per minSpan bytes of the input. One it does not record is stepped
+// over again by each look-ahead that reaches it, at a cost below minSpan, and
+// a look-ahead reaches it only from a sealed object it does not record
+// either: one whose bytes are fewer than minSpan.
+//
+// A look-ahead records anew only past the input every look-ahead before it
+// stepped over: before that point it jumps over what was recorded and
+// leaves out again what was left out, as its bytes are the same. So spans
+// stays in order of offset.
 type lookahead struct {
 	spans   []span
-	opened  []int  // the spans still open in skipValue
-	scratch []byte // names and tags that contain escapes
+	opened  []opening // the spans still open in skipValue
+	scratch []byte    // names and tags that contain escapes
 	// scanned counts the bytes stepped over, for tests.
 	scanned int
 }
+
+// minSpan is the fewest bytes, outside the spans recorded in it, of an
+// object or array a lookahead records.
+const minSpan = 32
 
 // A span is an object or array of the input: the offsets of its opening and
 // closing brackets, end < 0 while it is open.
 type span struct{ start, end int }
 
+// An opening is a span open in skipValue: its index in spans, and the bytes
+// in it that the spans recorded inside it cover.
+type opening struct{ at, covered int }
+
 func (l *lookahead) reset() { l.spans, l.scanned = l.spans[:0], 0 }
 
 // tag returns, unquoted, the string value of member disc of the object that
 // begins in b at or after index i (past a separator and whitespace), or
-// false when it is missing or not a string. b[0] is at offset base of the
+// false when it is missing or not a string, or when a member's value nests
+// more than depth arrays and objects deep. b[0] is at offset base of the
 // input. The bytes it scans need not be validated: on valid JSON the tag is
 // the one a read of the object finds, and the caller reads the object in
 // full. The result is valid until the next call.
-func (l *lookahead) tag(b []byte, base, i int, disc string) ([]byte, bool) {
+func (l *lookahead) tag(b []byte, base, i int, disc string, depth int) ([]byte, bool) {
 	i += bytes.IndexByte(b[i:], '{') + 1
 	for {
 		from := i
@@ -662,7 +689,7 @@ func (l *lookahead) tag(b []byte, base, i int, disc string) ([]byte, bool) {
 			}
 			return l.unquote(b[i:end])
 		}
-		if i = l.skipValue(b, base, i); i == len(b) || b[i] != ',' {
+		if i = l.skipValue(b, base, i, depth); i == len(b) || b[i] != ',' {
 			return nil, false
 		}
 		i++
@@ -712,13 +739,21 @@ func stringEnd(b []byte, i int) int {
 }
 
 // skipValue returns the index of the ',', '}', or ']' that ends the value
-// beginning in b at or after index i, or len(b); b[0] is at offset base of
-// the input. It records each object and array it passes and jumps over one
-// already recorded. It is exact on valid JSON and bounded on anything else.
-func (l *lookahead) skipValue(b []byte, base, i int) int {
+// beginning in b at or after index i, or len(b) when the value nests more
+// than depth arrays and objects deep or does not end; b[0] is at offset base
+// of the input. It records the objects and arrays it passes (lookahead) and
+// jumps over one already recorded. It is exact on valid JSON and bounded on
+// anything else.
+func (l *lookahead) skipValue(b []byte, base, i, depth int) int {
 	open := l.opened[:0]
 	from := i
-	defer func() { l.opened = open[:0] }()
+	recorded := len(l.spans) // the spans this call may jump over
+	defer func() {
+		if len(open) > 0 {
+			l.spans = l.spans[:open[0].at] // none is left open
+		}
+		l.opened = open[:0]
+	}()
 	for i < len(b) {
 		switch b[i] {
 		case '"':
@@ -730,21 +765,40 @@ func (l *lookahead) skipValue(b []byte, base, i int) int {
 			i = e
 			continue
 		case '{', '[':
-			if end, ok := l.spanAt(base + i); ok {
+			if end, ok := l.spanAt(base+i, recorded); ok {
+				if n := len(open); n > 0 {
+					open[n-1].covered += end - (base + i) + 1
+				}
 				l.scanned += i - from
 				i = end - base + 1
 				from = i
 				continue
 			}
+			if len(open) >= depth {
+				l.scanned += i - from
+				return len(b)
+			}
 			l.spans = append(l.spans, span{base + i, -1})
-			open = append(open, len(l.spans)-1)
+			open = append(open, opening{at: len(l.spans) - 1})
 		case '}', ']':
 			if len(open) == 0 {
 				l.scanned += i - from
 				return i
 			}
-			l.spans[open[len(open)-1]].end = base + i
+			o := open[len(open)-1]
 			open = open[:len(open)-1]
+			l.spans[o.at].end = base + i
+			size := base + i - l.spans[o.at].start + 1
+			covered := size
+			if size-o.covered < minSpan {
+				// Left out: the spans recorded inside it now count toward
+				// the span around it.
+				l.spans = slices.Delete(l.spans, o.at, o.at+1)
+				covered = o.covered
+			}
+			if n := len(open); n > 0 {
+				open[n-1].covered += covered
+			}
 		case ',':
 			if len(open) == 0 {
 				l.scanned += i - from
@@ -758,9 +812,9 @@ func (l *lookahead) skipValue(b []byte, base, i int) int {
 }
 
 // spanAt returns the offset of the bracket that closes the object or array
-// recorded as opening at offset off.
-func (l *lookahead) spanAt(off int) (int, bool) {
-	lo, hi := 0, len(l.spans)
+// recorded, among the first n spans, as opening at offset off.
+func (l *lookahead) spanAt(off, n int) (int, bool) {
+	lo, hi := 0, n
 	for lo < hi {
 		m := int(uint(lo+hi) >> 1)
 		if l.spans[m].start < off {
@@ -769,7 +823,7 @@ func (l *lookahead) spanAt(off int) (int, bool) {
 			hi = m
 		}
 	}
-	if lo < len(l.spans) && l.spans[lo].start == off && l.spans[lo].end >= 0 {
+	if lo < n && l.spans[lo].start == off && l.spans[lo].end >= 0 {
 		return l.spans[lo].end, true
 	}
 	return 0, false
