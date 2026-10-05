@@ -2,18 +2,23 @@ package geta
 
 import (
 	"bytes"
+	"encoding/binary"
 	"encoding/json/jsontext"
 	"encoding/json/v2"
+	"hash/maphash"
 	"io"
+	"math"
 	"reflect"
+	"slices"
 	"strconv"
 	"sync"
 	"unicode/utf8"
 )
 
 // A fastDecoder validates and decodes a JSON body in one pass over its
-// tokens, checking each value against the schema and handing leaves to
-// encoding/json/v2.
+// tokens, checking each value against the schema. It sets a string, bool,
+// integer, or float leaf itself where v2 would read it by its kind alone
+// (codec.direct), and hands every other leaf to encoding/json/v2.
 //
 // Invariant: it accepts exactly what the reference path (parseJSON, check,
 // decodeJSON) accepts and produces the same value, except that it refuses a
@@ -28,10 +33,18 @@ type fastDecoder struct {
 	limits  Limits
 	opts    json.Options // the reference path's options (bodyPlan.opts)
 	scratch []byte       // unquoted strings that contain escapes
+	// interned are the strings this request has set (intern), and touched
+	// the slots they fill, which release clears.
+	interned [256][2]string
+	touched  []uint8
+	ahead    lookahead // finds sealed values' discriminators in this body
 
-	// base is the nesting depth outside this decoder's input: zero for a
-	// request body, the enclosing depth for a sealed value read ahead.
-	base int
+	// hashing counts the uniqueItems arrays whose elements are being read.
+	// While it is positive, each value read leaves its valueHash in last,
+	// made from the hashes of the values inside it, so that unique compares
+	// elements without reading any of them again.
+	hashing int
+	last    uint64
 }
 
 var fastDecoders = sync.Pool{New: func() any { return new(fastDecoder) }}
@@ -40,6 +53,9 @@ var fastDecoders = sync.Pool{New: func() any { return new(fastDecoder) }}
 // between requests. It equals DefaultLimits.MaxResponseBuffer.
 const maxPooledBody = 64 << 10
 
+// maxPooledSpans bounds the spans a pooled decoder keeps between requests.
+const maxPooledSpans = 4 << 10
+
 // getFastDecoder returns a pooled decoder for limits. The caller sets opts.
 func getFastDecoder(limits Limits) *fastDecoder {
 	f := fastDecoders.Get().(*fastDecoder)
@@ -47,9 +63,10 @@ func getFastDecoder(limits Limits) *fastDecoder {
 	return f
 }
 
-// release returns f to the pool, keeping no reference to the request.
+// release returns f to the pool, keeping no reference to the request: the
+// strings it interned are cleared too.
 func (f *fastDecoder) release() {
-	if f.body.Cap() > maxPooledBody || cap(f.scratch) > maxPooledBody {
+	if f.body.Cap() > maxPooledBody || cap(f.scratch) > maxPooledBody || cap(f.ahead.spans) > maxPooledSpans {
 		return
 	}
 	f.body.Reset()
@@ -57,8 +74,12 @@ func (f *fastDecoder) release() {
 	f.src.Reset(nil)
 	f.dec.Reset(&f.body) // drops the decoder's view of the old body
 	f.scratch = f.scratch[:0]
-	f.base = 0
+	f.hashing, f.last = 0, 0
 	f.opts = nil
+	for _, i := range f.touched {
+		f.interned[i] = [2]string{}
+	}
+	f.touched = f.touched[:0]
 	fastDecoders.Put(f)
 }
 
@@ -73,6 +94,7 @@ func (f *fastDecoder) reread(data []byte) *jsontext.Decoder {
 // first thing the reference path would refuse; dst is then partly filled.
 func (f *fastDecoder) decode(c *codec, s *schema, dst reflect.Value) bool {
 	f.data = f.body.Bytes()
+	f.ahead.reset()
 	f.dec.Reset(&f.body)
 	if !f.value(c, s, dst) {
 		return false
@@ -104,11 +126,15 @@ func (f *fastDecoder) value(c *codec, s *schema, dst reflect.Value) bool {
 				return false
 			}
 			n.setNull()
+			if f.hashing > 0 {
+				f.last = hashBytes(tagNull, nil)
+			}
 			return true
 		}
 		return f.value(c.elem, s, n.slot())
 	}
-	// A leaf: check its raw JSON against the schema, then let v2 decode it.
+	// A leaf: check its raw JSON against the schema, then set it (codec.direct)
+	// or let v2 decode it.
 	if f.dec.PeekKind() == 'n' && !anyJSON(c, s) {
 		return false
 	}
@@ -118,12 +144,33 @@ func (f *fastDecoder) value(c *codec, s *schema, dst reflect.Value) bool {
 	}
 	switch c.kind {
 	case kString, kText, kBytes:
-		if raw.Kind() != '"' || !strOK(s, f.limits, f.unquote(raw)) {
+		if raw.Kind() != '"' {
 			return false
 		}
-	case kBool:
-		if k := raw.Kind(); k != 't' && k != 'f' {
+		// The decoder has already refused invalid UTF-8 and escapes, as v2's
+		// would.
+		b := f.unquote(raw)
+		if !strOK(s, f.limits, b) {
 			return false
+		}
+		if c.direct {
+			if f.hashing > 0 {
+				f.last = hashBytes(tagString, b)
+			}
+			dst.SetString(f.intern(b))
+			return true
+		}
+	case kBool:
+		k := raw.Kind()
+		if k != 't' && k != 'f' {
+			return false
+		}
+		if c.direct {
+			if f.hashing > 0 {
+				f.last = f.leafHash(raw)
+			}
+			dst.SetBool(k == 't')
+			return true
 		}
 	case kInt, kUint:
 		if raw.Kind() != '0' || !isIntegerLiteral(string(raw)) {
@@ -133,13 +180,28 @@ func (f *fastDecoder) value(c *codec, s *schema, dst reflect.Value) bool {
 		if err != nil || !numOK(s, []byte(raw), n) {
 			return false
 		}
+		if c.direct {
+			if f.hashing > 0 {
+				f.last = hashNumber(string(raw))
+			}
+			return setInteger(c, raw, dst)
+		}
 	case kFloat:
 		if raw.Kind() != '0' {
 			return false
 		}
-		_, n, err := parseFloat(string(raw), c.t.Bits())
+		// v2 refuses a literal out of the type's range (1e400, or 1e39 for a
+		// float32), as parseFloat does, and otherwise sets v.
+		v, n, err := parseFloat(string(raw), c.t.Bits())
 		if err != nil || !numOK(s, []byte(raw), n) {
 			return false
+		}
+		if c.direct {
+			if f.hashing > 0 {
+				f.last = hashNumber(string(raw))
+			}
+			dst.SetFloat(v)
+			return true
 		}
 	case kJSON:
 		// Scalar declarations only; array and object go to the reference
@@ -162,7 +224,11 @@ func (f *fastDecoder) value(c *codec, s *schema, dst reflect.Value) bool {
 				return false
 			}
 		case "":
-			// Any JSON value: the type's UnmarshalJSON decides.
+			// Any JSON value: the type's UnmarshalJSON decides, within
+			// MaxDepth as parseJSON holds it.
+			if k := raw.Kind(); (k == '[' || k == '{') && f.dec.StackDepth()+nesting(raw) > f.limits.MaxDepth {
+				return false
+			}
 		default:
 			return false
 		}
@@ -171,9 +237,122 @@ func (f *fastDecoder) value(c *codec, s *schema, dst reflect.Value) bool {
 		// path rather than skip the schema check.
 		return false
 	}
+	if f.hashing > 0 {
+		f.last = f.leafHash(raw)
+	}
 	// The reference path's options reject unknown members and decode sealed
 	// types inside JSON-method types.
 	return json.Unmarshal(raw, dst.Addr().Interface(), f.opts) == nil
+}
+
+// leafHash returns the valueHash of raw, a leaf's JSON.
+func (f *fastDecoder) leafHash(raw jsontext.Value) uint64 {
+	switch raw.Kind() {
+	case 'n':
+		return hashBytes(tagNull, nil)
+	case 't':
+		return hashBytes(tagTrue, nil)
+	case 'f':
+		return hashBytes(tagFalse, nil)
+	case '"':
+		return hashBytes(tagString, f.unquote(raw))
+	case '0':
+		return hashNumber(string(raw))
+	}
+	// Any JSON value, which a JSON-method type reads. Each leaf is hashed
+	// once, whatever number of uniqueItems arrays it is nested in.
+	tree, _ := parseJSON(raw, math.MaxInt)
+	return valueHash(tree, nil)
+}
+
+// nesting returns the deepest nesting of arrays and objects in raw, a valid
+// JSON value.
+func nesting(raw []byte) int {
+	depth, deepest := 0, 0
+	inString := false
+	for i := 0; i < len(raw); i++ {
+		switch c := raw[i]; {
+		case inString:
+			if c == '\\' {
+				i++ // the escaped byte
+			} else if c == '"' {
+				inString = false
+			}
+		case c == '"':
+			inString = true
+		case c == '[' || c == '{':
+			depth++
+			deepest = max(deepest, depth)
+		case c == ']' || c == '}':
+			depth--
+		}
+	}
+	return deepest
+}
+
+// setInteger sets dst, of c's integer kind, to raw, a JSON integer, and
+// reports false where v2 refuses raw: out of the type's range, or negative
+// (-0 too) for an unsigned type.
+func setInteger(c *codec, raw jsontext.Value, dst reflect.Value) bool {
+	if c.kind == kInt {
+		n, err := strconv.ParseInt(string(raw), 10, c.t.Bits())
+		if err != nil {
+			return false
+		}
+		dst.SetInt(n)
+		return true
+	}
+	n, err := strconv.ParseUint(string(raw), 10, c.t.Bits())
+	if err != nil {
+		return false
+	}
+	dst.SetUint(n)
+	return true
+}
+
+// intern returns b as a string. Like v2 (makeString in encoding/json/v2), it
+// keeps the strings it made, up to 256 bytes each, in a small table, so that
+// a string that recurs in the body costs one allocation. Each slot holds the
+// two strings last used there, so two strings that share a slot do not evict
+// each other in turn. release clears the table, so that a pooled decoder
+// keeps no request's strings; a string every request sends is then made
+// once per request, not once per decoder, an allocation accepted for that.
+func (f *fastDecoder) intern(b []byte) string {
+	if len(b) < 2 || len(b) > 256 {
+		return string(b) // the runtime interns single bytes
+	}
+	i := uint8(internHash(b))
+	slot := &f.interned[i]
+	if string(b) == slot[0] {
+		return slot[0]
+	}
+	if string(b) == slot[1] {
+		slot[0], slot[1] = slot[1], slot[0]
+		return slot[0]
+	}
+	if slot[0] == "" {
+		f.touched = append(f.touched, i)
+	}
+	s := string(b)
+	slot[0], slot[1] = s, slot[0]
+	return s
+}
+
+// internHash hashes the length of b and up to 8 bytes at each end, so that
+// it takes constant time.
+func internHash(b []byte) uint64 {
+	var lo, hi uint64
+	if len(b) >= 8 {
+		lo, hi = binary.LittleEndian.Uint64(b), binary.LittleEndian.Uint64(b[len(b)-8:])
+	} else {
+		for i, c := range b {
+			lo |= uint64(c) << (8 * i)
+		}
+	}
+	h := lo*0x9e3779b97f4a7c15 ^ hi*0xc2b2ae3d27d4eb4f ^ uint64(len(b))
+	h ^= h >> 31
+	h *= 0xbf58476d1ce4e5b9
+	return h ^ h>>29
 }
 
 // anyJSON reports whether s, at a use of c, takes any JSON value including
@@ -205,7 +384,7 @@ func (f *fastDecoder) open(kind jsontext.Kind) bool {
 	if _, err := f.dec.ReadToken(); err != nil {
 		return false
 	}
-	return f.base+f.dec.StackDepth() <= f.limits.MaxDepth
+	return f.dec.StackDepth() <= f.limits.MaxDepth
 }
 
 // close reads the '}' or ']' that PeekKind just reported. The read cannot
@@ -223,6 +402,7 @@ func (f *fastDecoder) object(c *codec, dst reflect.Value) bool {
 	if len(c.fields) > 64 {
 		seenMany = make([]bool, len(c.fields))
 	}
+	var sum uint64 // of memberHash, while hashing
 	for f.dec.PeekKind() != '}' {
 		raw, err := f.dec.ReadValue()
 		if err != nil {
@@ -248,6 +428,9 @@ func (f *fastDecoder) object(c *codec, dst reflect.Value) bool {
 				if _, err := f.dec.ReadToken(); err != nil {
 					return false
 				}
+				if f.hashing > 0 {
+					sum += memberHash(hashString(tagString, fc.json), hashBytes(tagNull, nil))
+				}
 				continue
 			}
 			p := reflect.New(fc.c.t)
@@ -257,8 +440,14 @@ func (f *fastDecoder) object(c *codec, dst reflect.Value) bool {
 		if !f.value(fc.c, fc.use, fv) {
 			return false
 		}
+		if f.hashing > 0 {
+			sum += memberHash(hashString(tagString, fc.json), f.last)
+		}
 	}
 	f.close()
+	if f.hashing > 0 {
+		f.last = objectHash(sum) // the members sent; defaults are not
+	}
 	for i := range c.fields {
 		fc := &c.fields[i]
 		if fc.optional || seenMany != nil && seenMany[i] || seenMany == nil && seen&(1<<i) != 0 {
@@ -287,6 +476,7 @@ func (f *fastDecoder) mapValue(c *codec, s *schema, dst reflect.Value) bool {
 		limit = *s.MaxProperties
 	}
 	n := 0
+	var sum uint64 // of memberHash, while hashing
 	for f.dec.PeekKind() != '}' {
 		raw, err := f.dec.ReadValue()
 		if err != nil {
@@ -298,6 +488,10 @@ func (f *fastDecoder) mapValue(c *codec, s *schema, dst reflect.Value) bool {
 		}
 		if !strOK(s.keys(), f.limits, name) {
 			return false
+		}
+		var nameHash uint64
+		if f.hashing > 0 {
+			nameHash = hashBytes(tagString, name)
 		}
 		var k reflect.Value
 		if c.keyMethods {
@@ -317,9 +511,15 @@ func (f *fastDecoder) mapValue(c *codec, s *schema, dst reflect.Value) bool {
 		if !f.value(c.elem, s.Additional, v) {
 			return false
 		}
+		if f.hashing > 0 {
+			sum += memberHash(nameHash, f.last)
+		}
 		dst.SetMapIndex(k, v)
 	}
 	f.close()
+	if f.hashing > 0 {
+		f.last = objectHash(sum)
+	}
 	return s.MinProperties == nil || n >= *s.MinProperties
 }
 
@@ -332,7 +532,17 @@ func (f *fastDecoder) array(c *codec, s *schema, dst reflect.Value) bool {
 		limit = *s.MaxItems
 	}
 	n := 0
-	var spans []int64 // with uniqueItems: where each element starts and ends
+	var spans []int64   // with uniqueItems: where each element starts and ends
+	var hashes []uint64 // with uniqueItems: each element's valueHash
+	hashing := f.hashing > 0 || s.UniqueItems
+	var h maphash.Hash // the array's valueHash, while hashing
+	if hashing {
+		startArray(&h)
+	}
+	if s.UniqueItems {
+		f.hashing++
+		defer func() { f.hashing-- }()
+	}
 	for f.dec.PeekKind() != ']' {
 		if n == limit {
 			return false
@@ -351,8 +561,12 @@ func (f *fastDecoder) array(c *codec, s *schema, dst reflect.Value) bool {
 		if !f.value(c.elem, s.Items, dst.Index(n)) {
 			return false
 		}
+		if hashing {
+			writeWord(&h, f.last)
+		}
 		if s.UniqueItems {
 			spans = append(spans, f.dec.InputOffset())
+			hashes = append(hashes, f.last)
 		}
 		n++
 	}
@@ -360,8 +574,11 @@ func (f *fastDecoder) array(c *codec, s *schema, dst reflect.Value) bool {
 	if s.MinItems != nil && n < *s.MinItems {
 		return false
 	}
-	if s.UniqueItems && !f.unique(spans) {
+	if s.UniqueItems && !f.unique(spans, hashes) {
 		return false
+	}
+	if hashing {
+		f.last = h.Sum64()
 	}
 	if n == 0 {
 		dst.Set(reflect.MakeSlice(c.t, 0, 0)) // [] is empty, not nil, as v2 makes it
@@ -375,98 +592,241 @@ func (f *fastDecoder) oneOf(c *codec, dst reflect.Value) bool {
 	if f.dec.PeekKind() != '{' {
 		return false
 	}
-	if tag, ok := f.leadingTag(c.disc); ok {
-		vc := c.variant(tag)
-		if vc == nil {
-			return false
-		}
-		v := reflect.New(vc.t).Elem()
-		if !f.object(vc, v) {
-			return false
-		}
-		dst.Set(v)
-		return true
-	}
-	// The discriminator is not first or is escaped: read the object whole,
-	// find the discriminator, and decode it again with a sub-decoder that
-	// carries the outer depth.
-	base := f.base + f.dec.StackDepth()
-	raw, err := f.dec.ReadValue()
-	if err != nil {
+	off := int(f.dec.InputOffset())
+	// The members' values may nest as deep as MaxDepth allows inside the
+	// object; past that, the look-ahead stops and the reference path names
+	// the nesting.
+	depth := f.limits.MaxDepth - f.dec.StackDepth() - 1
+	tag, ok := f.ahead.tag(f.data, 0, off, c.disc, depth)
+	if !ok {
 		return false
 	}
-	sub := getFastDecoder(f.limits)
-	defer sub.release()
-	sub.opts = f.opts
-	sub.base = base
-	vc := sub.variantIn(c, raw)
+	vc := c.variant(tag)
 	if vc == nil {
 		return false
 	}
 	v := reflect.New(vc.t).Elem()
-	sub.body.Reset()
-	sub.body.Write(raw)
-	sub.data = sub.body.Bytes()
-	sub.dec.Reset(&sub.body)
-	if !sub.object(vc, v) {
+	if !f.object(vc, v) { // leaves the variant's valueHash in last, while hashing
 		return false
 	}
 	dst.Set(v)
 	return true
 }
 
-// leadingTag peeks, without reading, at the discriminator of the next object
-// when it is the first member and has no escapes (the order geta writes).
-// It is only a hint: the object is then read and validated in full. The
-// caller must have seen PeekKind report '{'.
-func (f *fastDecoder) leadingTag(disc string) ([]byte, bool) {
-	const ws = " \t\r\n"
-	b := bytes.TrimLeft(f.data[f.dec.InputOffset():], ws+",:")
-	b = bytes.TrimLeft(b[1:], ws)
-	n := len(disc)
-	if len(b) < n+2 || b[0] != '"' || string(b[1:1+n]) != disc || b[1+n] != '"' {
-		return nil, false
-	}
-	b = bytes.TrimLeft(b[n+2:], ws)
-	if len(b) == 0 || b[0] != ':' {
-		return nil, false
-	}
-	b = bytes.TrimLeft(b[1:], ws)
-	if len(b) == 0 || b[0] != '"' {
-		return nil, false
-	}
-	end := bytes.IndexByte(b[1:], '"')
-	if end < 0 {
-		return nil, false
-	}
-	tag := b[1 : 1+end]
-	if bytes.IndexByte(tag, '\\') >= 0 {
-		return nil, false
-	}
-	return tag, true
+// A lookahead scans JSON ahead of a decoder, without reading it, to find a
+// sealed value's discriminator wherever it is among the members. It records
+// the objects and arrays it steps over by their offsets in the input, and
+// jumps over one it has recorded, so that the look-ahead of sealed values
+// nested in one another, each with its discriminator last, steps over the
+// input a bounded number of times rather than once per level.
+//
+// It records an object or array only where at least minSpan of its bytes lie
+// outside the ones it records inside it, so that spans holds at most one
+// entry per minSpan bytes of the input. One it does not record is stepped
+// over again by each look-ahead that reaches it, at a cost below minSpan, and
+// a look-ahead reaches it only from a sealed object it does not record
+// either: one whose bytes are fewer than minSpan.
+//
+// A look-ahead records anew only past the input every look-ahead before it
+// stepped over: before that point it jumps over what was recorded and
+// leaves out again what was left out, as its bytes are the same. So spans
+// stays in order of offset.
+type lookahead struct {
+	spans   []span
+	opened  []opening // the spans still open in skipValue
+	scratch []byte    // names and tags that contain escapes
+	// scanned counts the bytes stepped over, for tests.
+	scanned int
 }
 
-// variantIn returns the variant obj's discriminator selects, or nil when it
-// is missing, not a string, or an unknown tag. obj was already validated by
-// ReadValue, so the reads here cannot fail.
-func (f *fastDecoder) variantIn(c *codec, obj jsontext.Value) *codec {
-	f.body.Reset()
-	f.body.Write(obj)
-	f.data = f.body.Bytes()
-	f.dec.Reset(&f.body)
-	f.dec.ReadToken() // '{'
-	for f.dec.PeekKind() == '"' {
-		raw, _ := f.dec.ReadValue()
-		if string(f.unquote(raw)) != c.disc {
-			f.dec.SkipValue()
-			continue
+// minSpan is the fewest bytes, outside the spans recorded in it, of an
+// object or array a lookahead records.
+const minSpan = 32
+
+// A span is an object or array of the input: the offsets of its opening and
+// closing brackets, end < 0 while it is open.
+type span struct{ start, end int }
+
+// An opening is a span open in skipValue: its index in spans, and the bytes
+// in it that the spans recorded inside it cover.
+type opening struct{ at, covered int }
+
+func (l *lookahead) reset() { l.spans, l.scanned = l.spans[:0], 0 }
+
+// tag returns, unquoted, the string value of member disc of the object that
+// begins in b at or after index i (past a separator and whitespace), or
+// false when it is missing or not a string, or when a member's value nests
+// more than depth arrays and objects deep. b[0] is at offset base of the
+// input. The bytes it scans need not be validated: on valid JSON the tag is
+// the one a read of the object finds, and the caller reads the object in
+// full. The result is valid until the next call.
+func (l *lookahead) tag(b []byte, base, i int, disc string, depth int) ([]byte, bool) {
+	i += bytes.IndexByte(b[i:], '{') + 1
+	for {
+		from := i
+		i = skipSpace(b, i)
+		if i == len(b) || b[i] != '"' {
+			return nil, false // the end of the object, or not JSON
 		}
-		if raw, _ = f.dec.ReadValue(); raw.Kind() != '"' {
-			return nil
+		end := stringEnd(b, i)
+		if end < 0 {
+			return nil, false
 		}
-		return c.variant(f.unquote(raw))
+		name := b[i:end]
+		i = skipSpace(b, end)
+		if i == len(b) || b[i] != ':' {
+			return nil, false
+		}
+		i = skipSpace(b, i+1)
+		l.scanned += i - from
+		if q, ok := l.unquote(name); ok && string(q) == disc {
+			if i == len(b) || b[i] != '"' {
+				return nil, false
+			}
+			end := stringEnd(b, i)
+			if end < 0 {
+				return nil, false
+			}
+			return l.unquote(b[i:end])
+		}
+		if i = l.skipValue(b, base, i, depth); i == len(b) || b[i] != ',' {
+			return nil, false
+		}
+		i++
 	}
-	return nil
+}
+
+// unquote is fastDecoder.unquote for a string not yet validated.
+func (l *lookahead) unquote(raw []byte) ([]byte, bool) {
+	if bytes.IndexByte(raw, '\\') < 0 {
+		return raw[1 : len(raw)-1], true
+	}
+	var err error
+	l.scratch, err = jsontext.AppendUnquote(l.scratch[:0], raw)
+	return l.scratch, err == nil
+}
+
+// skipSpace returns the index of the first byte of b at or after i that is
+// not JSON whitespace.
+func skipSpace(b []byte, i int) int {
+	for i < len(b) && (b[i] == ' ' || b[i] == '\t' || b[i] == '\r' || b[i] == '\n') {
+		i++
+	}
+	return i
+}
+
+// stringEnd returns the index just past the string that begins at b[i], a
+// '"', or -1 when it does not end.
+func stringEnd(b []byte, i int) int {
+	j := i + 1
+	for {
+		k := bytes.IndexByte(b[j:], '"')
+		if k < 0 {
+			return -1
+		}
+		j += k
+		// The quote ends the string unless an odd number of backslashes
+		// precede it; b[i] stops the count.
+		n := 0
+		for b[j-1-n] == '\\' {
+			n++
+		}
+		j++
+		if n%2 == 0 {
+			return j
+		}
+	}
+}
+
+// skipValue returns the index of the ',', '}', or ']' that ends the value
+// beginning in b at or after index i, or len(b) when the value nests more
+// than depth arrays and objects deep or does not end; b[0] is at offset base
+// of the input. It records the objects and arrays it passes (lookahead) and
+// jumps over one already recorded. It is exact on valid JSON and bounded on
+// anything else.
+func (l *lookahead) skipValue(b []byte, base, i, depth int) int {
+	open := l.opened[:0]
+	from := i
+	recorded := len(l.spans) // the spans this call may jump over
+	defer func() {
+		if len(open) > 0 {
+			l.spans = l.spans[:open[0].at] // none is left open
+		}
+		l.opened = open[:0]
+	}()
+	for i < len(b) {
+		switch b[i] {
+		case '"':
+			e := stringEnd(b, i)
+			if e < 0 {
+				l.scanned += len(b) - from
+				return len(b)
+			}
+			i = e
+			continue
+		case '{', '[':
+			if end, ok := l.spanAt(base+i, recorded); ok {
+				if n := len(open); n > 0 {
+					open[n-1].covered += end - (base + i) + 1
+				}
+				l.scanned += i - from
+				i = end - base + 1
+				from = i
+				continue
+			}
+			if len(open) >= depth {
+				l.scanned += i - from
+				return len(b)
+			}
+			l.spans = append(l.spans, span{base + i, -1})
+			open = append(open, opening{at: len(l.spans) - 1})
+		case '}', ']':
+			if len(open) == 0 {
+				l.scanned += i - from
+				return i
+			}
+			o := open[len(open)-1]
+			open = open[:len(open)-1]
+			l.spans[o.at].end = base + i
+			size := base + i - l.spans[o.at].start + 1
+			covered := size
+			if size-o.covered < minSpan {
+				// Left out: the spans recorded inside it now count toward
+				// the span around it.
+				l.spans = slices.Delete(l.spans, o.at, o.at+1)
+				covered = o.covered
+			}
+			if n := len(open); n > 0 {
+				open[n-1].covered += covered
+			}
+		case ',':
+			if len(open) == 0 {
+				l.scanned += i - from
+				return i
+			}
+		}
+		i++
+	}
+	l.scanned += i - from
+	return i
+}
+
+// spanAt returns the offset of the bracket that closes the object or array
+// recorded, among the first n spans, as opening at offset off.
+func (l *lookahead) spanAt(off, n int) (int, bool) {
+	lo, hi := 0, n
+	for lo < hi {
+		m := int(uint(lo+hi) >> 1)
+		if l.spans[m].start < off {
+			lo = m + 1
+		} else {
+			hi = m
+		}
+	}
+	if lo < n && l.spans[lo].start == off && l.spans[lo].end >= 0 {
+		return l.spans[lo].end, true
+	}
+	return 0, false
 }
 
 // variant returns the codec of the variant tag selects, or nil.
@@ -479,22 +839,46 @@ func (c *codec) variant(tag []byte) *codec {
 	return nil
 }
 
-// unique reports whether the array elements at spans are pairwise distinct
-// in canonical form, as d.array compares them. Each span was already
-// accepted, so parseJSON cannot fail on it.
-func (f *fastDecoder) unique(spans []int64) bool {
+// unique reports whether the array elements at spans, whose valueHash values
+// are hashes, are pairwise distinct in canonical form, as d.array compares
+// them. Only elements whose hashes match are read again, so an element is
+// not read once for each uniqueItems array it is nested in.
+func (f *fastDecoder) unique(spans []int64, hashes []uint64) bool {
+	seen := make(map[uint64]int, len(hashes))
+	for i, h := range hashes {
+		j, ok := seen[h]
+		if !ok {
+			seen[h] = i
+			continue
+		}
+		if f.canonicalAt(spans, j) == f.canonicalAt(spans, i) {
+			return false
+		}
+		return f.uniqueExact(spans) // two values share a hash
+	}
+	return true
+}
+
+// uniqueExact is unique by canonical form alone.
+func (f *fastDecoder) uniqueExact(spans []int64) bool {
 	seen := make(map[string]bool, len(spans)/2)
-	for i := 0; i < len(spans); i += 2 {
-		// A span starts after the previous token: past whitespace and a comma.
-		raw := bytes.TrimLeft(f.data[spans[i]:spans[i+1]], " \t\r\n,")
-		tree, _ := parseJSON(raw, f.limits.MaxDepth)
-		k := canonical(tree)
+	for i := range len(spans) / 2 {
+		k := f.canonicalAt(spans, i)
 		if seen[k] {
 			return false
 		}
 		seen[k] = true
 	}
 	return true
+}
+
+// canonicalAt renders element i of spans in canonical form. Each span was
+// already accepted, so parseJSON cannot fail on it.
+func (f *fastDecoder) canonicalAt(spans []int64, i int) string {
+	// A span starts after the previous token: past whitespace and a comma.
+	raw := bytes.TrimLeft(f.data[spans[2*i]:spans[2*i+1]], " \t\r\n,")
+	tree, _ := parseJSON(raw, f.limits.MaxDepth)
+	return canonical(tree)
 }
 
 // fieldIndex finds the field a member name denotes, or -1.

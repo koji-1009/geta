@@ -215,6 +215,41 @@ func TestSealedOptionsRefuseWhatIsNoVariant(t *testing.T) {
 	}
 }
 
+// rawAny is a JSON-method type that takes any JSON value.
+type rawAny struct{ raw []byte }
+
+func (v rawAny) MarshalJSON() ([]byte, error) { return v.raw, nil }
+func (v *rawAny) UnmarshalJSON(b []byte) error {
+	v.raw = append([]byte(nil), b...)
+	return nil
+}
+
+type rawAnyBody struct {
+	O rawAny  `json:"o"`
+	P *rawAny `json:"p,omitzero"`
+}
+
+// MaxDepth holds inside a value a JSON-method type reads, on the single pass
+// as on the reference path; brackets inside its strings are not nesting.
+func TestSinglePassHoldsMaxDepthInsideAnyJSON(t *testing.T) {
+	limits := DefaultLimits
+	limits.MaxDepth = 5
+	for body, ok := range map[string]bool{
+		`{"o":[[[[]]]]}`:                       true,
+		`{"o":[[[[[]]]]]}`:                     false,
+		`{"o":[{"a":[{}]}]}`:                   true,
+		`{"o":[{"a":[{"b":[]}]}]}`:             false,
+		`{"o":["[[[[[[\"{{{{"]}`:               true,
+		`{"o":1,"p":[[[[]]]]}`:                 true,
+		`{"o":1,"p":[[[[{}]]]]}`:               false,
+		`{"o":"\\","p":[[["]]]]]]]]]]",[]]]]}`: true,
+	} {
+		if got := agree[rawAnyBody](t, []byte(body), limits); got != ok {
+			t.Errorf("%s: accepted %v, want %v", body, got, ok)
+		}
+	}
+}
+
 // A pooled buffer that grew past maxPooledBody is dropped, not kept: it is
 // left as it was, unreset.
 func TestOversizedBuffersAreNotPooled(t *testing.T) {

@@ -202,6 +202,9 @@ func fzCanon(v reflect.Value) string {
 var fzHeaderKinds = []string{"string", "enum", "int64", "uint8", "float64", "bool", "time", "uuid",
 	"[]string", "[]int16", "[]uuid", "[]listenum", "[]time"}
 
+// fzMaxViolations is the most violations geta reports in one response.
+const fzMaxViolations = 50
+
 // FuzzHeaderParameters sends each header parameter of fzHeaderIn as no line,
 // one line, or two, of two fuzzed values, and holds the answer to the
 // reference reading of every header at once: a header that is not a list
@@ -212,8 +215,9 @@ var fzHeaderKinds = []string{"string", "enum", "int64", "uint8", "float64", "boo
 // empty elements dropped, each element held to the element's type at
 // name[i], and a list of no element is absent. Every header the reference
 // takes binds the reference's value; a request with any it refuses is a 400
-// problem whose violations name exactly the refused, and the handler does
-// not run. A bound list, joined again with ", ", reads back as itself.
+// problem whose violations name exactly the refused (the first 50, as geta
+// reports no more), and the handler does not run. A bound list, joined again
+// with ", ", reads back as itself.
 func FuzzHeaderParameters(f *testing.F) {
 	var got *fzHeaderIn
 	app, err := geta.New(one("/h", get(func(_ context.Context, in *fzHeaderIn) (*ok, error) {
@@ -231,6 +235,7 @@ func FuzzHeaderParameters(f *testing.F) {
 	f.Add("a, b ,\tc", "a,,b", first)
 	f.Add(" , c", ",", second)
 	f.Add("é", "", all)
+	f.Add(strings.Repeat("x,", 60), "", first) // past the 50 violations reported
 	for _, pair := range [][2]string{
 		{"2026-01-01T00:00:00Z", "2026-02-30T00:00:00Z"},
 		{"123e4567-e89b-12d3-a456-426614174000", "123E4567-E89B-12D3-A456-426614174000"},
@@ -305,6 +310,12 @@ func FuzzHeaderParameters(f *testing.F) {
 					t.Fatalf("%s: a violation in %q: %+v", where, v.In, v)
 				}
 				named = append(named, v.Path)
+			}
+			// geta reports at most fzMaxViolations, the first in its order:
+			// the headers in field order, a list's elements in order, which
+			// is the order refused was built in.
+			if len(refused) > fzMaxViolations {
+				refused = refused[:fzMaxViolations]
 			}
 			slices.Sort(named)
 			slices.Sort(refused)

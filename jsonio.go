@@ -8,6 +8,7 @@ import (
 	"math"
 	"reflect"
 	"strconv"
+	"strings"
 
 	"encoding/json/jsontext"
 )
@@ -148,16 +149,22 @@ func syntaxError(err error) error {
 }
 
 // pointerPath renders a JSON Pointer the way violations name paths: $.a[0].
+// It is built in one buffer, since a pointer can have as many tokens as the
+// body has nesting and be as long as the body.
 func pointerPath(p jsontext.Pointer) string {
-	out := "$"
+	var b strings.Builder
+	b.WriteByte('$')
 	for tok := range p.Tokens() {
 		if _, err := strconv.Atoi(tok); err == nil && tok != "" {
-			out += "[" + tok + "]"
+			b.WriteByte('[')
+			b.WriteString(tok)
+			b.WriteByte(']')
 			continue
 		}
-		out += "." + tok
+		b.WriteByte('.')
+		b.WriteString(tok)
 	}
-	return out
+	return b.String()
 }
 
 func jsonType(v any) string {
