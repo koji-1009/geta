@@ -451,6 +451,13 @@ func TestSinglePassAgreesWithTheReference(t *testing.T) {
 	if accepted != 8 {
 		t.Fatalf("%d seeds accepted, want 8", accepted)
 	}
+	// FuzzSinglePass's seeds of fastSeeds[1]'s members are valid, each within
+	// the bound it cuts a body to.
+	for _, s := range fastSeedsSplit {
+		if !agree[fastBody](t, []byte(s), DefaultLimits) || len(s) > singlePassFuzzMax {
+			t.Fatalf("refused, or past %d bytes: %s", singlePassFuzzMax, s)
+		}
+	}
 	nest := func(depth int) string {
 		return strings.Repeat(`{"leaf":{"s":"a"},"list":[{"s":"a"}],"next":`, depth) +
 			`{"leaf":{"s":"a"},"list":[{"s":"a"}]}` + strings.Repeat("}", depth)
@@ -831,6 +838,16 @@ func TestSinglePassAgreesOnSealedTypes(t *testing.T) {
 	agreeIn[fastShape](t, r, []byte(`{"r":1,"kind":"circle"} x`), DefaultLimits)
 }
 
+// sealedFuzzMax bounds the bodies FuzzSinglePassSealed reads: a body is cut
+// to it. Go's minimizer runs the target on the order of n² times to shrink a
+// body of n bytes that found new coverage, and shows no progress meanwhile;
+// a body of a few hundred bytes holds a worker for seconds, one of a
+// kilobyte for the minimizer's whole minute. The tight limits reach each
+// backstop within the bound, which is past the longest seed. The body is cut
+// rather than skipped: a branch that skips is coverage of its own, which the
+// minimizer would keep a body one byte past the bound to reach.
+const sealedFuzzMax = 256
+
 func FuzzSinglePassSealed(f *testing.F) {
 	for _, s := range append(sealedSeeds, nullSealedSeeds...) {
 		f.Add([]byte(s))
@@ -847,6 +864,7 @@ func FuzzSinglePassSealed(f *testing.F) {
 	tight.MaxItems = 2
 	tight.MaxStringLength = 3
 	f.Fuzz(func(t *testing.T, data []byte) {
+		data = data[:min(len(data), sealedFuzzMax)]
 		agreeIn[fastScene](t, r, data, DefaultLimits)
 		agreeIn[fastScene](t, r, data, tight)
 	})
@@ -885,19 +903,24 @@ type fastParams struct {
 	Enf *float32 `query:"enf" schema:"enum=1.5|0.1"`
 }
 
-// A parameter is bound by bindFast exactly when bind would bind it, to the
-// same value.
-func agreeParams(t *testing.T, s string) {
-	t.Helper()
+// fastParamsPlan is the input plan of fastParams.
+func fastParamsPlan(t testing.TB) *inPlan {
 	p, err := newRegistry().inPlan(reflect.TypeFor[fastParams]())
 	if err != nil {
 		t.Fatal(err)
 	}
+	return p
+}
+
+// A parameter is bound by bindFast exactly when bind would bind it, to the
+// same value, under limits.
+func agreeParams(t *testing.T, p *inPlan, s string, limits Limits) {
+	t.Helper()
 	for _, pp := range p.params {
 		var want, got fastParams
-		d := &decoder{limits: DefaultLimits, in: pp.in}
+		d := &decoder{limits: limits, in: pp.in}
 		pp.bind(d, []string{s}, reflect.ValueOf(&want).Elem().FieldByIndex(pp.index))
-		ok := pp.bindFast(s, reflect.ValueOf(&got).Elem().FieldByIndex(pp.index), DefaultLimits)
+		ok := pp.bindFast(s, reflect.ValueOf(&got).Elem().FieldByIndex(pp.index), limits)
 		switch {
 		case ok && len(d.errs) > 0:
 			t.Fatalf("%s: bindFast took %q, which bind refuses: %v", pp.name, s, d.errs)
@@ -921,16 +944,31 @@ var paramSeeds = []string{"", "ab", "abcdef", "Ab", "x", "z", "2026-02-28", "202
 	"007", "-07", "00", "+7", "-03", "01.5", "-0.0", "\xff", "a\xc3", "\xed\xa0\x80", "2026-02-2\xff"}
 
 func TestParamFastPathAgreesWithBind(t *testing.T) {
+	p := fastParamsPlan(t)
 	for _, s := range paramSeeds {
-		agreeParams(t, s)
+		agreeParams(t, p, s, DefaultLimits)
 	}
 }
 
+// FuzzParamFastPath holds bindFast to bind on an arbitrary value, under the
+// default limits and under a MaxStringLength of 64. The value is cut to
+// twice that, which still reaches it: Go's minimizer runs the target on the
+// order of n² times to shrink a value of n bytes that found new coverage,
+// showing no progress meanwhile. The plan is made once, as New makes it:
+// made again on each run, it took most of the run.
 func FuzzParamFastPath(f *testing.F) {
 	for _, s := range paramSeeds {
 		f.Add(s)
 	}
-	f.Fuzz(func(t *testing.T, s string) { agreeParams(t, s) })
+	tight := DefaultLimits
+	tight.MaxStringLength = 64
+	f.Add(strings.Repeat("a", tight.MaxStringLength+1))
+	p := fastParamsPlan(f)
+	f.Fuzz(func(t *testing.T, s string) {
+		s = s[:min(len(s), 2*tight.MaxStringLength)]
+		agreeParams(t, p, s, DefaultLimits)
+		agreeParams(t, p, s, tight)
+	})
 }
 
 // A pooled body buffer, as a problem is written into, holds what marshal
@@ -953,8 +991,32 @@ func TestPooledBufferMatchesMarshal(t *testing.T) {
 	}
 }
 
+// singlePassFuzzMax bounds the bodies FuzzSinglePass reads, as
+// sealedFuzzMax does FuzzSinglePassSealed's.
+const singlePassFuzzMax = 256
+
+// fastSeedsSplit are the members of fastSeeds[1], which holds a member of
+// every kind in more than singlePassFuzzMax bytes, as bodies within it.
+var fastSeedsSplit = []string{
+	`{"leaf":{"s":"abc","e":"` + "\\u00e9" + `","d":"2026-02-28","i8":-128,"u16":2,"u":0,"f32":99.5,"f64":-1e-7,"b":false,` +
+		`"lv":"high","t":"2026-07-18T09:30:00.5+09:00"},"list":[{"s":"a"}]}`,
+	`{"leaf":{"s":"abc","id":"123e4567-e89b-12d3-a456-426614174000","raw":"AAEC","m":{"k":1,"` + "\\u006b2" + `":-1},` +
+		`"fd":"2024-02-29","ft":"08:59:60.123456789012+09:00","fdu":"P1Y2M3DT4H5M6S"},"list":[{"s":"a"}]}`,
+	`{"leaf":{"s":"abc","fe":"a..b@docomo.ne.jp","fh":"é@x","fday":"today","f4":"192.000.002.001","f6":"::ffff:192.0.2.1",` +
+		`"fp":"/a~1b/~0","frp":"0#","fpw":"été"},"list":[{"s":"a"}]}`,
+	`{"leaf":{"s":"abc","mk":{"a":1,"b":2},"mkp":{"k-a":1},"mfmt":{"x":"1/a"}},` +
+		`"list":[{"s":"a"},{"s":"b"}],"words":[],"grid":[[1,2.5],[]],"x":3,"many":{"A":1,"J":2}}`,
+}
+
+// FuzzSinglePass holds the single pass to the reference path on an
+// arbitrary body, cut to singlePassFuzzMax, under the default limits and
+// under tight ones that reach each backstop. The registry is made once, as
+// New makes it: made again on each run, it took most of the run.
 func FuzzSinglePass(f *testing.F) {
 	for _, s := range fastSeeds {
+		f.Add([]byte(s))
+	}
+	for _, s := range fastSeedsSplit {
 		f.Add([]byte(s))
 	}
 	for s := range keywordSeeds {
@@ -964,9 +1026,11 @@ func FuzzSinglePass(f *testing.F) {
 	tight.MaxDepth = 8
 	tight.MaxItems = 2
 	tight.MaxStringLength = 3
+	r := newRegistry()
 	f.Fuzz(func(t *testing.T, data []byte) {
-		agree[fastBody](t, data, DefaultLimits)
-		agree[fastBody](t, data, tight)
+		data = data[:min(len(data), singlePassFuzzMax)]
+		agreeIn[fastBody](t, r, data, DefaultLimits)
+		agreeIn[fastBody](t, r, data, tight)
 	})
 }
 

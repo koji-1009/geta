@@ -1,0 +1,2 @@
+go test fuzz v1
+string("r=a&p=1e-50&p=2e-50")

@@ -147,13 +147,26 @@ type fzHeaderIn struct {
 	Ts  *[]time.Time `header:"X-Ts"`
 }
 
+// fzHeaderLimits are the limits FuzzHeaderParameters binds under: a string
+// or a date-time, which state no length, past MaxStringLength within the
+// fuzzHeaderTextMax bytes a value is cut to.
+var fzHeaderLimits = func() geta.Limits {
+	l := geta.DefaultLimits
+	l.MaxStringLength = 64
+	return l
+}()
+
+// fuzzHeaderTextMax is the bytes FuzzHeaderParameters cuts each value to.
+const fuzzHeaderTextMax = 128
+
 // fzRefValue reads s as a value of the kind a header of fzHeaderIn holds,
 // by the reference rules: the canonical text of what it binds, or false
 // when it is refused.
 func fzRefValue(kind, s string) (string, bool) {
+	within := utf8.RuneCountInString(s) <= fzHeaderLimits.MaxStringLength
 	switch kind {
 	case "string":
-		return s, utf8.ValidString(s) && refFieldValue(s) && utf8.RuneCountInString(s) <= geta.DefaultLimits.MaxStringLength
+		return s, utf8.ValidString(s) && refFieldValue(s) && within
 	case "enum":
 		return s, s == "a" || s == "b c"
 	case "listenum":
@@ -177,7 +190,7 @@ func fzRefValue(kind, s string) (string, bool) {
 		return s, s == "true" || s == "false"
 	case "time":
 		tm, ok := refDateTime(s)
-		return tm.UTC().Format(time.RFC3339Nano), ok
+		return tm.UTC().Format(time.RFC3339Nano), ok && within
 	case "uuid":
 		return strings.ToLower(s), refUUID.MatchString(s)
 	}
@@ -210,7 +223,8 @@ const fzMaxViolations = 50
 // reference reading of every header at once: a header that is not a list
 // binds one line held to its type (an integer as JSON writes one in range, a
 // number as JSON writes one, a date-time of RFC 3339, a 36-character uuid,
-// an enum member, a string that is a UTF-8 header field value), and two
+// an enum member, a string that is a UTF-8 header field value; a string and
+// a date-time within MaxStringLength, fzHeaderLimits'), and two
 // lines are "given 2 times"; a list is its lines split at commas, trimmed,
 // empty elements dropped, each element held to the element's type at
 // name[i], and a list of no element is absent. Every header the reference
@@ -224,7 +238,7 @@ func FuzzHeaderParameters(f *testing.F) {
 	app, err := geta.New(one("/h", get(func(_ context.Context, in *fzHeaderIn) (*ok, error) {
 		got = in
 		return &ok{true}, nil
-	})))
+	})), geta.WithLimits(fzHeaderLimits))
 	if err != nil {
 		f.Fatal(err)
 	}
@@ -245,11 +259,16 @@ func FuzzHeaderParameters(f *testing.F) {
 		{"1998-12-31T23:59:60Z", "1990-12-31T15:59:59-24:00"},
 		{"2026-07-18t09:30:00.123456789123z", "2026-07-18T09:30:00,5Z"},
 		{"\xff", "a\xc3"}, {"-1, 2", "300"}, {"1e-400", "-0.0"},
+		// At MaxStringLength and past it.
+		{strings.Repeat("a", fzHeaderLimits.MaxStringLength), strings.Repeat("a", fzHeaderLimits.MaxStringLength+1)},
+		{"2026-07-18T09:30:00." + strings.Repeat("1", fzHeaderLimits.MaxStringLength-21) + "Z",
+			"2026-07-18T09:30:00." + strings.Repeat("1", fzHeaderLimits.MaxStringLength-20) + "Z"},
 	} {
 		f.Add(pair[0], pair[1], first)
 		f.Add(pair[0], pair[1], second)
 	}
 	f.Fuzz(func(t *testing.T, a, b string, mask uint32) {
+		a, b = fzCut(a, fuzzHeaderTextMax), fzCut(b, fuzzHeaderTextMax)
 		req := httptest.NewRequest(http.MethodGet, "/h", nil)
 		lines := make([][]string, len(fzHeaderNames))
 		for i, name := range fzHeaderNames {

@@ -158,9 +158,11 @@ go build -C getavet -o "$TMPDIR/getavet" ./cmd/getavet
 go test -C examples/register-sql ./...        # the example adapters' conformance and the register flow on SQLite and PostgreSQL (embedded, or GETA_POSTGRES_URL)
 go test -C examples/booking ./...             # the booking example: JWT, sealed types, zstd, OpenTelemetry, WebSocket, HTTP/3
 go vet -C examples/booking -vettool="$TMPDIR/getavet" ./...   # getavet over the booking module
-go test -run XXX -fuzz FuzzBinding .          # fuzz the binder
+go test -run XXX -fuzz FuzzBinding -fuzzminimizetime 10s .   # fuzz the binder
 uvx openapi-spec-validator examples/register/openapi.json examples/auth/openapi.json examples/auth/openapi.3.2.json examples/booking/openapi.json examples/booking/openapi.3.2.json testdata/formats.openapi.json testdata/forms.openapi.json testdata/query.openapi.3.2.json testdata/schema.openapi.json testdata/responses.openapi.json testdata/security.openapi.json testdata/security.openapi.3.2.json examples/bookmarks/openapi.json
 ```
+
+Go's fuzzer minimizes each input that finds new coverage, running the target on the order of n² times for an input of n bytes, for up to `-fuzzminimizetime` (a minute by default) and with no progress shown meanwhile. Most fuzz targets cut their inputs to the size in which every limit they hold is reached, which keeps that to seconds; `-fuzzminimizetime 10s` bounds the rest: FuzzRouter, whose every input builds an App, and FuzzContentHeaders and FuzzConditional, which hold inputs past a kilobyte.
 
 Each example's `clientcheck/roundtrip.py` drives the running server through a client that `openapi-python-client` generates from the committed `openapi.json`. The script's docstring has the commands.
 

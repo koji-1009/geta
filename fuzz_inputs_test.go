@@ -256,6 +256,33 @@ func fzRefused(t *testing.T, p *geta.Problem, in string, trim string) map[string
 	return names
 }
 
+// fzCollide reports whether q's p binds two equal values. uniqueItems holds
+// numbers to their exact value as sent, so 1e-50 and 2e-50 are distinct, but
+// both bind as the float32 0 (TestUniqueItemsComparesNumbersExactly): sent
+// again, as the values bound are written, they are one number twice.
+func fzCollide(q FzQuery) bool {
+	if q.P == nil {
+		return false
+	}
+	seen := map[float32]bool{}
+	for _, x := range *q.P {
+		if seen[x] {
+			return true
+		}
+		seen[x] = true
+	}
+	return false
+}
+
+// fzOnlyRepeats checks that p is the refusal of values fzCollide finds
+// repeated: one violation, of uniqueItems at path.
+func fzOnlyRepeats(t *testing.T, p *geta.Problem, path, sent string) {
+	t.Helper()
+	if p == nil || len(p.Errors) != 1 || p.Errors[0].Path != path || !strings.HasSuffix(p.Errors[0].Message, "(uniqueItems)") {
+		t.Fatalf("%q repeats a value of p, but is answered %+v", sent, p)
+	}
+}
+
 // fzAgrees checks that the violations of p name exactly the parameters
 // fzValid finds invalid. Where the response omitted violations (past 50, or
 // past 16 KiB of them), a missing one is not a disagreement.
@@ -284,23 +311,57 @@ var fzQuerySeeds = []string{
 	"r=a&id=123E4567-E89B-12D3-A456-426614174000", "limit=3&mode=a&n=1.5&n=2", "r=a&filter[min]=-1&filter[q]=abcdef",
 }
 
+// fzCut cuts s to its first n bytes. A fuzz target cuts its input to the
+// size in which every limit it is held to is reached, since Go's minimizer
+// runs the target on the order of n² times to shrink an input of n bytes
+// that found new coverage, and shows no progress meanwhile: an input of
+// 1 KiB holds a worker for the minimizer's whole minute, and a handful of
+// them stops the run. It cuts rather than skips: a branch that skips is
+// coverage of its own, which the minimizer would keep an input one byte
+// past the bound to reach.
+func fzCut[S ~string | ~[]byte](s S, n int) S {
+	return s[:min(len(s), n)]
+}
+
+// fzQueryMax bounds the query strings FuzzQueryParameters sends: every limit
+// the query is held to is reached within it, fzQueryLimits lowering the
+// backstops.
+const fzQueryMax = 256
+
+// fzQueryLimits are the limits FuzzQueryParameters binds under: t (a
+// date-time, which states no length) past MaxStringLength, and p (which
+// states no maxItems) past MaxItems, each within fzQueryMax, and MaxItems at
+// least the 50 violations a response lists, so p's elements reach that cap.
+var fzQueryLimits = func() geta.Limits {
+	l := geta.DefaultLimits
+	l.MaxStringLength = 64
+	l.MaxItems = 50
+	return l
+}()
+
 // FuzzQueryParameters sends an arbitrary query string to an input holding
 // every kind of query parameter and a deepObject. A string net/url cannot
 // parse is a 400 naming no violation; any other is a 200 or a 400 problem
 // whose violations are at the parameters a check apart from geta finds
 // invalid, and only those; and what a 200 binds, sent again as the query
-// it is written as, binds the same values.
+// it is written as, binds the same values, or, values of p that one float32
+// holds, is refused as repeating them.
 func FuzzQueryParameters(f *testing.F) {
 	for _, s := range fzQuerySeeds {
 		f.Add(s)
 	}
+	// The backstops, and the cap of violations.
+	f.Add("r=a&t=2026-07-18T09:30:00." + strings.Repeat("0", 44) + "Z")
+	f.Add("r=a" + strings.Repeat("&p=1", fzQueryLimits.MaxItems+1))
+	f.Add("r=a" + strings.Repeat("&p=a", 50))
 	var got *fzQueryIn
 	h := func(_ context.Context, in *fzQueryIn) (*ok, error) { got = in; return &ok{true}, nil }
-	a, err := geta.New(one("/q", get(h)))
+	a, err := geta.New(one("/q", get(h)), geta.WithLimits(fzQueryLimits))
 	if err != nil {
 		f.Fatal(err)
 	}
 	f.Fuzz(func(t *testing.T, raw string) {
+		raw = fzCut(raw, fzQueryMax)
 		got = nil
 		p := fzRefusal(t, fzSend(a, http.MethodGet, "/q", raw, "", nil, false), http.StatusBadRequest)
 		vals, perr := url.ParseQuery(raw)
@@ -319,7 +380,13 @@ func FuzzQueryParameters(f *testing.F) {
 				t.Fatalf("%q bound i=%d, not its default", raw, got.I)
 			}
 			again := fzValues(got.FzQuery, got.Filter).Encode()
-			if p := fzRefusal(t, fzSend(a, http.MethodGet, "/q", again, "", nil, false)); p != nil {
+			repeats := fzCollide(got.FzQuery)
+			p := fzRefusal(t, fzSend(a, http.MethodGet, "/q", again, "", nil, false), http.StatusBadRequest)
+			switch {
+			case repeats:
+				fzOnlyRepeats(t, p, "p", again)
+				return
+			case p != nil:
 				t.Fatalf("%q bound values that, sent as %q, are refused: %+v", raw, again, p)
 			}
 			if back := fzValues(got.FzQuery, got.Filter).Encode(); back != again {
@@ -379,9 +446,14 @@ func fzCutPath(path string) string {
 // parse one violation at $; any other is a 200 or a 400 whose violations
 // are at the fields a check apart from geta finds invalid and at each name
 // the form does not hold. What a 200 binds, sent again as the form it is
-// written as, binds the same values. And a form field binds as a query
+// written as, binds the same values, or, values of p that one float32
+// holds, is refused as repeating them. And a form field binds as a query
 // parameter does: the same text sent as the query of the same fields binds
 // the same values or is refused with the same violations.
+//
+// The limits are fzQueryLimits, and a body limit within fzQueryMax; a body
+// is cut to twice the body limit (fzCut), a 413 as one just past the limit
+// is.
 func FuzzFormBody(f *testing.F) {
 	for _, s := range fzQuerySeeds {
 		f.Add(s, false)
@@ -390,8 +462,8 @@ func FuzzFormBody(f *testing.F) {
 	f.Add("r=a+b&s=a%20", true)
 	f.Add(strings.Repeat("r=a&", 130), true)
 	f.Add(strings.Repeat("r=a&", 130), false)
-	limits := geta.DefaultLimits
-	limits.MaxBodyBytes = 512
+	limits := fzQueryLimits
+	limits.MaxBodyBytes = fzQueryMax
 	var form *fiFormIn
 	var query *fzQueryIn
 	hf := func(_ context.Context, in *fiFormIn) (*ok, error) { form = in; return &ok{true}, nil }
@@ -404,6 +476,7 @@ func FuzzFormBody(f *testing.F) {
 		f.Fatal(err)
 	}
 	f.Fuzz(func(t *testing.T, body string, unknown bool) {
+		body = fzCut(body, 2*int(limits.MaxBodyBytes))
 		form, query = nil, nil
 		p := fzRefusal(t, fzSend(a, http.MethodPost, "/f", "", fiFormMedia, []byte(body), unknown),
 			http.StatusBadRequest, http.StatusRequestEntityTooLarge)
@@ -441,11 +514,17 @@ func FuzzFormBody(f *testing.F) {
 			fzAgrees(t, vals, nil, nil)
 			again := fzValues(FzQuery(form.Body), nil).Encode()
 			if int64(len(again)) <= limits.MaxBodyBytes {
-				if p := fzRefusal(t, fzSend(a, http.MethodPost, "/f", "", fiFormMedia, []byte(again), false)); p != nil {
+				repeats := fzCollide(FzQuery(form.Body))
+				p := fzRefusal(t, fzSend(a, http.MethodPost, "/f", "", fiFormMedia, []byte(again), false), http.StatusBadRequest)
+				switch {
+				case repeats:
+					fzOnlyRepeats(t, p, "$.p", again)
+				case p != nil:
 					t.Fatalf("%q bound values that, sent as %q, are refused: %+v", body, again, p)
-				}
-				if back := fzValues(FzQuery(form.Body), nil).Encode(); back != again {
-					t.Fatalf("%q: %q binds %q", body, again, back)
+				default:
+					if back := fzValues(FzQuery(form.Body), nil).Encode(); back != again {
+						t.Fatalf("%q: %q binds %q", body, again, back)
+					}
 				}
 			}
 		} else {
@@ -485,13 +564,33 @@ func FuzzFormBody(f *testing.F) {
 // FuzzDeepObjectAgreesWithForm sends arbitrary members as a deepObject's
 // query keys (filter[m]) and as a form body of the same struct: a deepObject's
 // members are bound as a form's fields are, so both bind the same values, or
-// both are refused with the same violations, at filter[m] and at $.m.
+// both are refused with the same violations, at filter[m] and at $.m. The
+// members are cut to fzMembersMax bytes (fzCut), within which the cap of
+// violations is reached; TestDeepObjectAgreesWithFormPastTheCutPath sends a
+// member whose paths geta cuts.
 func FuzzDeepObjectAgreesWithForm(f *testing.F) {
+	const fzMembersMax = 160
 	for _, s := range []string{"min=1&since=2026-05-01", "status=closed", "min=-1&q=abcdef", "bogus=1", "min=1&min=2",
 		"status=gone", "min][x=1", "=1", "since=2026-02-30", "min=007", "q=%ff", "%ff=1", "status=", "min=1e2", "q=+",
 		"since=2026-02-28&status=open&q=abcde&min=0", "]=1", "[=1&[]=2"} {
 		f.Add(s)
 	}
+	check := fzDeepObjectAgreesWithForm(f)
+	f.Fuzz(func(t *testing.T, raw string) { check(t, fzCut(raw, fzMembersMax)) })
+}
+
+// A member long enough that geta cuts its paths, filter[m] and $.m, past 256
+// bytes is refused alike as a deepObject's and as a form's.
+func TestDeepObjectAgreesWithFormPastTheCutPath(t *testing.T) {
+	check := fzDeepObjectAgreesWithForm(t)
+	for _, raw := range []string{"0\xf2" + strings.Repeat("0", 251), strings.Repeat("m", 300) + "=1&min=x"} {
+		check(t, raw)
+	}
+}
+
+// fzDeepObjectAgreesWithForm is FuzzDeepObjectAgreesWithForm's check of a
+// query of members, raw.
+func fzDeepObjectAgreesWithForm(tb testing.TB) func(t *testing.T, raw string) {
 	var deep, form *fzFilter
 	hd := func(_ context.Context, in *fzDeepIn) (*ok, error) { deep = in.Filter; return &ok{true}, nil }
 	hf := func(_ context.Context, in *fzFilterFormIn) (*ok, error) { form = in.Body; return &ok{true}, nil }
@@ -500,9 +599,10 @@ func FuzzDeepObjectAgreesWithForm(f *testing.F) {
 		{Path: "/f", Route: geta.Route{Post: geta.Op(http.StatusOK, hf, geta.Doc{})}},
 	}})
 	if err != nil {
-		f.Fatal(err)
+		tb.Fatal(err)
 	}
-	f.Fuzz(func(t *testing.T, raw string) {
+	return func(t *testing.T, raw string) {
+		t.Helper()
 		vals, err := url.ParseQuery(raw)
 		if err != nil || len(vals) == 0 {
 			return
@@ -526,16 +626,22 @@ func FuzzDeepObjectAgreesWithForm(f *testing.F) {
 			}
 			return
 		}
-		dl := fzListed(dp, "filter[")
+		// filter[m]: message, as $.m: message, each path as geta lists it,
+		// cut past 256 bytes (fzCutPath).
+		asForm := map[string]string{}
+		for k := range vals {
+			m := strings.ToValidUTF8(k, "�")
+			asForm[fzCutPath("filter["+m+"]")] = fzCutPath("$." + m)
+		}
+		dl := make([]string, len(dp.Errors))
 		for i, v := range dp.Errors {
-			if v.In != "query" || !strings.HasPrefix(v.Path, "filter[") {
+			path, ok := asForm[v.Path]
+			if v.In != "query" || !ok {
 				t.Fatalf("%q: %+v", raw, dp.Errors)
 			}
-			// filter[m]: message, as $.m: message.
-			path, _ := strings.CutSuffix(strings.TrimPrefix(v.Path, "filter["), "]")
 			dl[i] = path + ": " + v.Message
 		}
-		fl := fzListed(fp, "$.")
+		fl := fzListed(fp, "")
 		for _, v := range fp.Errors {
 			if v.In != "body" {
 				t.Fatalf("%q: %+v", raw, fp.Errors)
@@ -544,7 +650,7 @@ func FuzzDeepObjectAgreesWithForm(f *testing.F) {
 		if !fzSameViolations(dl, fl, dp.Omitted, fp.Omitted) {
 			t.Fatalf("%q: as a deepObject %q, as a form %q", raw, dl, fl)
 		}
-	})
+	}
 }
 
 type fzUpload struct {
@@ -590,16 +696,16 @@ type fzReceived struct {
 }
 
 const (
-	fzUploadMax    = 2048 // the body limit of fzUploadApp
-	fzUploadMemory = 16   // the bytes of files it holds in memory
+	fzUploadMax    = 2048 // the body limit FuzzMultipartParts sends past
+	fzUploadMemory = 16   // the bytes of files fzUploadApp holds in memory
 )
 
-// fzUploadApp takes fzUpload under a body limit of fzUploadMax bytes, its
-// files past fzUploadMemory bytes held in temporary files; its handler
-// stores in *got what it received, its files read while it runs.
-func fzUploadApp(f *testing.F, got **fzReceived) *geta.App {
+// fzUploadApp takes fzUpload under a body limit of bodyMax bytes, its files
+// past fzUploadMemory bytes held in temporary files; its handler stores in
+// *got what it received, its files read while it runs.
+func fzUploadApp(f *testing.F, got **fzReceived, bodyMax int64) *geta.App {
 	limits := geta.DefaultLimits
-	limits.MaxBodyBytes = fzUploadMax
+	limits.MaxBodyBytes = bodyMax
 	limits.MaxMultipartMemory = fzUploadMemory
 	h := func(_ context.Context, in *fzUploadIn) (*ok, error) {
 		r := &fzReceived{title: in.Body.Title, count: in.Body.Count, avatar: fzRead(in.Body.Avatar)}
@@ -674,7 +780,11 @@ func fzTaken(t *testing.T, r *fzReceived) {
 // is a 200, or a 400, 413, or 415 problem; a declared length past the limit
 // is never taken; what a 200 hands the handler holds to the constraints;
 // and no temporary file is left once the request is answered.
+//
+// The body limit is past the longest seed, the body is cut to twice it and
+// the Content-Type to 128 bytes (fzCut).
 func FuzzMultipartBody(f *testing.F) {
+	const bodyMax = 320
 	const ct = "multipart/form-data; boundary=b"
 	part := func(disposition, ctype, content string) string {
 		s := "--b\r\nContent-Disposition: " + disposition + "\r\n"
@@ -713,13 +823,14 @@ func FuzzMultipartBody(f *testing.F) {
 	}
 	check := fzTempDir(f)
 	var got *fzReceived
-	a := fzUploadApp(f, &got)
+	a := fzUploadApp(f, &got, bodyMax)
 	f.Fuzz(func(t *testing.T, ctype string, body []byte, unknown bool) {
+		ctype, body = fzCut(ctype, 128), fzCut(body, 2*bodyMax)
 		got = nil
 		p := fzRefusal(t, fzSend(a, http.MethodPost, "/m", "", ctype, body, unknown),
 			http.StatusBadRequest, http.StatusRequestEntityTooLarge, http.StatusUnsupportedMediaType)
 		check(t)
-		if !unknown && len(body) > fzUploadMax && (p == nil || p.Status == http.StatusBadRequest) {
+		if !unknown && len(body) > bodyMax && (p == nil || p.Status == http.StatusBadRequest) {
 			t.Fatalf("%d bytes declared past the limit: %+v", len(body), p)
 		}
 		if p == nil {
@@ -768,7 +879,12 @@ const (
 // its Content-Type, and its content; a body cut short is never taken
 // without its close delimiter; and no temporary file is left once the
 // request is answered.
+//
+// Each text and the avatar are cut to fzPartsTextMax bytes (fzCut), within
+// which the title's maxLength and MaxMultipartMemory are reached; grow
+// reaches the body limit.
 func FuzzMultipartParts(f *testing.F) {
+	const fzPartsTextMax = 64
 	f.Add("hi", "7", "t", uint8(2), []byte("PNG"), "me.png", "image/png", uint8(1), uint16(20), uint8(0), uint16(0))
 	f.Add("héllo wörld", "-128", "é", uint8(3), []byte("long avatar data past memory"), "dir/a b\".png", " text/plain ", uint8(2), uint16(0), uint8(fzUnknownLen), uint16(0))
 	f.Add("", "", "", uint8(0), []byte(nil), "", "", uint8(0), uint16(0), uint8(fzNoCount), uint16(0))
@@ -780,8 +896,10 @@ func FuzzMultipartParts(f *testing.F) {
 	f.Add("t", "1", "a", uint8(1), []byte("data"), "/", "b", uint8(1), uint16(100), uint8(fzNoAvatar), uint16(0))
 	check := fzTempDir(f)
 	var got *fzReceived
-	a := fzUploadApp(f, &got)
+	a := fzUploadApp(f, &got, fzUploadMax)
 	f.Fuzz(func(t *testing.T, title, count, tag string, ntags uint8, avatar []byte, fname, ctype string, nextra uint8, grow uint16, flags uint8, cut uint16) {
+		title, count, tag = fzCut(title, fzPartsTextMax), fzCut(count, fzPartsTextMax), fzCut(tag, fzPartsTextMax)
+		avatar, fname, ctype = fzCut(avatar, fzPartsTextMax), fzCut(fname, fzPartsTextMax), fzCut(ctype, fzPartsTextMax)
 		const boundary = "fzB0undary"
 		var buf bytes.Buffer
 		w := multipart.NewWriter(&buf)
@@ -950,8 +1068,9 @@ var fzHeaderTypes = []struct {
 // it as a request's header parameter of the same type and constraints is
 // read: Conforms takes the value exactly when a request carrying it in that
 // header parameter is bound (a 200), and refuses it exactly when the
-// request is a 400 naming that header. Values are kept below the request's
-// MaxStringLength backstop, which a response's schema does not state.
+// request is a 400 naming that header. Values are cut to 128 bytes (fzCut),
+// below the request's MaxStringLength backstop, which a response's schema
+// does not state.
 func FuzzConformsHeaderAgreesWithRequest(f *testing.F) {
 	for _, s := range []string{"1", "0", "3600", "3601", "-1", "007", "+7", "1.5", "1e2", "soon", "", " 1", "1 ", "1\t",
 		"4294967295", "4294967296", "true", "false", "TRUE", "2026-10-04T00:00:00Z", "2026-10-04t00:00:00z",
@@ -970,9 +1089,7 @@ func FuzzConformsHeaderAgreesWithRequest(f *testing.F) {
 	}
 	match := geta.Match{Template: "/h", Method: http.MethodGet, Operation: true}
 	f.Fuzz(func(t *testing.T, s string) {
-		if len(s) > 4000 {
-			return
-		}
+		s = fzCut(s, 128)
 		for _, h := range fzHeaderTypes {
 			r := httptest.NewRequest(http.MethodGet, "/h", nil)
 			r.Header[h.name] = []string{s}
