@@ -33,30 +33,31 @@ func scanAll(boundary, body string) *closeWatcher {
 	}
 }
 
+// timeScan returns how long scanAll takes on body.
 func timeScan(boundary, body string) time.Duration {
-	best := time.Duration(1<<63 - 1)
-	for range 5 {
-		start := time.Now()
-		scanAll(boundary, body)
-		best = min(best, time.Since(start))
-	}
-	return best
+	start := time.Now()
+	scanAll(boundary, body)
+	return time.Since(start)
 }
 
-// The close delimiter watch costs the body's length, whatever the boundary's:
-// a line matching the delimiter's first bytes is compared a byte at a time,
-// not as a prefix that grows with each byte. Comparing the prefix made a 1 MB
-// body of such lines cost its length times the boundary's (up to about 4 KB,
-// the longest delimiter line mime/multipart reads).
+// The close delimiter watch costs the body's length, whatever the boundary's
+// (up to about 4 KB, the longest delimiter line mime/multipart reads): a line
+// matching the delimiter's first bytes is compared a byte at a time. The two
+// boundaries are timed in turn and each keeps its fastest run, so a pause on
+// a shared machine falls on both or neither.
 func TestCloseWatcherScanIsLinear(t *testing.T) {
-	const size = 1 << 20
+	const size = 4 << 20
 	short, long := strings.Repeat("b", 64), strings.Repeat("b", 4000)
-	ts, tl := timeScan(short, prefixLines(short, size)), timeScan(long, prefixLines(long, size))
-	if !scanAll(long, prefixLines(long, size)).closed {
+	shortBody, longBody := prefixLines(short, size), prefixLines(long, size)
+	if !scanAll(long, longBody).closed {
 		t.Fatal("the close delimiter went unnoticed")
 	}
-	// Linear, the long boundary costs no more than the short one; quadratic,
-	// it cost over 5 times as much.
+	ts, tl := time.Duration(1<<63-1), time.Duration(1<<63-1)
+	for range 5 {
+		ts = min(ts, timeScan(short, shortBody))
+		tl = min(tl, timeScan(long, longBody))
+	}
+	// The long boundary costs about what the short one does.
 	if tl > 3*ts {
 		t.Errorf("a 4000-byte boundary took %v, a 64-byte one %v: the scan grows with the boundary", tl, ts)
 	}
