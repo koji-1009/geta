@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"os"
 	"strings"
@@ -325,6 +326,35 @@ func TestOversizedFormIs413(t *testing.T) {
 	tooLarge(c.Multipart(http.MethodPost, "/m", url.Values{"title": {"t"}},
 		getatest.FilePart{Field: "avatar", Filename: "a", Content: bytes.Repeat([]byte("x"), 100)}))
 	tooLarge(c.Form(http.MethodPost, "/f?id=1", url.Values{"name": {strings.Repeat("x", 100)}}))
+
+	// A body of no declared length that MaxBodyBytes cuts within a part's
+	// header lines is a 413, not a malformed header.
+	body := "--B\r\nContent-Disposition: form-data; name=\"title\"\r\n\r\nt\r\n--B\r\nContent-Type: text/plain\r\n" +
+		"Content-Disposition: form-data; name=\"avatar\"; filename=\"a\"\r\n\r\nx\r\n--B--\r\n"
+	req := httptest.NewRequest(http.MethodPost, "/m", strings.NewReader(body))
+	req.ContentLength = -1
+	req.Header.Set("Content-Type", "multipart/form-data; boundary=B")
+	rec := httptest.NewRecorder()
+	app.ServeHTTP(rec, req)
+	if rec.Code != http.StatusRequestEntityTooLarge || !strings.Contains(rec.Body.String(), "the request body exceeds 64 bytes") {
+		t.Fatalf("cut in a part's header: %d %s", rec.Code, rec.Body)
+	}
+
+	// Nor is one that mime/multipart finds malformed before the cut: content
+	// that begins with the delimiter reads as a delimiter line, and the next
+	// delimiter line as a header without its colon.
+	head := "--B\r\nContent-Disposition: form-data; name=\"title\"\r\n\r\n--B\r\n--B\r\n"
+	if len(head) > 64 {
+		t.Fatal(len(head))
+	}
+	req = httptest.NewRequest(http.MethodPost, "/m", strings.NewReader(head+strings.Repeat("x", 200)))
+	req.ContentLength = -1
+	req.Header.Set("Content-Type", "multipart/form-data; boundary=B")
+	rec = httptest.NewRecorder()
+	app.ServeHTTP(rec, req)
+	if rec.Code != http.StatusRequestEntityTooLarge || !strings.Contains(rec.Body.String(), "the request body exceeds 64 bytes") {
+		t.Fatalf("malformed before the cut: %d %s", rec.Code, rec.Body)
+	}
 }
 
 // getaclient sends a form or multipart body from the input type, files

@@ -271,7 +271,7 @@ func (p *formPlan) bind(w http.ResponseWriter, r *http.Request, dst reflect.Valu
 			return tooLong(limits.MaxBodyBytes), nil
 		}
 	}
-	body := http.MaxBytesReader(w, r.Body, limits.MaxBodyBytes)
+	body := &errKeeper{r: http.MaxBytesReader(w, r.Body, limits.MaxBodyBytes)}
 	// Otherwise peek one byte to tell an absent body from content, and judge
 	// it before reading the rest.
 	br := bufio.NewReader(body)
@@ -304,6 +304,12 @@ func (p *formPlan) bind(w http.ResponseWriter, r *http.Request, dst reflect.Valu
 	}
 	cw := newCloseWatcher(br, boundary)
 	fv, err := p.readParts(multipart.NewReader(cw, boundary), cw, limits, &tmp)
+	// The body's own failure comes first: a body MaxBodyBytes cut is a 413
+	// whatever mime/multipart made of the bytes before the cut, and a failed
+	// read is a 413 or 408, not a malformed body.
+	if _, cut := errors.AsType[*http.MaxBytesError](body.err); cut || err != nil && body.err != nil {
+		err = body.err
+	}
 	if err != nil {
 		removeFiles(tmp)
 		return partFailure(err, limits), nil
@@ -365,6 +371,24 @@ func (p *formPlan) readParts(mr *multipart.Reader, cw *closeWatcher, limits Limi
 			return nil, err
 		}
 	}
+}
+
+// errKeeper keeps the first error reading the body other than io.EOF.
+// bufio.Reader holds a read error back until its buffer is drained, and a
+// mime/multipart error does not wrap it, so a body MaxBodyBytes cut may fail
+// on the bytes before the cut, as a malformed header or part, with the
+// MaxBytesError still unseen.
+type errKeeper struct {
+	r   io.Reader
+	err error
+}
+
+func (k *errKeeper) Read(p []byte) (int, error) {
+	n, err := k.r.Read(p)
+	if err != nil && err != io.EOF && k.err == nil {
+		k.err = err
+	}
+	return n, err
 }
 
 // errCutShort reports a multipart body that ends before its close
@@ -432,10 +456,12 @@ func (w *closeWatcher) scan(b []byte) {
 		}
 		switch {
 		case len(w.line) < cap(w.line):
-			w.line = append(w.line, c)
-			if n := min(len(w.line), len(w.boundary)); !bytes.Equal(w.line[:n], w.boundary[:n]) {
+			// The bytes before c matched, or the line would be dead: compare
+			// c alone, so a line costs its length, not its length squared.
+			if i := len(w.line); i < len(w.boundary) && c != w.boundary[i] {
 				w.dead = true
 			}
+			w.line = append(w.line, c)
 		case w.over == 2 || c != ' ' && c != '\t' && c != '\r' || w.line[len(w.line)-1] == '\r':
 			// After the boundary, only spaces, tabs, and a final '\r'.
 			w.dead = true
