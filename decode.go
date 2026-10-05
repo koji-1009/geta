@@ -261,15 +261,21 @@ const maxValueBytes = 128
 // own UnmarshalJSON, a malformed form).
 const maxErrorBytes = 512
 
-// clip returns s if it fits n bytes, and otherwise its first bytes, to a
-// rune boundary, in n or fewer, and pathMark.
+// clip returns s if it fits n bytes, and otherwise its first n bytes, less
+// the start of a rune the cut would split, and pathMark. A byte of invalid
+// UTF-8, which a header value may hold, is no rune and is kept whole.
 func clip(s string, n int) string {
 	if len(s) <= n {
 		return s
 	}
 	i := n
-	for i > 0 && !utf8.RuneStart(s[i]) {
-		i--
+	for j := n - 1; j >= 0 && j > n-utf8.UTFMax; j-- {
+		if utf8.RuneStart(s[j]) {
+			if r, size := utf8.DecodeRuneInString(s[j:]); (r != utf8.RuneError || size > 1) && j+size > n {
+				i = j
+			}
+			break
+		}
 	}
 	return s[:i] + pathMark
 }

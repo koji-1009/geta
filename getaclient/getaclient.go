@@ -121,6 +121,10 @@ func (e *Error) Error() string {
 		for _, v := range e.Problem.Errors {
 			s += fmt.Sprintf("; %s %s: %s", v.In, v.Path, v.Message)
 		}
+		// As App.Conforms counts the violations it does not list.
+		if e.Problem.Omitted > 0 {
+			s += fmt.Sprintf("; and %d more not listed", e.Problem.Omitted)
+		}
 		return s
 	}
 	s := fmt.Sprintf("%d %s", e.Status, http.StatusText(e.Status))

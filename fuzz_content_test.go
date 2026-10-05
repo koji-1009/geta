@@ -14,6 +14,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/koji-1009/geta"
 )
@@ -123,6 +124,24 @@ func refMediaType(ct, want string) bool {
 	return mt == want
 }
 
+// refClip is a 415's quote of a header value (RFC 9457 detail): the longest
+// prefix of s, in n bytes or fewer, that splits no rune, a byte of invalid
+// UTF-8 counting as one of its own, and "…"; s itself if it fits.
+func refClip(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	i := 0
+	for i < len(s) {
+		_, size := utf8.DecodeRuneInString(s[i:])
+		if i+size > n {
+			break
+		}
+		i += size
+	}
+	return s[:i] + "…"
+}
+
 // FuzzContentHeaders sends fuzzed content (its bytes, its length declared
 // or not) with a fuzzed Content-Type, Content-Encoding, and Accept-Encoding
 // to an operation taking a JSON body (POST and PATCH), a raw text/csv body,
@@ -137,7 +156,9 @@ func refMediaType(ct, want string) bool {
 // in gzip, which decodes to the uncoded body; where Accept-Encoding is the
 // field's grammar it is coded exactly when gzip is accepted at least as
 // much as identity and the body is 1024 bytes or more, or identity is
-// refused. The raw body echoes back the content as sent.
+// refused. The raw body echoes back the content as sent. A 415's detail
+// quotes the codings or the Content-Type that refused, cut by refClip to 128
+// bytes.
 func FuzzContentHeaders(f *testing.F) {
 	limits := geta.DefaultLimits
 	limits.MaxBodyBytes = 2048
@@ -198,6 +219,10 @@ func FuzzContentHeaders(f *testing.F) {
 	f.Add(uint8(3), "", "", "gzip", []byte{}, uint8(0))
 	f.Add(uint8(3), "", "", "gzip", []byte("x"), uint8(0b0101))
 	f.Add(uint8(3), "application/json", "gzip", "", []byte("x"), uint8(0b0001))
+	// Header values past the 128 bytes a 415's detail quotes.
+	f.Add(uint8(0), "text/x"+strings.Repeat("é", 100), "", "", []byte(`{}`), uint8(0))
+	f.Add(uint8(1), strings.Repeat("\x80", 200), "", "", []byte("a"), uint8(0))
+	f.Add(uint8(2), "application/json", strings.Repeat("br, ", 50)+"\xe2\x82\xac", "", []byte("a=1"), uint8(0))
 	f.Fuzz(func(t *testing.T, route uint8, ct, ce, ae string, body []byte, flags uint8) {
 		path := []string{"/j", "/r", "/f", "/n"}[route%4]
 		method := http.MethodPost
@@ -300,6 +325,24 @@ func FuzzContentHeaders(f *testing.F) {
 		switch {
 		case rec.Code >= 400:
 			fuzzProblem(t, where, rec.Code, h, got)
+			// A 415's detail quotes the header that refused, cut by refClip.
+			var p geta.Problem
+			if err := json.Unmarshal(got, &p); err != nil {
+				t.Fatalf("%s: %v", where, err)
+			}
+			wantDetail := p.Detail
+			switch ct := req.Header.Get("Content-Type"); {
+			case rec.Code != 415:
+			case acceptEncoding != "":
+				wantDetail = fmt.Sprintf("Content-Encoding %q is not supported", refClip(strings.Join(refCodings(ceLines), ", "), 128))
+			case accept != "" && ct == "":
+				wantDetail = "missing Content-Type"
+			case accept != "":
+				wantDetail = fmt.Sprintf("Content-Type %q is not %s", refClip(ct, 128), accept)
+			}
+			if p.Detail != wantDetail {
+				t.Fatalf("%s: detail %q, want %q", where, p.Detail, wantDetail)
+			}
 		case path == "/r":
 			if !bytes.Equal(got, body) {
 				t.Fatalf("%s: echoed %q", where, got)

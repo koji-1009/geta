@@ -240,3 +240,55 @@ func TestListViolationsBoundsTheWrittenArray(t *testing.T) {
 		}
 	}
 }
+
+// refClip is clip's reference: the longest prefix of s, in n bytes or
+// fewer, that splits no rune, a byte of invalid UTF-8 counting as one of its
+// own, and "…"; s itself if it fits.
+func refClip(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	i := 0
+	for i < len(s) {
+		_, size := utf8.DecodeRuneInString(s[i:])
+		if i+size > n {
+			break
+		}
+		i += size
+	}
+	return s[:i] + "…"
+}
+
+// clip cuts a value as refClip does: at a rune boundary in valid UTF-8, and
+// at n bytes through invalid UTF-8, which a header value may hold, rather
+// than dropping it to the last rune start before it.
+func TestClipSplitsNoRune(t *testing.T) {
+	cases := map[string]string{
+		strings.Repeat("a", 4):              "aaa…",
+		"a" + strings.Repeat("é", 3):        "aé…",
+		"aa" + strings.Repeat("é", 3):       "aa…",
+		"a€b":                               "a…",
+		strings.Repeat("\x80", 5):           "\x80\x80\x80…",
+		"a\xe2\x80b":                        "a\xe2\x80…",
+		"ab\xe2\x82\xac":                    "ab…",
+		"abc":                               "abc",
+		"\xed\xa0\x80x":                     "\xed\xa0\x80…",
+		"ab" + string(utf8.RuneError) + "x": "ab…",
+	}
+	for s, want := range cases {
+		if got := clip(s, 3); got != want || got != refClip(s, 3) {
+			t.Errorf("clip(%q, 3) = %q, want %q (reference %q)", s, got, want, refClip(s, 3))
+		}
+	}
+}
+
+func FuzzClip(f *testing.F) {
+	for _, s := range []string{"", "abc", "a€b", "\x80\x80\x80\x80", "\xed\xa0\x80x", "é\xc3"} {
+		f.Add(s, uint8(3))
+	}
+	f.Fuzz(func(t *testing.T, s string, n uint8) {
+		if got, want := clip(s, int(n)), refClip(s, int(n)); got != want {
+			t.Fatalf("clip(%q, %d) = %q, want %q", s, n, got, want)
+		}
+	})
+}

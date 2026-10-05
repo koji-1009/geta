@@ -691,7 +691,9 @@ func isJSONMediaType(ct string) bool {
 
 // unsupported answers 415 to content whose Content-Type ct is not mt (RFC
 // 9110 §15.5.16), naming mt in Accept and, per acceptFor, in Accept-Patch or
-// Accept-Query. Content with no Content-Type is refused (RFC 9110 §8.3).
+// Accept-Query. Content with no Content-Type is refused (RFC 9110 §8.3). The
+// detail quotes ct cut by clip to maxValueBytes, as a violation quotes a
+// value: a header is as long as MaxHeaderBytes allows.
 func unsupported(w http.ResponseWriter, ct, mt, method string) *bindError {
 	h := w.Header()
 	h.Set("Accept", mt)
@@ -701,7 +703,7 @@ func unsupported(w http.ResponseWriter, ct, mt, method string) *bindError {
 	if ct == "" {
 		return &bindError{status: http.StatusUnsupportedMediaType, detail: "missing Content-Type"}
 	}
-	return &bindError{status: http.StatusUnsupportedMediaType, detail: fmt.Sprintf("Content-Type %q is not %s", ct, mt),
+	return &bindError{status: http.StatusUnsupportedMediaType, detail: fmt.Sprintf("Content-Type %q is not %s", clip(ct, maxValueBytes), mt),
 		logged: "the Content-Type is not " + mt}
 }
 
@@ -720,7 +722,8 @@ func acceptFor(method string) string {
 
 // codingRefused answers 415 with Accept-Encoding: identity to content in a
 // content coding (RFC 9110 §8.4, §12.5.3), and nil otherwise. geta decodes
-// no coding; "identity" counts as none.
+// no coding; "identity" counts as none. The detail quotes the codings cut by
+// clip to maxValueBytes, as unsupported quotes a Content-Type.
 func codingRefused(w http.ResponseWriter, r *http.Request) *bindError {
 	vs := r.Header.Values("Content-Encoding")
 	if len(vs) == 0 {
@@ -740,6 +743,6 @@ func codingRefused(w http.ResponseWriter, r *http.Request) *bindError {
 	}
 	w.Header().Set("Accept-Encoding", "identity")
 	return &bindError{status: http.StatusUnsupportedMediaType,
-		detail: fmt.Sprintf("Content-Encoding %q is not supported", strings.Join(codings, ", ")),
+		detail: fmt.Sprintf("Content-Encoding %q is not supported", clip(strings.Join(codings, ", "), maxValueBytes)),
 		logged: "unsupported Content-Encoding"}
 }
