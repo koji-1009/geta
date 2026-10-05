@@ -2,10 +2,8 @@ module github.com/koji-1009/geta/getaotel
 
 go 1.27
 
-replace github.com/koji-1009/geta => ../
-
 require (
-	github.com/koji-1009/geta v0.0.0
+	github.com/koji-1009/geta v0.0.0-20261005104209-e97a4d163c1a
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.71.0
 	go.opentelemetry.io/otel v1.46.0
 	go.opentelemetry.io/otel/metric v1.46.0

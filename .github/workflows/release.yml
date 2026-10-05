@@ -1,0 +1,60 @@
+name: release
+
+on:
+  push:
+    tags: ["v*.*.*"]
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  tag-modules:
+    name: tag getaotel and getavet
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Verify the modules require the root at the tag
+        env:
+          VERSION: ${{ github.ref_name }}
+        run: |
+          if ! printf '%s\n' "$VERSION" | grep -Eq '^v[01]\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?$'; then
+            echo "::error::$VERSION is not a v0 or v1 semantic version"
+            exit 1
+          fi
+          for module in getaotel getavet; do
+            got=$(go mod edit -json "$module/go.mod" | jq -r '.Require[]? | select(.Path == "github.com/koji-1009/geta") | .Version')
+            if [ "$got" != "$VERSION" ]; then
+              echo "::error file=$module/go.mod::$module requires github.com/koji-1009/geta ${got:-(none)}, want $VERSION; run scripts/bump.sh $VERSION and release from the merged commit"
+              exit 1
+            fi
+          done
+      - name: Tag getaotel and getavet
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ github.ref_name }}
+        run: |
+          sha=$(git rev-parse HEAD)
+          for module in getaotel getavet; do
+            tag="$module/$VERSION"
+            if existing=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$tag" --jq .object.sha 2>/dev/null); then
+              if [ "$existing" = "$sha" ]; then
+                echo "$tag already points at $sha"
+                continue
+              fi
+              echo "::error::$tag already exists at $existing, not $sha"
+              exit 1
+            fi
+            gh api "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/$tag" -f sha="$sha" --silent
+            echo "created $tag at $sha"
+          done

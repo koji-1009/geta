@@ -3,9 +3,9 @@ name: govulncheck
 on:
   push:
     branches: [main]
-    paths: ["**/go.mod", "**/go.sum", ".github/workflows/govulncheck.yml"]
+    paths: ["**/go.mod", "**/go.sum", "go.work", "go.work.sum", ".github/workflows/govulncheck.yml"]
   pull_request:
-    paths: ["**/go.mod", "**/go.sum", ".github/workflows/govulncheck.yml"]
+    paths: ["**/go.mod", "**/go.sum", "go.work", "go.work.sum", ".github/workflows/govulncheck.yml"]
   schedule:
     - cron: "0 0 1 * *"
 
@@ -28,5 +28,7 @@ jobs:
         with:
           repo-checkout: false
           go-version-file: go.mod
-          cache-dependency-path: "**/go.sum"
+          cache-dependency-path: |
+            **/go.sum
+            go.work.sum
           work-dir: ${{ matrix.module }}

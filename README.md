@@ -164,6 +164,8 @@ uvx openapi-spec-validator examples/register/openapi.json examples/auth/openapi.
 
 Each example's `clientcheck/roundtrip.py` drives the running server through a client that `openapi-python-client` generates from the committed `openapi.json`. The script's docstring has the commands.
 
+The committed `go.work` makes getaotel, getavet, and the separate examples use the root module in this checkout. Releasing is in [`RELEASING.md`](RELEASING.md).
+
 Every behaviour geta states has a test or a command that checks it: see [`docs/claims.md`](docs/claims.md).
 
 ## License
