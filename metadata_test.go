@@ -10,6 +10,7 @@ import (
 
 	"github.com/koji-1009/geta"
 	"github.com/koji-1009/geta/getatest"
+	"github.com/koji-1009/geta/internal/vet"
 )
 
 type metaOwner struct {
@@ -260,7 +261,7 @@ func TestDefaultAndExampleMistakesAreRefused(t *testing.T) {
 		{"deprecated=yes", "string", `"yes" is not true or false`},
 		{"default=a", "?string", "a geta.Nullable takes no default"},
 	} {
-		err := geta.CheckSchemaTag(c.tag, c.kind)
+		err := vet.CheckSchemaTag(c.tag, c.kind)
 		if c.want == "" && err != nil || c.want != "" && (err == nil || !strings.Contains(err.Error(), c.want)) {
 			t.Errorf("%s on %s: %v; want %q", c.tag, c.kind, err, c.want)
 		}

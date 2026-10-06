@@ -14,9 +14,9 @@ import (
 	"unsafe"
 )
 
-// codecFor makes a codec, with a schema, for every kind CheckJSONType
+// codecFor makes a codec, with a schema, for every kind checkJSONType
 // passes, and is refused every other: its switch on the kind has no default,
-// so a kind CheckJSONType came to pass without a case there would be a codec
+// so a kind checkJSONType came to pass without a case there would be a codec
 // with no schema. Every kind is sampled but Interface, a sealed type's
 // (unionCodec).
 func TestCodecForTakesTheKindsCheckJSONTypePasses(t *testing.T) {
@@ -35,7 +35,7 @@ func TestCodecForTakesTheKindsCheckJSONTypePasses(t *testing.T) {
 	sampled := map[reflect.Kind]bool{}
 	for _, typ := range samples {
 		sampled[typ.Kind()] = true
-		passes := CheckJSONType(vetType(typ)) == nil
+		passes := checkJSONType(vetType(typ)) == nil
 		c, err := newRegistry().codecFor(typ)
 		switch {
 		case passes != (err == nil):
@@ -51,7 +51,7 @@ func TestCodecForTakesTheKindsCheckJSONTypePasses(t *testing.T) {
 	}
 }
 
-// Every kind CheckSchemaTag names by its type (vetKinds) has a codec, which
+// Every kind checkTag names by its type (vetKinds) has a codec, which
 // kindSchema takes the schema of.
 func TestEveryVetKindHasACodec(t *testing.T) {
 	for kind, typ := range vetKinds {

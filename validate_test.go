@@ -232,7 +232,7 @@ func writtenOnly[T any](opts ...Option) (*App, error) { return newWith[struct{},
 // value to meet: the app's own Limits, in a body, a parameter, and a
 // WithSchema declaration. A declared upper bound replaces the backstop. A
 // minLength past the pattern ceiling beside a pattern is refused whatever
-// the Limits, and by CheckRequestSchemaTag, which getavet applies to what a
+// the Limits, and by checkRequestTag, which getavet applies to what a
 // request reads, too. A type only a response writes is refused neither: its
 // schema states no backstop and no ceiling, and Conforms holds a response
 // to neither.
@@ -300,21 +300,21 @@ func TestLowerBoundsPastTheBackstopAreRefused(t *testing.T) {
 
 	// The pattern ceiling, which no Limits moves.
 	const pat = "minLength 4097 with a pattern exceeds the pattern ceiling of 4096 code points"
-	refused(CheckRequestSchemaTag("pattern=a,minLength=4097", "string"), pat)
-	refused(CheckRequestSchemaTag("minLength=4097,pattern=a", "text"), pat)
-	if err := CheckRequestSchemaTag("pattern=a,minLength=4096", "string"); err != nil {
+	refused(checkRequestTag("pattern=a,minLength=4097", "string"), pat)
+	refused(checkRequestTag("minLength=4097,pattern=a", "text"), pat)
+	if err := checkRequestTag("pattern=a,minLength=4096", "string"); err != nil {
 		t.Fatal(err)
 	}
 	// What a response writes is held to no ceiling.
-	if err := CheckSchemaTag("pattern=a,minLength=4097", "string"); err != nil {
+	if err := checkTag("pattern=a,minLength=4097", "string"); err != nil {
 		t.Fatal(err)
 	}
 	// Without a pattern, only the Limits make it unreachable, which
-	// CheckRequestSchemaTag does not see.
-	if err := CheckRequestSchemaTag("minLength=5000", "string"); err != nil {
+	// checkRequestTag does not see.
+	if err := checkRequestTag("minLength=5000", "string"); err != nil {
 		t.Fatal(err)
 	}
-	if err := CheckRequestSchemaTag("minItems=9000", "slice"); err != nil {
+	if err := checkRequestTag("minItems=9000", "slice"); err != nil {
 		t.Fatal(err)
 	}
 	wide.MaxStringLength = 10000
@@ -350,18 +350,18 @@ func TestLowerBoundsPastTheBackstopAreRefused(t *testing.T) {
 	refused(err, "enumLongParam.Q: "+enumCeiling)
 	accepted(readOnly[enumLongCapped](WithLimits(seven)))
 	accepted(readOnly[enumLong]())
-	// Past the pattern ceiling, whatever the Limits: CheckRequestSchemaTag
+	// Past the pattern ceiling, whatever the Limits: checkRequestTag
 	// too, for what a request reads.
 	long := strings.Repeat("a", 4097)
 	const enumPat = "with a pattern exceeds the pattern ceiling of 4096 code points"
-	refused(CheckRequestSchemaTag("pattern=^a+$,enum=a|"+long, "string"), enumPat)
-	if err := CheckRequestSchemaTag("pattern=^a+$,enum=a|"+long[1:], "string"); err != nil {
+	refused(checkRequestTag("pattern=^a+$,enum=a|"+long, "string"), enumPat)
+	if err := checkRequestTag("pattern=^a+$,enum=a|"+long[1:], "string"); err != nil {
 		t.Fatal(err)
 	}
-	if err := CheckRequestSchemaTag("enum=a|"+long, "string"); err != nil {
+	if err := checkRequestTag("enum=a|"+long, "string"); err != nil {
 		t.Fatal(err)
 	}
-	if err := CheckSchemaTag("pattern=^a+$,enum=a|"+long, "string"); err != nil {
+	if err := checkTag("pattern=^a+$,enum=a|"+long, "string"); err != nil {
 		t.Fatal(err)
 	}
 }

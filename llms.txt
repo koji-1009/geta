@@ -749,11 +749,11 @@ func Scope(env Env) geta.Scope {
 - Preflight `Access-Control-Allow-Headers`: the asked operation's request headers: header parameters (`Conditional`'s four included), `Authorization` or an apiKey header for its schemes, `Content-Type` with a body.
 - `Access-Control-Expose-Headers`: the answering operation's headers: declared output headers, described rows' headers, `ETag` behind `geta.ETag`, chained middleware `.Header`s (`Retry-After`, `Doc.BeforeGate`'s included), `WWW-Authenticate` where a scheme is required (401 included), `Deprecation`/`Sunset`, `Allow` on plain cross-origin OPTIONS. Never `Set-Cookie`.
 - `AllowHeaders`/`ExposeHeaders` only add; a request no operation serves gets only those.
-- `geta.MaxAge(d)` sends `Access-Control-Max-Age`; `d` not a positive whole number of seconds fails `geta.New`. Without it none is sent.
+- `geta.PreflightMaxAge(d)` sends `Access-Control-Max-Age`; `d` not a positive whole number of seconds fails `geta.New`. Without it none is sent.
 
 ### Compression and ETag
 
-- `geta.Compress(codings...)` codes text-like bodies of at least `geta.GzipThreshold` (1024) bytes in the client's preferred coding. `geta.Gzip()` = `geta.Compress(geta.GzipCoding())`; `GzipCoding` is the only shipped coding.
+- `geta.Compress(codings...)` codes text-like bodies of at least `geta.CompressThreshold` (1024) bytes in the client's preferred coding. `geta.Gzip()` = `geta.Compress(geta.GzipCoding())`; `GzipCoding` is the only shipped coding.
 - `geta.Coding{Name, NewWriter}`: any other coding. `NewWriter(w)` returns an encoder into `w`, called once per coded response: one `Write` of the whole body, one `Close`. Any error: body sent uncoded with the identity tag.
 - Negotiation (RFC 9110 §12.5.3): among accepted codings (named with q > 0, or unnamed under `*` q > 0; `x-gzip` names gzip), highest q wins, your order breaks ties, identity wins only with higher q.
 - Weights only as RFC 9110 §12.4.2 writes them: OWS `;` OWS `q=`, `q` either case, 0 with up to three decimals or 1 with up to three zeros. Anything else after a coding (`q=2`, `q=abc`, `q = 1`, no-break space, another parameter) refuses what the element names, like `q=0`. Codings: tokens, ASCII case-insensitive only (the Kelvin sign names no `k`).
@@ -1080,9 +1080,9 @@ Unit-test handlers as methods with fake stores; time-dependent behaviour with `t
   - every input-field, envelope-field, JSON-member, and type refusal of `geta.New` decidable from source, incl. a stream's event type and a `geta.OnAsProblem` description (type arguments inferred, given, or the first given);
   - a body on a `Get`/`Delete` operation built in place by a `geta.Route` literal;
   - a negative constant `Doc.Timeout`; a constant status outside a status field's list.
-- Exported shared rules: `geta.CheckInputType`, `CheckInputField`, `CheckFormField`, `CheckDeepObjectField`, `CheckEnvelopeField`, `CheckEnvelopeStatus`, `CheckMemberField`, `CheckStructMembers`, `CheckJSONType`, `CheckSchemaName`, `CheckSchemaTag`, `CheckRequestSchemaTag`, `CheckProblemType`, `CheckProblemField`, `CheckProblemMember`, `CheckMethodBody`, `CheckDocTimeout`. Silent where `geta.New` is (unexported members).
+- Shared rules: the rules `geta.New` shares with getavet (input, form, deepObject, envelope, member, type, self-holding type, component name, schema-tag, problem, method-body, success-status, and `Doc.Timeout` checks) live in geta's internal package `internal/vet`, which is not part of the API. Silent where `geta.New` is (unexported members).
 - Left to `geta.New` (needs options or the whole chain): positive `Doc.Timeout` without `geta.Timeout`; `WithUnion` sealed types; `WithSchema` declarations; keywords on types with own JSON methods; whether a `Query` operation has the 3.2 document; schema-name collisions; `SchemaFormat` returning ""; a `propertyNames.enum` member the key type's methods refuse; an input embedding `geta.Conditional` under an unexported alias; bounds only your `Limits` make unreachable (getavet reads no `WithLimits`, so reports no lower bound or enum member past a backstop, even `DefaultLimits`).
-- It does report `maxLength`, `minLength`, or an enum member past the 4096 pattern ceiling beside a pattern on an input-read value (`geta.CheckRequestSchemaTag`).
+- It does report `maxLength`, `minLength`, or an enum member past the 4096 pattern ceiling beside a pattern on an input-read value (the request-schema-tag rule in `internal/vet`).
 
 ## Database
 

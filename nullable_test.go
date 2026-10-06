@@ -10,6 +10,7 @@ import (
 	"github.com/koji-1009/geta"
 	"github.com/koji-1009/geta/getaclient"
 	"github.com/koji-1009/geta/getatest"
+	"github.com/koji-1009/geta/internal/vet"
 )
 
 type nullFriend struct {
@@ -214,10 +215,10 @@ func TestNullableMistakesAreRefused(t *testing.T) {
 	}
 	rejects(t, one("/x", get(func(context.Context, *empty) (*tagged, error) { return nil, nil })),
 		"schema tag", "on a struct type")
-	if err := geta.CheckSchemaTag("maxLength=3,enum=a|b", "?string"); err != nil {
+	if err := vet.CheckSchemaTag("maxLength=3,enum=a|b", "?string"); err != nil {
 		t.Error(err)
 	}
-	if err := geta.CheckSchemaTag("maxLength=3", "?int"); err == nil {
+	if err := vet.CheckSchemaTag("maxLength=3", "?int"); err == nil {
 		t.Error("maxLength on a Nullable[int] passed")
 	}
 }

@@ -205,7 +205,7 @@ func routeAttr(ctx context.Context) slog.Attr {
 
 // routeName returns the matched operation's template, or UnmatchedRoute.
 func routeName(ctx context.Context) string {
-	if m, ok := Matched(ctx); ok && m.Operation {
+	if m, ok := Matched(ctx); ok {
 		return m.Template
 	}
 	return UnmatchedRoute

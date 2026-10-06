@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/koji-1009/geta"
+	"github.com/koji-1009/geta/internal/vet"
 )
 
 // A problem whose detail is not UTF-8, as the application wrote it, keeps
@@ -133,38 +134,38 @@ func TestGzipFlushAfterClose(t *testing.T) {
 // no scalar, an unexported problem field, a status tag that is no tag, and
 // the parameter rules that leave a bad tag to CheckSchemaTag.
 func TestVetRulesOnMalformedInput(t *testing.T) {
-	if err := geta.CheckRequestSchemaTag("bogus=1", "string"); err == nil {
+	if err := vet.CheckRequestSchemaTag("bogus=1", "string"); err == nil {
 		t.Error("CheckRequestSchemaTag took an unknown keyword")
 	}
 	for _, kind := range []string{"?bogus", "map[string", "map[bogus]int", "map[string]bogus"} {
-		if err := geta.CheckSchemaTag("", kind); err == nil {
+		if err := vet.CheckSchemaTag("", kind); err == nil {
 			t.Errorf("kind %q accepted", kind)
 		}
 	}
-	field := func(tag, kind string) geta.VetField {
-		return geta.VetField{Name: "F", Exported: true, Tag: reflect.StructTag(tag), Type: "string", Kind: kind}
+	field := func(tag, kind string) vet.Field {
+		return vet.Field{Name: "F", Exported: true, Tag: reflect.StructTag(tag), Type: "string", Kind: kind}
 	}
-	if _, err := geta.CheckInputField(field(`body:"form"`, "string"), map[string]string{}); err == nil ||
+	if _, err := vet.CheckInputField(field(`body:"form"`, "string"), map[string]string{}); err == nil ||
 		!strings.Contains(err.Error(), `a body:"form" field has type string, not a struct`) {
 		t.Errorf("form body: %v", err)
 	}
-	if _, err := geta.CheckInputField(field(`cookie:"c" schema:"enum=é|a"`, "string"), map[string]string{}); err == nil ||
+	if _, err := vet.CheckInputField(field(`cookie:"c" schema:"enum=é|a"`, "string"), map[string]string{}); err == nil ||
 		!strings.Contains(err.Error(), `enum member "é" is not a valid cookie value`) {
 		t.Errorf("cookie enum: %v", err)
 	}
 	for _, tag := range []string{`query:"q" schema:"bogus=1"`, `query:"q" schema:"maxLength=1,default=abc"`} {
-		if _, err := geta.CheckInputField(field(tag, "string"), map[string]string{}); err != nil {
+		if _, err := vet.CheckInputField(field(tag, "string"), map[string]string{}); err != nil {
 			t.Errorf("%s: %v; a bad tag is CheckSchemaTag's to name", tag, err)
 		}
 	}
-	member := geta.VetField{Name: "F", Exported: true, Tag: `form:"m"`, Type: "[]string", Kind: "[]string"}
-	if _, err := geta.CheckDeepObjectField(member, map[string]string{}); err == nil || !strings.Contains(err.Error(), `deepObject member "m" has non-scalar type []string`) {
+	member := vet.Field{Name: "F", Exported: true, Tag: `form:"m"`, Type: "[]string", Kind: "[]string"}
+	if _, err := vet.CheckDeepObjectField(member, map[string]string{}); err == nil || !strings.Contains(err.Error(), `deepObject member "m" has non-scalar type []string`) {
 		t.Errorf("deepObject: %v", err)
 	}
-	if err := geta.CheckProblemField(geta.VetField{Name: "f", Tag: `cookie:"c"`}); err != nil {
+	if err := vet.CheckProblemField(vet.Field{Name: "f", Tag: `cookie:"c"`}); err != nil {
 		t.Errorf("an unexported problem field: %v", err)
 	}
-	if err := geta.CheckEnvelopeStatus(200, "abc"); err != nil {
+	if err := vet.CheckEnvelopeStatus(200, "abc"); err != nil {
 		t.Errorf("a malformed status tag is CheckEnvelopeField's to name: %v", err)
 	}
 }

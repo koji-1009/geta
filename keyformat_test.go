@@ -9,6 +9,7 @@ import (
 
 	"github.com/koji-1009/geta"
 	"github.com/koji-1009/geta/getatest"
+	"github.com/koji-1009/geta/internal/vet"
 )
 
 // keyMail is a FormatType a map key may be: a string kind with text methods.
@@ -88,7 +89,7 @@ func TestAKeyTypesFormatIsStatedAndHeld(t *testing.T) {
 		`body $.mail.nope: key "nope" is not a valid email`)
 	same(t, violations(t, c.Post("/b", `{"mail":{"nope":-1},"secrets":{}}`)), `body $.mail.nope: key "nope" is not a valid email`)
 	c.Get("/o")
-	if err := c.App().Conforms(geta.Match{Template: "/o", Method: "GET", Operation: true}, http.StatusOK, nil, []byte(`{"mail":{"nope":1}}`)); err == nil ||
+	if err := c.App().Conforms(geta.Match{Template: "/o", Method: "GET"}, http.StatusOK, nil, []byte(`{"mail":{"nope":1}}`)); err == nil ||
 		!strings.Contains(err.Error(), `key "nope" is not a valid email`) {
 		t.Errorf("Conforms: %v", err)
 	}
@@ -136,15 +137,15 @@ func TestAKeyTypeIsJudgedAsAValueOfItsType(t *testing.T) {
 		tag := "propertyNames.format=uuid"
 		if want == "" {
 			tag = "items.propertyNames.minLength=1"
-			if err := geta.CheckSchemaTag(tag, kind); err != nil {
+			if err := vet.CheckSchemaTag(tag, kind); err != nil {
 				t.Errorf("CheckSchemaTag(%q, %q): %v", tag, kind, err)
 			}
 			continue
 		}
-		refused(geta.CheckSchemaTag(tag, kind), want)
+		refused(vet.CheckSchemaTag(tag, kind), want)
 	}
-	refused(geta.CheckSchemaTag("propertyNames.maxLength=1", "map[int]int"), `kind "map[int]int" has a non-string key`)
-	if err := geta.CheckSchemaTag("propertyNames.format=uuid", "map[string]int"); err != nil {
+	refused(vet.CheckSchemaTag("propertyNames.maxLength=1", "map[int]int"), `kind "map[int]int" has a non-string key`)
+	if err := vet.CheckSchemaTag("propertyNames.format=uuid", "map[string]int"); err != nil {
 		t.Error(err)
 	}
 }

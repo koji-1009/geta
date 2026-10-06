@@ -14,12 +14,14 @@ import (
 // no match. A request redirected to its clean path has the match of the
 // operation the clean path reaches. OPTIONS on a served path matches the
 // OPTIONS operation geta serves there; OPTIONS * matches nothing.
+//
+// Doc is a copy of what [New] assembled, so changing it does not change how
+// the operation is served. Its slices are shared by every request that
+// matches the operation, so do not modify them.
 type Match struct {
 	Template string
 	Method   string
 	Doc      Doc
-	// Operation is true for every match geta gives.
-	Operation bool
 }
 
 // requestContext is geta's per-request state in the request's context: the
@@ -156,13 +158,14 @@ func (c *requestContext) redirects() bool {
 	return c.redirect && !c.pathMoved
 }
 
-// matchedFor is [Matched] for r as it is now. Gates read the match this way.
-// Before dispatch, the match read is recorded so dispatch can refuse an
-// operation the gates did not check.
-func matchedFor(r *http.Request) (Match, bool) {
+// matchedFor is the operation r matches as it is now, as [Matched] reports
+// it. Gates read the match this way, and read its documentation from the
+// operation, which no middleware can change. Before dispatch, the match read
+// is recorded so dispatch can refuse an operation the gates did not check.
+func matchedFor(r *http.Request) (*compiledOp, bool) {
 	rc := requestFrom(r.Context())
 	if rc == nil {
-		return Match{}, false
+		return nil, false
 	}
 	rc.rematch(r)
 	switch {
@@ -173,9 +176,9 @@ func matchedFor(r *http.Request) (Match, bool) {
 		rc.mixed = true
 	}
 	if rc.match == nil {
-		return Match{}, false
+		return nil, false
 	}
-	return *rc.match, true
+	return rc.app.byMatch[rc.match], true
 }
 
 // unchecked reports whether serving rt would skip a root gate's check: the

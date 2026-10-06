@@ -264,7 +264,7 @@ func TestRefusedRewriteStatusIsDocumented(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if documented, matched := app.Documented(geta.Match{Template: "/items", Method: http.MethodDelete, Operation: true}, http.StatusInternalServerError); !documented || !matched {
+	if documented, matched := app.Documented(geta.Match{Template: "/items", Method: http.MethodDelete}, http.StatusInternalServerError); !documented || !matched {
 		t.Fatalf("500 documented=%v matched=%v", documented, matched)
 	}
 }

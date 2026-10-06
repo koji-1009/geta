@@ -35,7 +35,7 @@ Every behaviour geta states has a test or a command that checks it. [`llms.txt`]
 | A `geta.FormatType` the document cannot trust is refused | `TestAFormatTypeTheDocumentCannotTrustIsRefused` |
 | Embedded input fields geta cannot bind, and header or cookie names that are not tokens, are refused | `TestRejectsEmbeddedPointerInInput`, `TestRejectsEmbeddedTextTypeInInput`, `TestRejectsSchemaTagOnEmbeddedInputStruct`, `TestRejectsSchemaTagOnEmbeddedStruct`, `TestRejectsInvalidInputCookieName`, `TestRejectsInvalidInputHeaderName`, `TestEnvelopeAndInputFieldRefusals` (getavet) |
 | A body type is accepted only as `encoding/json/v2` reads and writes it | `TestMemberFieldsAsV2ReadsThem`, `TestNamedEmbeddedFieldsAreMembers`, `TestTextAndJSONMethodsAsV2CallsThem`, `TestOneSidedMapKeysAreRefused`, `TestMapKeysFollowV2ForEveryReceiver`, `TestSinglePassReadsMapKeysByTheirMethods`, `TestTimeDurationIsRefused` |
-| The rules shared with getavet are exported `Check*` functions with the same text | `TestInputRefusalsAreCheckInputFields`, `TestEnvelopeRefusalsAreCheckEnvelopeFields`, `TestVetFieldAcceptsWhatNewAccepts`, `TestBodyRefusalsAreSharedRules`, `TestGenericTypeNames`, `TestCheckSchemaTag`, `TestComponentNamesMatchGetaNew`, `TestDocTimeoutMatchesGetaNew` (getavet) |
+| The rules shared with getavet are `Check*` functions in geta's internal package `internal/vet` with the same text | `TestInputRefusalsAreCheckInputFields`, `TestEnvelopeRefusalsAreCheckEnvelopeFields`, `TestVetFieldAcceptsWhatNewAccepts`, `TestBodyRefusalsAreSharedRules`, `TestGenericTypeNames`, `TestCheckSchemaTag`, `TestComponentNamesMatchGetaNew`, `TestDocTimeoutMatchesGetaNew` (getavet) |
 | A type whose component name OpenAPI does not allow is refused | `TestComponentNamesAreOnesOpenAPIAllows`, `TestComponentNamesMatchGetaNew` (getavet) |
 | `Doc.BeforeGate` joins the chain where the first gate runs; its order is checked; a gate in it is refused | `TestBeforeGateIsPlacedAndChecked` |
 | `Doc.Scope` joins the order check; a gate there secures its operation alone | `TestOperationScopeOrderIsChecked`, `TestOperationScopeGateCountsForItsOperationOnly`, `TestSecureInAnOperationScope` |
@@ -166,6 +166,7 @@ Every behaviour geta states has a test or a command that checks it. [`llms.txt`]
 | Every 401 carries one challenge per refusing scheme | `TestEveryRefusingSchemeChallenges`, `TestAChallengerWithNoChallengeKeepsTheSchemes` |
 | `Matched` follows a root rewrite from the next gate on | `TestMatchedFollowsARewriteFromTheNextGate`, `TestTwoRootGatesAroundARewrite`, `TestARedirectCarriesTheMatchOfItsCleanPath`, `TestBeforeGateFollowsARewriteBeforeTheGate`, `TestBeforeGateBesideAnOperationScopeGate`, `TestOptionsRunsNoBeforeGate` |
 | Several gates must all admit | `TestTwoGatesEachRequireTheirDefault`, `TestSecurityRequirementsMatchTheGates` |
+| Changing a Policy, a Doc, or a matched Doc after New changes no decision | `TestChangesAfterNewChangeNoDecision` |
 | Typed keys are distinct by identity; the zero key panics | `TestKeyRoundTrip` |
 
 ## Middleware, streams, upgrades (time in `testing/synctest`)

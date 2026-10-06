@@ -46,7 +46,7 @@ func Scope(env Env) geta.Scope {
 	}))
 	return geta.Scope{
 		env.Metrics.Middleware(),
-		geta.CORS(geta.AllowOrigins(env.PageOrigin), geta.AllowCredentials(), geta.MaxAge(10*time.Minute)),
+		geta.CORS(geta.AllowOrigins(env.PageOrigin), geta.AllowCredentials(), geta.PreflightMaxAge(10*time.Minute)),
 		geta.Use(cop.Handler).Answers(http.StatusForbidden, "A browser request from another origin than the page's"),
 		geta.Recover(env.Log),
 		ratelimit.PerKey(clientip.Key(env.TrustedProxies), env.RatePerMinute, time.Minute),

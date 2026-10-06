@@ -62,7 +62,7 @@ type bodyPlan struct {
 var paramLocations = []string{"path", "query", "header", "cookie", "body"}
 
 func (r *registry) inPlan(t reflect.Type) (*inPlan, error) {
-	if err := CheckInputType(t.String(), t.Kind() == reflect.Struct); err != nil {
+	if err := checkInputType(t.String(), t.Kind() == reflect.Struct); err != nil {
 		return nil, err
 	}
 	p := &inPlan{}
@@ -75,7 +75,7 @@ func (r *registry) inPlan(t reflect.Type) (*inPlan, error) {
 			// Tags are checked as getavet checks them; the type is checked
 			// below, once its codec is known.
 			vf := vetField(f)
-			embedded, err := CheckInputField(vf, seen)
+			embedded, err := checkInputField(vf, seen)
 			if err != nil {
 				return fmt.Errorf("%s.%w", t, err)
 			}
@@ -162,7 +162,7 @@ func (r *registry) paramPlan(f reflect.StructField, loc, name string, index []in
 	if err != nil {
 		return paramPlan{}, err
 	}
-	// getavet applies the same rule (CheckInputField).
+	// getavet applies the same rule (checkInputField).
 	if use, err = carried(loc, name, use); err != nil {
 		return paramPlan{}, err
 	}
@@ -187,7 +187,7 @@ func (r *registry) bodyPlan(f reflect.StructField, index []int) (*bodyPlan, erro
 	if err != nil {
 		return nil, err
 	}
-	// CheckInputField already refused a default on the body.
+	// checkInputField already refused a default on the body.
 	if err := use.checkValues(c); err != nil {
 		return nil, err
 	}

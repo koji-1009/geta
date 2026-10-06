@@ -13,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+
+	"github.com/koji-1009/geta/internal/vet"
 )
 
 // outPlan is how an operation's Out is written, derived once from its type.
@@ -116,13 +118,13 @@ func (r *registry) envelope(t reflect.Type) (*outPlan, error) {
 		for i := range t.NumField() {
 			f := t.Field(i)
 			index := append(append([]int(nil), prefix...), i)
-			// CheckEnvelopeField is shared with getavet; a header's type is
+			// checkEnvelopeField is shared with getavet; a header's type is
 			// checked below, once its codec is known.
 			vf := vetField(f)
-			if err := CheckEnvelopeField(vf, seen); err != nil {
+			if err := checkEnvelopeField(vf, seen); err != nil {
 				return fmt.Errorf("%s.%w", t, err)
 			}
-			if EnvelopeEmbedded(vf) {
+			if envelopeEmbedded(vf) {
 				if err := walk(f.Type, index); err != nil {
 					return err
 				}
@@ -132,7 +134,7 @@ func (r *registry) envelope(t reflect.Type) (*outPlan, error) {
 				continue
 			}
 			if st, isS := f.Tag.Lookup("status"); isS {
-				// CheckEnvelopeField has validated the tag.
+				// checkEnvelopeField has validated the tag.
 				p.statuses, _ = successStatuses(st)
 				p.statusIdx = index
 				continue
@@ -182,7 +184,7 @@ func (r *registry) envelope(t reflect.Type) (*outPlan, error) {
 
 // locationField describes the Location header field for checkSuccess, or
 // returns nil if there is none.
-func (p *outPlan) locationField() *VetField {
+func (p *outPlan) locationField() *vet.Field {
 	if p.location == nil {
 		return nil
 	}
@@ -190,7 +192,7 @@ func (p *outPlan) locationField() *VetField {
 	if p.location.optional {
 		typ = "*" + typ
 	}
-	return &VetField{Name: p.location.field, Type: typ, Kind: vetKind(p.location.c)}
+	return &vet.Field{Name: p.location.field, Type: typ, Kind: vetKind(p.location.c)}
 }
 
 // checkLocation returns an error if status is a redirect and the Location

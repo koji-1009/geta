@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"reflect"
 	"runtime"
+	"slices"
 	"time"
 	"unicode/utf8"
 )
@@ -18,8 +19,7 @@ const MethodQuery = "QUERY"
 // Route is what one URL answers, one field per method. A zero field means
 // the URL does not answer that method. geta answers HEAD with Get, and
 // OPTIONS itself, listing the methods in Allow. A Get or Delete operation
-// takes no body ([CheckMethodBody]); serve one that reads a body as Query or
-// Post.
+// takes no body; serve one that reads a body as Query or Post.
 type Route struct {
 	Get    Operation
 	Post   Operation
@@ -163,6 +163,20 @@ func OpNoBody[In any](status int, h func(context.Context, *In) error, doc Doc) O
 }
 
 var errNilOutput = fmt.Errorf("geta: handler returned a nil output and a nil error")
+
+// snapshot returns a copy of op whose Doc holds its own slices, so what the
+// application or a middleware later does to the slices it passed or read
+// changes nothing [New] assembled.
+func (op *operation) snapshot() *operation {
+	c := *op
+	d := &c.doc
+	d.Tags = slices.Clone(d.Tags)
+	d.Failures = slices.Clone(d.Failures)
+	d.Security = slices.Clone(d.Security)
+	d.Scope = slices.Clone(d.Scope)
+	d.BeforeGate = slices.Clone(d.BeforeGate)
+	return &c
+}
 
 // checkText returns an error naming the first documented text of d that is
 // not UTF-8.

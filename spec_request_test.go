@@ -16,6 +16,7 @@ import (
 
 	"github.com/koji-1009/geta"
 	"github.com/koji-1009/geta/getatest"
+	"github.com/koji-1009/geta/internal/vet"
 )
 
 // Request rules that no other test asserts clause by clause.
@@ -552,7 +553,7 @@ func TestSchemaTagGrammarAndValues(t *testing.T) {
 		{"examples=a||b", "int", `"a||b" has an empty member`},
 		{"pattern=(", "string", `schema keyword pattern: "(" does not compile`},
 	} {
-		if err := geta.CheckSchemaTag(c.tag, c.kind); err == nil || !strings.Contains(err.Error(), c.want) {
+		if err := vet.CheckSchemaTag(c.tag, c.kind); err == nil || !strings.Contains(err.Error(), c.want) {
 			t.Errorf("%s on %s: %v\nwant %q", c.tag, c.kind, err, c.want)
 		}
 	}
@@ -564,7 +565,7 @@ func TestSchemaTagGrammarAndValues(t *testing.T) {
 		{"enum=a|b c", "string"},
 		{"maxItems=2,items.maxItems=3", "[][]int8"},
 	} {
-		if err := geta.CheckSchemaTag(c.tag, c.kind); err != nil {
+		if err := vet.CheckSchemaTag(c.tag, c.kind); err != nil {
 			t.Errorf("%s on %s: %v", c.tag, c.kind, err)
 		}
 	}
@@ -580,7 +581,7 @@ func TestSchemaTagGrammarAndValues(t *testing.T) {
 	accepts(t, one("/x", get(func(context.Context, *empty) (*deprecatedCents, error) { return nil, nil })))
 	// An element takes no annotation.
 	for _, tag := range []string{"items.examples=a", "items.deprecated=true", "items.default=a"} {
-		if err := geta.CheckSchemaTag(tag, "[]string"); err == nil || !strings.Contains(err.Error(), "an element takes no") {
+		if err := vet.CheckSchemaTag(tag, "[]string"); err == nil || !strings.Contains(err.Error(), "an element takes no") {
 			t.Errorf("%s: %v", tag, err)
 		}
 	}
@@ -589,7 +590,7 @@ func TestSchemaTagGrammarAndValues(t *testing.T) {
 		{"pattern=^[a-z]+$,default=X", `default "X": "X" does not match pattern ^[a-z]+$`},
 		{"format=date,examples=x", `example "x": "x" is not a valid date`},
 	} {
-		if err := geta.CheckSchemaTag(c.tag, "string"); err == nil || !strings.Contains(err.Error(), c.want) {
+		if err := vet.CheckSchemaTag(c.tag, "string"); err == nil || !strings.Contains(err.Error(), c.want) {
 			t.Errorf("%s: %v\nwant %q", c.tag, err, c.want)
 		}
 	}

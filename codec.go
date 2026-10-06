@@ -12,6 +12,8 @@ import (
 	"strings"
 	"time"
 	"uuid"
+
+	"github.com/koji-1009/geta/internal/vet"
 )
 
 // A codec is one Go type's schema, derived by the rules encoding/json/v2 uses
@@ -312,14 +314,14 @@ func (r *registry) codecFor(t reflect.Type) (*codec, error) {
 	}
 	// t met again while it is being made holds itself. A named struct on the
 	// cycle is referred to by its component; with none, t's schema would
-	// contain itself. CheckSelfHolding is shared with getavet.
+	// contain itself. checkSelfHolding is shared with getavet.
 	for i := len(r.making) - 1; i >= 0; i-- {
 		c := r.making[i]
 		if c.t != t {
 			continue
 		}
 		through := slices.ContainsFunc(r.making[i:], func(m *codec) bool { return m.name != "" })
-		if err := CheckSelfHolding(t.String(), through); err != nil {
+		if err := checkSelfHolding(t.String(), through); err != nil {
 			return nil, err
 		}
 		if c.name != "" {
@@ -332,7 +334,7 @@ func (r *registry) codecFor(t reflect.Type) (*codec, error) {
 	// A Nullable has JSON methods, but its schema is its value's plus null.
 	if et, ok := nullableOf(t); ok {
 		_, nested := nullableOf(et)
-		if err := CheckJSONType(VetType{Type: t.String(), Nullable: true, Elem: et.String(), ElemNullable: nested}); err != nil {
+		if err := checkJSONType(vet.Type{Type: t.String(), Nullable: true, Elem: et.String(), ElemNullable: nested}); err != nil {
 			return nil, err
 		}
 		ec, err := r.codecFor(et)
@@ -349,7 +351,7 @@ func (r *registry) codecFor(t reflect.Type) (*codec, error) {
 	// request value is valid when its UnmarshalJSON takes it. WithSchema may
 	// narrow the schema.
 	if ownJSON(t) {
-		if err := CheckJSONType(VetType{Type: t.String(), JSON: true, Format: namesFormat(t)}); err != nil {
+		if err := checkJSONType(vet.Type{Type: t.String(), JSON: true, Format: namesFormat(t)}); err != nil {
 			return nil, err
 		}
 		s, ok := r.declared[t]
@@ -363,9 +365,9 @@ func (r *registry) codecFor(t reflect.Type) (*codec, error) {
 	if t.Kind() == reflect.Interface {
 		return r.unionCodec(t)
 	}
-	// CheckJSONType is shared with getavet.
+	// checkJSONType is shared with getavet.
 	vt := vetType(t)
-	if err := CheckJSONType(vt); err != nil {
+	if err := checkJSONType(vt); err != nil {
 		return nil, err
 	}
 	if vt.Marshaler {
@@ -438,8 +440,8 @@ func (r *registry) codecFor(t reflect.Type) (*codec, error) {
 	case reflect.Struct:
 		c.kind = kStruct
 		if t.Name() != "" {
-			// CheckSchemaName is shared with getavet.
-			if err := CheckSchemaName(t.String()); err != nil {
+			// checkSchemaName is shared with getavet.
+			if err := checkSchemaName(t.String()); err != nil {
 				return nil, err
 			}
 			c.name = componentName(t)
@@ -458,7 +460,7 @@ func (r *registry) codecFor(t reflect.Type) (*codec, error) {
 			return nil, err
 		}
 	}
-	// No default: CheckJSONType passes only the kinds above.
+	// No default: checkJSONType passes only the kinds above.
 	switch c.kind {
 	case kString, kBool, kInt, kUint, kFloat:
 		c.direct = r.setsDirectly(t)
@@ -495,8 +497,8 @@ func (r *registry) structFields(c *codec) error {
 		for i := range t.NumField() {
 			f := t.Field(i)
 			index := append(append([]int(nil), prefix...), i)
-			// CheckMemberField is shared with getavet.
-			name, embedded, err := CheckMemberField(vetField(f), seen)
+			// checkMemberField is shared with getavet.
+			name, embedded, err := checkMemberField(vetField(f), seen)
 			if err != nil {
 				return fmt.Errorf("%s.%w", c.t, err)
 			}
@@ -528,7 +530,7 @@ func (r *registry) structFields(c *codec) error {
 	if err := walk(c.t, nil); err != nil {
 		return err
 	}
-	if err := CheckStructMembers(c.t.String(), c.t.NumField(), len(c.fields)); err != nil {
+	if err := checkStructMembers(c.t.String(), c.t.NumField(), len(c.fields)); err != nil {
 		return err
 	}
 	if len(c.fields) > 8 {

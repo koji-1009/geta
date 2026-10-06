@@ -168,7 +168,7 @@ func TestConformsReadsEveryDescriptionOfAStatus(t *testing.T) {
 		geta.OnAsProblem(http.StatusConflict, "", func(*quotaError) countProblem { return countProblem{} }),
 		geta.OnAsProblem(http.StatusServiceUnavailable, "", func(*quotaError) badRetry { return badRetry{} }),
 	}})}))
-	x := geta.Match{Template: "/x", Method: http.MethodGet, Operation: true}
+	x := geta.Match{Template: "/x", Method: http.MethodGet}
 	const head = `{"type":"about:blank","title":"t","status":409`
 	for _, c := range []struct {
 		status int
@@ -210,7 +210,7 @@ func TestConformsChecksOnlyWhatTheDocumentStates(t *testing.T) {
 		{Path: "/raw", Route: get(func(context.Context, *empty) (*rawReport, error) { return &rawReport{}, nil })},
 		{Path: "/ws", Route: geta.Route{Get: geta.Op(http.StatusSwitchingProtocols, echoUpgrade, geta.Doc{})}},
 	}})
-	x := geta.Match{Template: "/x", Method: http.MethodGet, Operation: true}
+	x := geta.Match{Template: "/x", Method: http.MethodGet}
 	if err := a.Conforms(x, http.StatusOK, nil, []byte("not json")); err == nil || !strings.Contains(err.Error(), "the body is not JSON") {
 		t.Fatal(err)
 	}
@@ -222,8 +222,8 @@ func TestConformsChecksOnlyWhatTheDocumentStates(t *testing.T) {
 		{x, http.StatusConflict, "not json"},
 		{x, http.StatusInternalServerError, "not json"},
 		{x, http.StatusOK, ""},
-		{geta.Match{Template: "/raw", Method: http.MethodGet, Operation: true}, http.StatusOK, "not json"},
-		{geta.Match{Template: "/ws", Method: http.MethodGet, Operation: true}, http.StatusSwitchingProtocols, "not json"},
+		{geta.Match{Template: "/raw", Method: http.MethodGet}, http.StatusOK, "not json"},
+		{geta.Match{Template: "/ws", Method: http.MethodGet}, http.StatusSwitchingProtocols, "not json"},
 		{geta.Match{}, http.StatusOK, "not json"},
 	} {
 		if err := a.Conforms(c.m, c.status, nil, []byte(c.body)); err != nil {

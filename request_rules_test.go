@@ -19,6 +19,7 @@ import (
 
 	"github.com/koji-1009/geta"
 	"github.com/koji-1009/geta/getatest"
+	"github.com/koji-1009/geta/internal/vet"
 )
 
 // The rules of request binding the other tests leave unasserted, each
@@ -34,7 +35,7 @@ func post[In, Out any](h func(context.Context, *In) (*Out, error)) geta.Route {
 func TestANonStructInputIsRefused(t *testing.T) {
 	const want = "input type int is not a struct"
 	rejects(t, one("/x", get(func(context.Context, *int) (*ok, error) { return nil, nil })), want)
-	if err := geta.CheckInputType("int", false); err == nil || err.Error() != want {
+	if err := vet.CheckInputType("int", false); err == nil || err.Error() != want {
 		t.Fatal(err)
 	}
 }
@@ -296,17 +297,17 @@ func TestSchemaTagRefusals(t *testing.T) {
 		{"examples=", "int", `schema keyword examples: "" has an empty member`},
 		{"default=x", "geta.File", "schema tag \"default=x\" on a geta.File"},
 	} {
-		if err := geta.CheckSchemaTag(c.tag, c.kind); err == nil || !strings.Contains(err.Error(), c.want) {
+		if err := vet.CheckSchemaTag(c.tag, c.kind); err == nil || !strings.Contains(err.Error(), c.want) {
 			t.Errorf("%s on %s: %v\nwant %q", c.tag, c.kind, err, c.want)
 		}
 	}
 	// Beside a pattern, a default or an example past the pattern ceiling is
 	// one no request carries, whatever the Limits.
 	for _, tag := range []string{"pattern=^a+$,default=" + long, "pattern=^a+$,examples=a|" + long} {
-		if err := geta.CheckSchemaTag(tag, "string"); err != nil {
+		if err := vet.CheckSchemaTag(tag, "string"); err != nil {
 			t.Errorf("CheckSchemaTag: %v", err)
 		}
-		if err := geta.CheckRequestSchemaTag(tag, "string"); err == nil ||
+		if err := vet.CheckRequestSchemaTag(tag, "string"); err == nil ||
 			!strings.Contains(err.Error(), "with a pattern exceeds the pattern ceiling of 4096 code points") {
 			t.Errorf("CheckRequestSchemaTag: %v", err)
 		}
@@ -477,36 +478,36 @@ func TestFormFieldsEmbeddedAndRefused(t *testing.T) {
 // kind: geta.New gives the same text where it reaches them.
 func TestCheckFormFieldBranches(t *testing.T) {
 	for _, c := range []struct {
-		f         geta.VetField
+		f         vet.Field
 		multipart bool
 		walk      bool
 		want      string
 	}{
-		{geta.VetField{Name: "E", Embedded: true, Struct: true, Exported: true}, false, true, ""},
-		{geta.VetField{Name: "T", Embedded: true, Struct: true, Text: true, Type: "lib.T"}, false, false, "T: embedded lib.T is a text type with no fields; tag it form"},
-		{geta.VetField{Name: "E", Embedded: true, Struct: true, Tag: `schema:"deprecated=true"`}, false, false, "E: an embedded struct takes no schema tag"},
-		{geta.VetField{Name: "E", Embedded: true, Pointer: true, Type: "*lib.E"}, false, false, "E: embedded pointer types are not supported in a form; embed lib.E"},
-		{geta.VetField{Name: "x"}, false, false, ""},
-		{geta.VetField{Name: "X", Exported: true}, false, false, "X has no form tag"},
-		{geta.VetField{Name: "x", Tag: `form:"x"`}, false, false, "x is tagged form but unexported"},
-		{geta.VetField{Name: "X", Exported: true, Tag: `form:""`}, false, false, "X: empty form field name"},
-		{geta.VetField{Name: "X", Exported: true, Pointer: true, Type: "*int", Tag: `form:"x" schema:"default=1"`}, false, false, "X: a pointer field takes no default"},
-		{geta.VetField{Name: "F", Exported: true, Type: "geta.File", Kind: "geta.File", Tag: `form:"f"`}, false, false, `F: form field "f" has file type geta.File outside a multipart body`},
-		{geta.VetField{Name: "F", Exported: true, Type: "[]geta.File", Kind: "[]geta.File", Tag: `form:"f" schema:"uniqueItems=true"`}, true, false, `F: form field "f": uniqueItems on files`},
-		{geta.VetField{Name: "F", Exported: true, Type: "[]geta.File", Kind: "[]geta.File", Tag: `form:"f" schema:"maxItems=2"`}, true, false, ""},
-		{geta.VetField{Name: "M", Exported: true, Type: "map[string]string", Kind: "map", Tag: `form:"m"`}, false, false, `M: form field "m" has unsupported type map[string]string`},
-		{geta.VetField{Name: "S", Exported: true, Type: "[]int", Kind: "[]int", Tag: `form:"s"`}, false, false, ""},
+		{vet.Field{Name: "E", Embedded: true, Struct: true, Exported: true}, false, true, ""},
+		{vet.Field{Name: "T", Embedded: true, Struct: true, Text: true, Type: "lib.T"}, false, false, "T: embedded lib.T is a text type with no fields; tag it form"},
+		{vet.Field{Name: "E", Embedded: true, Struct: true, Tag: `schema:"deprecated=true"`}, false, false, "E: an embedded struct takes no schema tag"},
+		{vet.Field{Name: "E", Embedded: true, Pointer: true, Type: "*lib.E"}, false, false, "E: embedded pointer types are not supported in a form; embed lib.E"},
+		{vet.Field{Name: "x"}, false, false, ""},
+		{vet.Field{Name: "X", Exported: true}, false, false, "X has no form tag"},
+		{vet.Field{Name: "x", Tag: `form:"x"`}, false, false, "x is tagged form but unexported"},
+		{vet.Field{Name: "X", Exported: true, Tag: `form:""`}, false, false, "X: empty form field name"},
+		{vet.Field{Name: "X", Exported: true, Pointer: true, Type: "*int", Tag: `form:"x" schema:"default=1"`}, false, false, "X: a pointer field takes no default"},
+		{vet.Field{Name: "F", Exported: true, Type: "geta.File", Kind: "geta.File", Tag: `form:"f"`}, false, false, `F: form field "f" has file type geta.File outside a multipart body`},
+		{vet.Field{Name: "F", Exported: true, Type: "[]geta.File", Kind: "[]geta.File", Tag: `form:"f" schema:"uniqueItems=true"`}, true, false, `F: form field "f": uniqueItems on files`},
+		{vet.Field{Name: "F", Exported: true, Type: "[]geta.File", Kind: "[]geta.File", Tag: `form:"f" schema:"maxItems=2"`}, true, false, ""},
+		{vet.Field{Name: "M", Exported: true, Type: "map[string]string", Kind: "map", Tag: `form:"m"`}, false, false, `M: form field "m" has unsupported type map[string]string`},
+		{vet.Field{Name: "S", Exported: true, Type: "[]int", Kind: "[]int", Tag: `form:"s"`}, false, false, ""},
 	} {
-		walk, err := geta.CheckFormField(c.f, c.multipart, map[string]string{})
+		walk, err := vet.CheckFormField(c.f, c.multipart, map[string]string{})
 		if walk != c.walk || c.want == "" && err != nil || c.want != "" && (err == nil || !strings.Contains(err.Error(), c.want)) {
 			t.Errorf("%+v: %v %v\nwant %v %q", c.f, walk, err, c.walk, c.want)
 		}
 	}
 	seen := map[string]string{}
-	if _, err := geta.CheckFormField(geta.VetField{Name: "A", Exported: true, Tag: `form:"a"`}, false, seen); err != nil {
+	if _, err := vet.CheckFormField(vet.Field{Name: "A", Exported: true, Tag: `form:"a"`}, false, seen); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := geta.CheckFormField(geta.VetField{Name: "B", Exported: true, Tag: `form:"a"`}, false, seen); err == nil ||
+	if _, err := vet.CheckFormField(vet.Field{Name: "B", Exported: true, Tag: `form:"a"`}, false, seen); err == nil ||
 		err.Error() != `B binds form field "a", already bound by A` {
 		t.Fatal(err)
 	}

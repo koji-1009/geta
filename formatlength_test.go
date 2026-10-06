@@ -153,10 +153,10 @@ func TestFormatsBoundTheirOwnLength(t *testing.T) {
 		}
 	}
 	// A format type's schema is held alike, and getavet's kinds too.
-	if err := CheckSchemaTag("maxLength=9", "geta.Date"); err == nil || !strings.Contains(err.Error(), "maxLength 9 is below format date's minimum length 10") {
+	if err := checkTag("maxLength=9", "geta.Date"); err == nil || !strings.Contains(err.Error(), "maxLength 9 is below format date's minimum length 10") {
 		t.Errorf("geta.Date: %v", err)
 	}
-	if err := CheckSchemaTag("maxLength=9", "format"); err != nil {
+	if err := checkTag("maxLength=9", "format"); err != nil {
 		t.Errorf("a FormatType's grammar is its own: %v", err)
 	}
 }

@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/koji-1009/geta"
+	"github.com/koji-1009/geta/internal/vet"
 )
 
 // The exported rules getavet applies give the verdict, and the text,
@@ -47,12 +48,12 @@ func TestCheckSchemaTag(t *testing.T) {
 		{"maxProperties=2", "slice", false},
 		{"deprecated=true", "object", true},
 	} {
-		err := geta.CheckSchemaTag(c.tag, c.kind)
+		err := vet.CheckSchemaTag(c.tag, c.kind)
 		if (err == nil) != c.ok {
 			t.Errorf("%s on %s: %v", c.tag, c.kind, err)
 		}
 	}
-	if geta.CheckSchemaTag("", "complex128") == nil {
+	if vet.CheckSchemaTag("", "complex128") == nil {
 		t.Error("an unknown kind passed")
 	}
 	// A map's schema is an object, as geta.New writes it; a named struct's
@@ -62,11 +63,11 @@ func TestCheckSchemaTag(t *testing.T) {
 		"object": "schema keyword minLength applies to string, not object",
 		"struct": `schema tag "minLength=1" on a struct type`,
 	} {
-		if err := geta.CheckSchemaTag("minLength=1", kind); err == nil || err.Error() != want {
+		if err := vet.CheckSchemaTag("minLength=1", kind); err == nil || err.Error() != want {
 			t.Errorf("%s: %v; want %s", kind, err, want)
 		}
 	}
-	if err := geta.CheckSchemaTag("minProperties=1", "object"); err == nil ||
+	if err := vet.CheckSchemaTag("minProperties=1", "object"); err == nil ||
 		err.Error() != "schema keyword minProperties applies to a map, not a struct" {
 		t.Errorf("minProperties on an unnamed struct: %v", err)
 	}
@@ -108,15 +109,15 @@ func inCase[In any](name, kind string) refusalCase {
 		geta.Op(http.StatusOK, func(context.Context, *In) (*ok, error) { return nil, nil }, geta.Doc{}), kind}
 }
 
-func describeField(f reflect.StructField, kind string) geta.VetField {
-	return geta.VetField{Name: f.Name, Exported: f.IsExported(), Embedded: f.Anonymous, Tag: f.Tag, Type: f.Type.String(),
+func describeField(f reflect.StructField, kind string) vet.Field {
+	return vet.Field{Name: f.Name, Exported: f.IsExported(), Embedded: f.Anonymous, Tag: f.Tag, Type: f.Type.String(),
 		Pointer: f.Type.Kind() == reflect.Pointer, Struct: f.Type.Kind() == reflect.Struct,
 		Cookie: f.Type == reflect.TypeFor[*http.Cookie](), Kind: kind}
 }
 
 // refusal runs check over c's fields, as getavet does, and requires that
 // geta.New refuses c's operation with the text check gives for F.
-func (c refusalCase) refusal(t *testing.T, check func(geta.VetField) error) {
+func (c refusalCase) refusal(t *testing.T, check func(vet.Field) error) {
 	t.Helper()
 	var want error
 	for i := range c.typ.NumField() {
@@ -198,7 +199,7 @@ func TestEnvelopeRefusalsAreCheckEnvelopeFields(t *testing.T) {
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			seen := map[string]bool{}
-			c.refusal(t, func(f geta.VetField) error { return geta.CheckEnvelopeField(f, seen) })
+			c.refusal(t, func(f vet.Field) error { return vet.CheckEnvelopeField(f, seen) })
 		})
 	}
 }
@@ -248,7 +249,7 @@ func TestInputRefusalsAreCheckInputFields(t *testing.T) {
 				// The embedded pointer is the refused field here.
 				var want error
 				f := describeField(c.typ.Field(0), "")
-				if _, err := geta.CheckInputField(f, map[string]string{}); err != nil {
+				if _, err := vet.CheckInputField(f, map[string]string{}); err != nil {
 					want = err
 				}
 				_, err := geta.New(one("/x", geta.Route{Post: c.op}))
@@ -258,7 +259,7 @@ func TestInputRefusalsAreCheckInputFields(t *testing.T) {
 				return
 			}
 			seen := map[string]string{}
-			c.refusal(t, func(f geta.VetField) error { _, err := geta.CheckInputField(f, seen); return err })
+			c.refusal(t, func(f vet.Field) error { _, err := vet.CheckInputField(f, seen); return err })
 		})
 	}
 }
@@ -290,7 +291,7 @@ func TestVetFieldAcceptsWhatNewAccepts(t *testing.T) {
 	walk = func(st reflect.Type) {
 		for i := range st.NumField() {
 			f := st.Field(i)
-			deeper, err := geta.CheckInputField(describeField(f, kinds[f.Name]), seenIn)
+			deeper, err := vet.CheckInputField(describeField(f, kinds[f.Name]), seenIn)
 			if err != nil {
 				t.Errorf("CheckInputField(%s): %v", f.Name, err)
 			}
@@ -304,7 +305,7 @@ func TestVetFieldAcceptsWhatNewAccepts(t *testing.T) {
 	ot := reflect.TypeFor[out]()
 	for i := range ot.NumField() {
 		f := ot.Field(i)
-		if err := geta.CheckEnvelopeField(describeField(f, kinds[f.Name]), seenOut); err != nil {
+		if err := vet.CheckEnvelopeField(describeField(f, kinds[f.Name]), seenOut); err != nil {
 			t.Errorf("CheckEnvelopeField(%s): %v", f.Name, err)
 		}
 	}

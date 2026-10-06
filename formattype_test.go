@@ -12,6 +12,7 @@ import (
 	"github.com/koji-1009/geta"
 	"github.com/koji-1009/geta/getaclient"
 	"github.com/koji-1009/geta/getatest"
+	"github.com/koji-1009/geta/internal/vet"
 )
 
 // Email is an application's own mail address: format email, as the
@@ -262,11 +263,11 @@ func TestAFormatTypeTheDocumentCannotTrustIsRefused(t *testing.T) {
 	// getavet, which sees SchemaFormat but not what it returns, gets the
 	// same verdict and text for the kind it names such a type by; the type
 	// takes the string keywords a text type takes.
-	if err := geta.CheckSchemaTag("format=date", "format"); err == nil ||
+	if err := vet.CheckSchemaTag("format=date", "format"); err == nil ||
 		err.Error() != "schema keyword format: the type has its own format" {
 		t.Error(err)
 	}
-	if err := geta.CheckSchemaTag("minLength=3,pattern=@", "format"); err != nil {
+	if err := vet.CheckSchemaTag("minLength=3,pattern=@", "format"); err != nil {
 		t.Error(err)
 	}
 	type stringEmail struct {

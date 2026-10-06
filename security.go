@@ -180,6 +180,7 @@ type Challenger interface {
 
 // Policy is the runtime half of the security declarations: the default
 // schemes for a route that declares none, and a verifier for each scheme.
+// [Secure] copies Default and Verifiers; later changes to them have no effect.
 type Policy struct {
 	Default   []Scheme
 	Verifiers map[string]Verifier
@@ -204,12 +205,12 @@ type Policy struct {
 // requires one scheme of each gate's default, and the document lists every
 // such combination as a requirement.
 func Secure(p Policy) Middleware {
-	policy := p
+	policy := Policy{Default: slices.Clone(p.Default), Verifiers: maps.Clone(p.Verifiers)}
 	m := Ordered(OrderAuthenticate, func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			schemes := policy.Default
-			if mt, ok := matchedFor(r); ok && mt.Doc.Security != nil {
-				schemes = mt.Doc.Security
+			if op, ok := matchedFor(r); ok && op.op.doc.Security != nil {
+				schemes = op.op.doc.Security
 			}
 			if len(schemes) == 0 {
 				next.ServeHTTP(w, r)

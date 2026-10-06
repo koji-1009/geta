@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/koji-1009/geta"
+	"github.com/koji-1009/geta/internal/vet"
 )
 
 // JSON body types: what geta.New accepts and refuses of a type, its members,
@@ -219,11 +220,11 @@ func TestMemberFieldsAsV2ReadsThem(t *testing.T) {
 		"embeddedHidden.memberTok: embedded geta_test.memberTok is not a struct")
 	// go vet refuses to build a struct type with such a field, so the rule
 	// is asked of its description (getavet's fixture declares one).
-	_, _, err := geta.CheckMemberField(geta.VetField{Name: "h", Tag: `json:"h"`, Type: "int", Kind: "int"}, map[string]bool{})
+	_, _, err := vet.CheckMemberField(vet.Field{Name: "h", Tag: `json:"h"`, Type: "int", Kind: "int"}, map[string]bool{})
 	if err == nil || err.Error() != "h is unexported but has a json tag" {
 		t.Errorf("unexported tagged field: %v", err)
 	}
-	if _, _, err := geta.CheckMemberField(geta.VetField{Name: "h", Tag: `json:"-"`, Type: "int"}, map[string]bool{}); err != nil {
+	if _, _, err := vet.CheckMemberField(vet.Field{Name: "h", Tag: `json:"-"`, Type: "int"}, map[string]bool{}); err != nil {
 		t.Errorf("unexported field tagged -: %v", err)
 	}
 	type namedPointer struct {

@@ -19,6 +19,7 @@ type Order struct {
 	Name string
 }
 
+// String returns the name and the rank, such as "recover(3000)".
 func (o Order) String() string { return fmt.Sprintf("%s(%d)", o.Name, o.Rank) }
 
 // OrderSpacing is the distance between two adjacent stages of geta's

@@ -106,9 +106,6 @@ type compiledOp struct {
 
 // operation returns the operation m names, or nil if none of a's does.
 func (a *App) operation(m Match) *compiledOp {
-	if !m.Operation {
-		return nil
-	}
 	for _, op := range a.ops {
 		if op.method == m.Method && op.path == m.Template {
 			return op

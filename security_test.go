@@ -188,6 +188,44 @@ func TestAuthorizationIsOrdinaryMiddleware(t *testing.T) {
 	}
 }
 
+// The gate keeps what it was given: changing the policy, the Doc, or a
+// Matched Doc afterwards changes no decision.
+func TestChangesAfterNewChangeNoDecision(t *testing.T) {
+	sec := []geta.Scheme{geta.Bearer}
+	verifiers := map[string]geta.Verifier{"bearer": bearerVerifier, "apiKey": apiKeyVerifier}
+	def := []geta.Scheme{geta.Bearer}
+	rewrite := func(ctx context.Context, _ *empty) (*who, error) {
+		if m, ok := geta.Matched(ctx); ok {
+			m.Doc.Security[0] = apiKey
+		}
+		return &who{}, nil
+	}
+	a, err := geta.New(geta.Table{
+		Root: geta.Scope{geta.Secure(geta.Policy{Default: def, Verifiers: verifiers})},
+		Routes: []geta.Entry{
+			{Path: "/x", Route: geta.Route{Get: geta.Op(http.StatusOK, rewrite, geta.Doc{Security: sec})}},
+			{Path: "/d", Route: geta.Route{Get: geta.Op(http.StatusOK, whoami, geta.Doc{})}},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sec[0] = apiKey
+	def[0] = apiKey
+	delete(verifiers, "bearer")
+	for range 2 {
+		if c := do(t, a, "GET", "/x", "Authorization", "Bearer ok").Code; c != 200 {
+			t.Fatal(c)
+		}
+		if c := do(t, a, "GET", "/x", "X-API-Key", "k").Code; c != 401 {
+			t.Fatal(c)
+		}
+		if c := do(t, a, "GET", "/d", "Authorization", "Bearer ok").Code; c != 200 {
+			t.Fatal(c)
+		}
+	}
+}
+
 // Two gates must both admit, and with no Doc.Security each checks its own
 // default.
 func TestTwoGatesEachRequireTheirDefault(t *testing.T) {

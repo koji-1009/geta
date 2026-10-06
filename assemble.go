@@ -104,6 +104,7 @@ func New(t Table, opts ...Option) (*App, error) {
 			continue
 		}
 		for _, m := range methods {
+			m.op.op = m.op.op.snapshot()
 			// The operation's own scope runs innermost, for that method only.
 			opChain := chain
 			if s := m.op.op.doc.Scope; len(s) > 0 {
@@ -187,7 +188,7 @@ func New(t Table, opts ...Option) (*App, error) {
 		params, _ := parsePath(op.path)
 		rt := &route{
 			h:         wrap(op.routeChain, op),
-			match:     &Match{Template: op.path, Method: op.method, Doc: op.op.doc, Operation: true},
+			match:     &Match{Template: op.path, Method: op.method, Doc: op.op.snapshot().doc},
 			params:    params,
 			op:        op,
 			pattern:   op.method + " " + op.path,
@@ -382,7 +383,7 @@ func (a *App) compile(reg *registry, path string, params []string, m methodOp, c
 	}
 	c.in = in
 	if in.body != nil || in.form != nil || in.raw != nil {
-		if err := CheckMethodBody(m.method); err != nil {
+		if err := checkMethodBody(m.method); err != nil {
 			return nil, fmt.Errorf("%s: %w", where, err)
 		}
 	}
@@ -445,7 +446,7 @@ func (a *App) compile(reg *registry, path string, params []string, m methodOp, c
 	if err := checkOrder(chain, m.method+" "+path); err != nil {
 		return nil, err
 	}
-	if err := CheckDocTimeout(op.doc.Timeout); err != nil {
+	if err := checkDocTimeout(op.doc.Timeout); err != nil {
 		return nil, fmt.Errorf("%s: %w", where, err)
 	}
 	switch t := op.doc.Timeout; {
@@ -601,7 +602,7 @@ func checkStatus(status int, out *outPlan, outType reflect.Type) error {
 		}
 		return nil
 	}
-	// The same rule CheckSuccessStatus applies for getavet.
+	// The same rule checkSuccessStatus applies for getavet.
 	output := ""
 	if outType != nil {
 		output = outType.String()

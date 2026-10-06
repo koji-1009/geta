@@ -1087,7 +1087,7 @@ func FuzzConformsHeaderAgreesWithRequest(f *testing.F) {
 	if err != nil {
 		f.Fatal(err)
 	}
-	match := geta.Match{Template: "/h", Method: http.MethodGet, Operation: true}
+	match := geta.Match{Template: "/h", Method: http.MethodGet}
 	f.Fuzz(func(t *testing.T, s string) {
 		s = fzCut(s, 128)
 		for _, h := range fzHeaderTypes {

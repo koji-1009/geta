@@ -120,7 +120,7 @@ func TestConformsChecksDescribedFailures(t *testing.T) {
 		t.Fatalf("%q", rec.errs)
 	}
 
-	get := geta.Match{Template: "/f", Method: http.MethodGet, Operation: true}
+	get := geta.Match{Template: "/f", Method: http.MethodGet}
 	app := c.App()
 	for body, want := range map[string]string{
 		`{"type":"about:blank","title":"Conflict","status":409,"v":"x"}`:   "",
@@ -169,7 +169,7 @@ func TestConformsNamesResponseViolationsWhole(t *testing.T) {
 		members = append(members, fmt.Sprintf(`"a%02d":"x"`, i))
 	}
 	value := strings.Repeat("z", 300)
-	err := app.Conforms(geta.Match{Template: "/m", Method: http.MethodGet, Operation: true}, http.StatusOK, nil,
+	err := app.Conforms(geta.Match{Template: "/m", Method: http.MethodGet}, http.StatusOK, nil,
 		[]byte(`{"e":"`+value+`","m":{`+strings.Join(members, ",")+`}}`))
 	if err == nil || !strings.Contains(err.Error(), `$.e: "`+value+`" is not one of a, b; $.m.`+long+": expected integer, got string; $.m.a00: ") ||
 		!strings.Contains(err.Error(), "$.m.a47: expected integer, got string; and 12 more not listed") {
@@ -192,7 +192,7 @@ func TestConformsChecksStreamEvents(t *testing.T) {
 	if len(rec.errs) != 1 || !strings.Contains(rec.errs[0], "$.v: expected string, got integer") {
 		t.Fatalf("%q", rec.errs)
 	}
-	get := geta.Match{Template: "/e", Method: http.MethodGet, Operation: true}
+	get := geta.Match{Template: "/e", Method: http.MethodGet}
 	app := c.App()
 	for body, want := range map[string]string{
 		"data: {\"v\":\"x\"}\n\n":                    "",

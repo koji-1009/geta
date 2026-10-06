@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/koji-1009/geta"
+	"github.com/koji-1009/geta/internal/vet"
 )
 
 // Schema tags: where they may stand, and the bounds a type can meet.
@@ -90,7 +91,7 @@ func TestRejectsUnreachableBounds(t *testing.T) {
 		{"minimum=0.1,maximum=0.2,multipleOf=0.3", "float64", "no number meets minimum 0.1, maximum 0.2, multipleOf 0.3"},
 		{"minimum=253,multipleOf=7", "uint8", "no uint8 value (0 to 255) meets"}, // 252 is the last multiple
 	} {
-		err := geta.CheckSchemaTag(tc.tag, tc.kind)
+		err := vet.CheckSchemaTag(tc.tag, tc.kind)
 		if err == nil || !strings.Contains(err.Error(), tc.want) {
 			t.Errorf("%s on %s: %v; want %q", tc.tag, tc.kind, err, tc.want)
 		}
@@ -110,7 +111,7 @@ func TestRejectsUnreachableBounds(t *testing.T) {
 		{"exclusiveMinimum=0,exclusiveMaximum=10,multipleOf=5", "int"},
 		{"exclusiveMinimum=1e300", "float64"},
 	} {
-		if err := geta.CheckSchemaTag(tc.tag, tc.kind); err != nil {
+		if err := vet.CheckSchemaTag(tc.tag, tc.kind); err != nil {
 			t.Errorf("%s on %s: %v", tc.tag, tc.kind, err)
 		}
 	}
@@ -138,7 +139,7 @@ func TestRejectsBoundsFloat64CannotHold(t *testing.T) {
 		{"maximum=0x1.999999999999ap-4", "float64", "use 0.1"},
 		{"minimum=1_000.000_000_000_000_000_1", "float64", "use 1000"},
 	} {
-		err := geta.CheckSchemaTag(tc.tag, tc.kind)
+		err := vet.CheckSchemaTag(tc.tag, tc.kind)
 		if err == nil || !strings.Contains(err.Error(), tc.want) {
 			t.Errorf("%s on %s: %v; want %q", tc.tag, tc.kind, err, tc.want)
 		}
@@ -160,7 +161,7 @@ func TestRejectsBoundsFloat64CannotHold(t *testing.T) {
 		{"minimum=-0", "int"},
 		{"maximum=5e-324", "float64"},
 	} {
-		if err := geta.CheckSchemaTag(tc.tag, tc.kind); err != nil {
+		if err := vet.CheckSchemaTag(tc.tag, tc.kind); err != nil {
 			t.Errorf("%s on %s: %v", tc.tag, tc.kind, err)
 		}
 	}
@@ -246,7 +247,7 @@ func TestFloat32Range(t *testing.T) {
 		{"maximum=-1e39", "no float32 value"},
 		{"minimum=-1e39,exclusiveMaximum=-3.4028234663852886e38", "no float32 value"},
 	} {
-		err := geta.CheckSchemaTag(tc.tag, "float32")
+		err := vet.CheckSchemaTag(tc.tag, "float32")
 		if err == nil || !strings.Contains(err.Error(), tc.want) {
 			t.Errorf("%s on float32: %v; want %q", tc.tag, err, tc.want)
 		}
@@ -258,12 +259,12 @@ func TestFloat32Range(t *testing.T) {
 		"exclusiveMaximum=1e39",
 		"minimum=1e38,multipleOf=1e38",
 	} {
-		if err := geta.CheckSchemaTag(tag, "float32"); err != nil {
+		if err := vet.CheckSchemaTag(tag, "float32"); err != nil {
 			t.Errorf("%s on float32: %v", tag, err)
 		}
 	}
 	// float64 keeps no such range.
-	if err := geta.CheckSchemaTag("exclusiveMinimum=1e39", "float64"); err != nil {
+	if err := vet.CheckSchemaTag("exclusiveMinimum=1e39", "float64"); err != nil {
 		t.Errorf("exclusiveMinimum=1e39 on float64: %v", err)
 	}
 

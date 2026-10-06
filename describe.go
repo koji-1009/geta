@@ -27,7 +27,7 @@ type problemPlan struct {
 // problemPlan plans the description type t of a row, refusing a type the
 // document cannot state.
 func (r *registry) problemPlan(t reflect.Type) (*problemPlan, error) {
-	if err := CheckProblemType(t.String(), t.Kind() == reflect.Struct); err != nil {
+	if err := checkProblemType(t.String(), t.Kind() == reflect.Struct); err != nil {
 		return nil, err
 	}
 	pp := &problemPlan{t: t, detail: -1, opts: r.encOpts}
@@ -37,13 +37,13 @@ func (r *registry) problemPlan(t reflect.Type) (*problemPlan, error) {
 		walk = func(t reflect.Type) error {
 			for i := range t.NumField() {
 				vf := vetField(t.Field(i))
-				if EnvelopeEmbedded(vf) {
+				if envelopeEmbedded(vf) {
 					if err := walk(t.Field(i).Type); err != nil {
 						return err
 					}
 					continue
 				}
-				if err := CheckProblemField(vf); err != nil {
+				if err := checkProblemField(vf); err != nil {
 					return fmt.Errorf("%s.%w", t, err)
 				}
 			}
@@ -66,10 +66,10 @@ func (r *registry) problemPlan(t reflect.Type) (*problemPlan, error) {
 	}
 	if body != nil {
 		if body.kind != kStruct {
-			return nil, CheckProblemType(body.t.String(), false)
+			return nil, checkProblemType(body.t.String(), false)
 		}
 		for i, f := range body.fields {
-			if err := CheckProblemMember(f.json, vetKind(f.c)); err != nil {
+			if err := checkProblemMember(f.json, vetKind(f.c)); err != nil {
 				return nil, fmt.Errorf("%s: %w", body.t, err)
 			}
 			if f.json == "detail" {
@@ -122,7 +122,7 @@ func (pp *problemPlan) write(w http.ResponseWriter, r *http.Request, c *compiled
 	}
 	body, _ := json.Marshal(p, marshalOptions)
 	if len(members) > 2 {
-		// Splice two objects whose names are disjoint (CheckProblemMember).
+		// Splice two objects whose names are disjoint (checkProblemMember).
 		body = append(append(body[:len(body)-1], ','), members[1:]...)
 	}
 	h["Content-Type"] = []string{ProblemContentType}

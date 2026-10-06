@@ -50,10 +50,10 @@ func ExposeHeaders(headers ...string) CORSOption {
 // AllowCredentials lets a page send cookies. It cannot be combined with "*".
 func AllowCredentials() CORSOption { return func(c *corsConfig) { c.credentials = true } }
 
-// MaxAge sets how long a browser may cache a preflight, sent as
+// PreflightMaxAge sets how long a browser may cache a preflight, sent as
 // Access-Control-Max-Age. [New] refuses a duration that is not a whole
-// positive number of seconds. Without MaxAge the header is not sent.
-func MaxAge(d time.Duration) CORSOption {
+// positive number of seconds. Without PreflightMaxAge the header is not sent.
+func PreflightMaxAge(d time.Duration) CORSOption {
 	return func(c *corsConfig) { c.maxAge, c.maxAgeSet = d, true }
 }
 
@@ -78,7 +78,7 @@ func MaxAge(d time.Duration) CORSOption {
 //
 // [New] refuses CORS outside the root scope, since OPTIONS runs the root
 // scope alone. It also refuses no origin, "*" with [AllowCredentials], and a
-// bad [MaxAge].
+// bad [PreflightMaxAge].
 func CORS(opts ...CORSOption) Middleware {
 	cfg := corsConfig{}
 	for _, o := range opts {
@@ -92,7 +92,7 @@ func CORS(opts ...CORSOption) Middleware {
 	case wildcard && cfg.credentials:
 		bad = errors.New(`geta.CORS: "*" with credentials is forbidden by the Fetch standard`)
 	case cfg.maxAgeSet && (cfg.maxAge <= 0 || cfg.maxAge%time.Second != 0):
-		bad = fmt.Errorf("geta.CORS: MaxAge %v is not a positive whole number of seconds", cfg.maxAge)
+		bad = fmt.Errorf("geta.CORS: PreflightMaxAge %v is not a positive whole number of seconds", cfg.maxAge)
 	}
 	m := Ordered(OrderCrossOrigin, func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

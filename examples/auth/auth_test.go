@@ -250,7 +250,7 @@ func TestLoginIsRateLimited(t *testing.T) {
 	// there, and on no other operation.
 	for _, op := range c.App().Operations() {
 		method, template, _ := strings.Cut(op, " ")
-		documented, _ := c.App().Documented(geta.Match{Template: template, Method: method, Operation: true}, 429)
+		documented, _ := c.App().Documented(geta.Match{Template: template, Method: method}, 429)
 		if documented != (op == "POST /login") {
 			t.Errorf("%s documents 429: %v", op, documented)
 		}

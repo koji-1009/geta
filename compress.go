@@ -15,9 +15,9 @@ import (
 	"sync"
 )
 
-// GzipThreshold is the smallest body size, in bytes, that [Compress] and
+// CompressThreshold is the smallest body size, in bytes, that [Compress] and
 // [Gzip] code in any coding.
-const GzipThreshold = 1024
+const CompressThreshold = 1024
 
 // Coding is a content coding (RFC 9110 §8.4.1) that [Compress] can apply to
 // a response body. Name is its token, such as "zstd" or "br": it is sent in
@@ -108,7 +108,7 @@ func Gzip() Middleware {
 	return m
 }
 
-// Compress codes a response body of at least [GzipThreshold] bytes with a
+// Compress codes a response body of at least [CompressThreshold] bytes with a
 // text-like media type (text/*, JSON, XML, JavaScript, and +json and +xml
 // types) in the coding the client prefers: of the codings Accept-Encoding
 // accepts with a q-value above 0, named or through "*", the highest q-value
@@ -173,7 +173,7 @@ func Compress(codings ...Coding) Middleware {
 			}
 			var coded []byte
 			if use != nil && !bodyless(b.status) && len(body) > 0 && h.Get("Content-Encoding") == "" &&
-				(identity == 0 || len(body) >= GzipThreshold && compressible(h.Get("Content-Type"))) {
+				(identity == 0 || len(body) >= CompressThreshold && compressible(h.Get("Content-Type"))) {
 				coded = use.encode(body)
 			}
 			if strong {

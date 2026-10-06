@@ -267,7 +267,7 @@ func TestRootScopeSeesOptions(t *testing.T) {
 	}
 	ctx, read := geta.Observe(context.Background())
 	c.App().ServeHTTP(httptest.NewRecorder(), httptest.NewRequestWithContext(ctx, http.MethodOptions, "/x", nil))
-	if method, m, ok := read(); !ok || method != http.MethodOptions || m.Method != http.MethodOptions || m.Template != "/x" || !m.Operation {
+	if method, m, ok := read(); !ok || method != http.MethodOptions || m.Method != http.MethodOptions || m.Template != "/x" {
 		t.Fatalf("observed %s %+v %v", method, m, ok)
 	}
 }
@@ -371,7 +371,7 @@ func TestOptionsIsDocumented(t *testing.T) {
 // Documented and Types know the options operation.
 func TestOptionsIsAnOperation(t *testing.T) {
 	a := accepts(t, optionsTable())
-	m := geta.Match{Template: "/users/{id}", Method: http.MethodOptions, Operation: true}
+	m := geta.Match{Template: "/users/{id}", Method: http.MethodOptions}
 	if documented, matched := a.Documented(m, http.StatusNoContent); !documented || !matched {
 		t.Fatalf("204: %v %v", documented, matched)
 	}
@@ -407,7 +407,7 @@ func TestOptionsDefectIsDocumented(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if documented, matched := app.Documented(geta.Match{Template: "/x", Method: http.MethodOptions, Operation: true}, http.StatusInternalServerError); !documented || !matched {
+	if documented, matched := app.Documented(geta.Match{Template: "/x", Method: http.MethodOptions}, http.StatusInternalServerError); !documented || !matched {
 		t.Fatalf("500: %v %v", documented, matched)
 	}
 	c := getatest.Serve(t, app)

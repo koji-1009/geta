@@ -44,6 +44,7 @@ import (
 	"time"
 
 	"github.com/koji-1009/geta"
+	"github.com/koji-1009/geta/internal/vet"
 )
 
 // Client sends calls to one application.
@@ -335,7 +336,7 @@ func readsJSON(t reflect.Type) bool {
 func envelopeReadsJSON(t reflect.Type) bool {
 	for i := range t.NumField() {
 		f := t.Field(i)
-		if geta.EnvelopeEmbedded(geta.VetFieldOf(f)) {
+		if vet.EnvelopeEmbedded(vet.FieldOf(f)) {
 			if envelopeReadsJSON(f.Type) {
 				return true
 			}
@@ -812,12 +813,12 @@ func decodeOutput(res *http.Response, out reflect.Value, opts json.Options) erro
 }
 
 // readEnvelope reads an envelope's status, headers, cookies, and body into
-// out, descending into embedded structs (geta.EnvelopeEmbedded).
+// out, descending into embedded structs (vet.EnvelopeEmbedded).
 func readEnvelope(res *http.Response, body []byte, out reflect.Value, opts json.Options) error {
 	t := out.Type()
 	for i := range t.NumField() {
 		f, fv := t.Field(i), out.Field(i)
-		if geta.EnvelopeEmbedded(geta.VetFieldOf(f)) {
+		if vet.EnvelopeEmbedded(vet.FieldOf(f)) {
 			if err := readEnvelope(res, body, fv, opts); err != nil {
 				return err
 			}

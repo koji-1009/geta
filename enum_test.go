@@ -10,6 +10,7 @@ import (
 
 	"github.com/koji-1009/geta"
 	"github.com/koji-1009/geta/getatest"
+	"github.com/koji-1009/geta/internal/vet"
 )
 
 type enumBody struct {
@@ -109,7 +110,7 @@ func TestNumberEnumMistakesAreRefused(t *testing.T) {
 		{"enum=3,multipleOf=2", "int", "enum member 3 does not meet"},
 		{"enum=true", "bool", "enum applies to string or integer or number, not boolean"},
 	} {
-		err := geta.CheckSchemaTag(c.tag, c.kind)
+		err := vet.CheckSchemaTag(c.tag, c.kind)
 		if err == nil || !strings.Contains(err.Error(), c.want) {
 			t.Errorf("%s on %s: %v; want %q", c.tag, c.kind, err, c.want)
 		}
@@ -118,7 +119,7 @@ func TestNumberEnumMistakesAreRefused(t *testing.T) {
 		{"enum=-1|0|1", "int8"}, {"enum=18446744073709551615", "uint64"}, {"enum=0.1|2.5", "float32"},
 		{"enum=1|2,minimum=1", "int"}, {"enum=0.5|-0", "float64"},
 	} {
-		if err := geta.CheckSchemaTag(c.tag, c.kind); err != nil {
+		if err := vet.CheckSchemaTag(c.tag, c.kind); err != nil {
 			t.Errorf("%s on %s: %v", c.tag, c.kind, err)
 		}
 	}
