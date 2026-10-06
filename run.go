@@ -73,6 +73,11 @@ func draining(ctx context.Context) <-chan struct{} {
 // [WithShutdownGrace] gives. Open event streams end at once. Run is a
 // convenience: an App is an http.Handler, and any server can serve it.
 //
+// Run returns nil once every request has finished, and
+// context.DeadlineExceeded when the grace ran out and Run closed the
+// connections still open; otherwise it returns the error that stopped it
+// listening or serving.
+//
 // When srv.TLSConfig has a certificate (Certificates, GetCertificate, or
 // GetConfigForClient), Run serves TLS, with HTTP/2 negotiated unless srv
 // disables it. An empty srv.Addr is then ":https", otherwise ":http". With

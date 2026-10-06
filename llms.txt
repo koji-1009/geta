@@ -762,7 +762,7 @@ func Scope(env Env) geta.Scope {
 - `geta.New` refuses: no coding; coding without `NewWriter`; indistinguishable names (not a token, `identity`, `*`, `x-gzip` (name it gzip), ending in `-identity`, duplicate, one ending in `-` plus another's name, e.g. `x-br` beside `br`). Your own coding named `gzip` replacing `GzipCoding()` is the gzip sent.
 - Each coded form gets its own strong tag (`"v1"` → `"v1-gzip"`, `"v1-zstd"`, `"v1-br"`), read back as `"v1"` in `If-Match`/`If-None-Match` before anything inside sees the request: `Conditional.Check` and `geta.ETag` compare your own tag; a client holding a coded form gets its 304 and writes with its tag. Weak tags unchanged. Your tag that would read as a coded form's (ending in `-` plus a coding name) gets `-identity` appended. Uncoded, small, streamed, or empty responses carry the identity tag; empty ones also vary on `Accept-Encoding`.
 - `geta.ETag()` tags GET and HEAD 200s only (keeps a handler's own tag), answers 304, documented on GET operations. Reads `If-None-Match` as `Check`: entity-tag list (comma in quotes stays), all lines one list; anything else 400, documented beside the 304.
-- zstd and brotli from your own dependencies (geta imports neither):
+- zstd from your own dependencies (geta imports none):
 
 ```go
 var zstdPool sync.Pool // github.com/klauspost/compress/zstd
@@ -783,15 +783,11 @@ var zstdCoding = geta.Coding{Name: "zstd", NewWriter: func(w io.Writer) (io.Writ
 	return pooledZstd{e}, nil
 }}
 
-var brCoding = geta.Coding{Name: "br", NewWriter: func(w io.Writer) (io.WriteCloser, error) { // github.com/andybalholm/brotli
-	return brotli.NewWriterLevel(w, brotli.DefaultCompression), nil
-}}
-
 // in the root scope, before ETag:
-geta.Compress(zstdCoding, brCoding, geta.GzipCoding()), geta.ETag(),
+geta.Compress(zstdCoding, geta.GzipCoding()), geta.ETag(),
 ```
 
-Run against klauspost/compress v1.20.1, andybalholm/brotli v1.2.6. `examples/booking` serves zstd beside gzip this way (`coding` package).
+`examples/booking` serves zstd beside gzip this way (`coding` package), on klauspost/compress v1.20.1.
 
 ### Rate limiting
 
@@ -955,7 +951,7 @@ if err := geta.Run(ctx, &http.Server{Addr: ":8080", Handler: a}); err != nil { l
 
 ### Run and Serve
 
-- `geta.Run(ctx, srv)` serves until `ctx` ends or SIGINT/SIGTERM, then drains: streams end; in-flight requests get `geta.ShutdownGrace` (30s); connections close. Returns nil on clean shutdown, else the listen error.
+- `geta.Run(ctx, srv)` serves until `ctx` ends or SIGINT/SIGTERM, then drains: streams end; in-flight requests get `geta.ShutdownGrace` (30s); connections close. Returns nil on clean shutdown, `context.DeadlineExceeded` when the grace ran out and the connections were closed, else the listen or serve error.
 - `geta.WithShutdownGrace(d)` (Run or Serve): longer than the longest operation that should finish (the default cuts a `Doc.Timeout` past 30s), shorter than the platform's kill grace. Non-positive: refused, nothing served.
 - Fills `ReadHeaderTimeout` (10s) and `IdleTimeout` (2m), each only when zero and `ReadTimeout` is zero. Set fields are kept; negative = no limit. Neither cuts open event streams.
 - Never sets `ReadTimeout`/`WriteTimeout` (would cut streams and upgrades). Bound operations with `geta.Timeout`; without it nothing bounds a slow body sender.

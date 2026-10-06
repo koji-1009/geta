@@ -9,9 +9,8 @@ import (
 	"github.com/koji-1009/geta"
 )
 
-// zstd and brotli come from the application's own dependencies; geta imports
-// neither, and builds in gzip alone. With github.com/klauspost/compress/zstd
-// and github.com/andybalholm/brotli, the codings read:
+// zstd comes from the application's own dependencies; geta builds in gzip
+// alone. With github.com/klauspost/compress/zstd, the coding reads:
 //
 //	// An encoder per response, from a pool: Reset in NewWriter, back to
 //	// the pool once Close has flushed it.
@@ -37,14 +36,9 @@ import (
 //		return pooledZstd{e}, nil
 //	}}
 //
-//	// A fresh encoder per response.
-//	brCoding := geta.Coding{Name: "br", NewWriter: func(w io.Writer) (io.WriteCloser, error) {
-//		return brotli.NewWriterLevel(w, brotli.DefaultCompression), nil
-//	}}
+//	root := geta.Scope{geta.Compress(zstdCoding, geta.GzipCoding()), geta.ETag()}
 //
-//	root := geta.Scope{geta.Compress(zstdCoding, brCoding, geta.GzipCoding()), geta.ETag()}
-//
-// Here a stand-in coding, "copy", plays their part.
+// Here a stand-in coding, "copy", plays its part.
 func ExampleCompress() {
 	copying := geta.Coding{Name: "copy", NewWriter: func(w io.Writer) (io.WriteCloser, error) {
 		return nopCloser{w}, nil // a real encoder codes what is written; this one copies it
