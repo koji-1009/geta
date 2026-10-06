@@ -133,8 +133,8 @@ func (s *sealedReader) begin(dec *jsontext.Decoder) any {
 	if dec.PeekKind() != '{' {
 		return nil
 	}
-	// whole reads the members into a map with default options, which
-	// refuse what these allow.
+	// The look-ahead refuses what these allow; whole reads the value under
+	// them.
 	opts := dec.Options()
 	if v, _ := json.GetOption(opts, jsontext.AllowDuplicateNames); v {
 		return nil
@@ -243,12 +243,15 @@ func (s *sealedReader) whole(dec *jsontext.Decoder, st *sealedState) (any, error
 	if err != nil {
 		return nil, err
 	}
+	// Under dec's options, so what they allow (duplicate names, invalid
+	// UTF-8) is read as the variant would read it.
+	opts := dec.Options()
 	var members map[string]jsontext.Value
-	if err := json.Unmarshal(raw, &members); err != nil {
+	if err := json.Unmarshal(raw, &members, opts); err != nil {
 		return nil, err
 	}
 	var tag string
-	if err := json.Unmarshal(members[s.disc], &tag); err != nil {
+	if err := json.Unmarshal(members[s.disc], &tag, opts); err != nil {
 		return nil, fmt.Errorf("%s: discriminator must be a string", s.disc)
 	}
 	vt, ok := s.types[tag]
@@ -256,7 +259,7 @@ func (s *sealedReader) whole(dec *jsontext.Decoder, st *sealedState) (any, error
 		return nil, fmt.Errorf("%s: unknown %s %q", s.disc, s.t.Name(), tag)
 	}
 	nv := reflect.New(vt)
-	if err := json.Unmarshal(raw, nv.Interface(), dec.Options()); err != nil {
+	if err := json.Unmarshal(raw, nv.Interface(), opts); err != nil {
 		if st != nil {
 			st.final = err
 		}
