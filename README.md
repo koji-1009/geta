@@ -164,7 +164,7 @@ uvx openapi-spec-validator examples/register/openapi.json examples/auth/openapi.
 
 Go's fuzzer minimizes each input that finds new coverage, running the target on the order of n² times for an input of n bytes, for up to `-fuzzminimizetime` (a minute by default) and with no progress shown meanwhile. Most fuzz targets cut their inputs to the size in which every limit they hold is reached, which keeps that to seconds; `-fuzzminimizetime 10s` bounds the rest: FuzzRouter, whose every input builds an App, and FuzzContentHeaders and FuzzConditional, which hold inputs past a kilobyte.
 
-Each example's `clientcheck/roundtrip.py` drives the running server through a client that `openapi-python-client` generates from the committed `openapi.json`. The script's docstring has the commands.
+In `examples/register`, `examples/auth`, and `examples/booking`, `clientcheck/roundtrip.py` drives the running server through a client that `openapi-python-client` generates from the committed `openapi.json`. The script's docstring has the commands.
 
 The committed `go.work` makes getaotel, getavet, and the separate examples use the root module in this checkout. Releasing is in [`RELEASING.md`](RELEASING.md).
 
