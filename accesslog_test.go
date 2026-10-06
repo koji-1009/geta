@@ -66,6 +66,19 @@ func TestAccessLogRecordsWhatWasServed(t *testing.T) {
 	}
 }
 
+// A method is logged cut to 128 bytes: a request no operation serves may
+// carry any token as its method.
+func TestAccessLogCutsALongMethod(t *testing.T) {
+	log, buf := logger()
+	a := accepts(t, withRoot(one("/users/{id}", get(idHandler)), geta.AccessLog(log)))
+	req := httptest.NewRequest(http.MethodGet, "/users/42", nil)
+	req.Method = strings.Repeat("X", 1000)
+	a.ServeHTTP(httptest.NewRecorder(), req)
+	if l := buf.String(); strings.Contains(l, strings.Repeat("X", 129)) || !strings.Contains(l, "method="+strings.Repeat("X", 128)+"… route=<unmatched> status=405") {
+		t.Fatalf("log: %s", l)
+	}
+}
+
 // The access log records the status the client was sent: a response nothing
 // was written to is net/http's 200; a panic that passes through it aborts
 // the connection, and is logged aborted with the status written before it,

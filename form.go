@@ -326,7 +326,7 @@ func (p *formPlan) bind(w http.ResponseWriter, r *http.Request, dst reflect.Valu
 func (p *formPlan) readParts(mr *multipart.Reader, cw *closeWatcher, limits Limits, tmp *[]string) (*formValues, error) {
 	fv := &formValues{values: url.Values{}, files: map[string][]File{}, parts: map[string]int{}, unknown: map[string]bool{}}
 	mem := limits.MaxMultipartMemory
-	for {
+	for n := 1; ; n++ {
 		part, err := mr.NextPart()
 		// NextPart returns io.EOF both at the close delimiter and for a body
 		// cut short after a delimiter line or in part headers; cw tells them
@@ -339,6 +339,10 @@ func (p *formPlan) readParts(mr *multipart.Reader, cw *closeWatcher, limits Limi
 		}
 		if err != nil {
 			return nil, err
+		}
+		// Each part costs its headers and a slot, whatever it names.
+		if n > limits.MaxItems {
+			return nil, tooManyParts(limits.MaxItems)
 		}
 		name := part.FormName()
 		ff := p.byName[name]
@@ -637,6 +641,12 @@ func readFailure(err error, limits Limits) *bindError {
 	return bodyViolation("$", "the request body could not be read")
 }
 
+// tooManyParts is readParts' error for a body of more parts than its
+// ceiling, MaxItems.
+type tooManyParts int
+
+func (n tooManyParts) Error() string { return fmt.Sprintf("more than %d parts", int(n)) }
+
 // partFailure answers a multipart body from readParts' error err and the
 // body's own read error read (errKeeper), or returns nil to take it: 500 for
 // a file that could not be stored, then 413 past MaxBodyBytes and 408 past
@@ -654,6 +664,9 @@ func partFailure(err, read error, limits Limits) *bindError {
 		return nil
 	case read != nil:
 		return readFailure(read, limits)
+	}
+	if tm, ok := errors.AsType[tooManyParts](err); ok {
+		return bodyViolation("$", fmt.Sprintf("the multipart body has more parts than the ceiling of %d", int(tm)))
 	}
 	// The text may quote the body (a malformed part header).
 	return bodyViolation("$", "the multipart body is malformed: "+clip(err.Error(), maxErrorBytes))

@@ -27,6 +27,23 @@ func TestRecoverLogsTheTemplateNeverThePath(t *testing.T) {
 	}
 }
 
+// The panic's log line pairs the method served with the route served, after
+// a root middleware changed the method.
+func TestRecoverLogsTheMethodServed(t *testing.T) {
+	log, buf := logger()
+	boom := func(context.Context, *empty) error { panic("kaboom") }
+	a := accepts(t, geta.Table{
+		Root:   geta.Scope{geta.Recover(log), methodOverride},
+		Routes: []geta.Entry{{Path: "/items", Route: geta.Route{Delete: geta.OpNoBody(204, boom, geta.Doc{})}}},
+	})
+	if rec := do(t, a, "POST", "/items", "X-HTTP-Method-Override", "DELETE"); rec.Code != 500 {
+		t.Fatal(rec.Code)
+	}
+	if l := buf.String(); !strings.Contains(l, "method=DELETE route=/items") {
+		t.Fatalf("log: %s", l)
+	}
+}
+
 func TestRecoverTurnsPanicsInto500(t *testing.T) {
 	log, buf := logger()
 	must := func(ctx context.Context, _ *empty) (*text, error) { return &text{principal.Must(ctx)}, nil }

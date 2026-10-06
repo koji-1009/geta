@@ -142,12 +142,8 @@ func logRefusal(r *http.Request, status int, detail string, errs []Violation, om
 	if !log.Enabled(ctx, slog.LevelDebug) {
 		return
 	}
-	method := r.Method
-	if rc := requestFrom(ctx); rc != nil {
-		method = rc.method
-	}
 	attrs := make([]slog.Attr, 0, 7)
-	attrs = append(attrs, slog.String("method", method), routeAttr(ctx), slog.Int("status", status))
+	attrs = append(attrs, methodAttr(r), routeAttr(ctx), slog.Int("status", status))
 	if detail != "" {
 		attrs = append(attrs, slog.String("detail", detail))
 	}
@@ -188,13 +184,20 @@ func sendProblem(w http.ResponseWriter, p *Problem) error {
 // abortUntaken logs at Info a response write that failed, and aborts the
 // connection so the client cannot take a partial body for the whole.
 func abortUntaken(r *http.Request, err error) {
+	loggerFrom(r.Context()).LogAttrs(r.Context(), slog.LevelInfo, "geta: the response could not be written",
+		methodAttr(r), routeAttr(r.Context()), slog.Any("error", err))
+	panic(http.ErrAbortHandler)
+}
+
+// methodAttr returns the "method" log attribute: the method r is served as,
+// which a root middleware may have changed, cut by clip to maxValueBytes. A
+// request that reaches no operation may carry any token as its method.
+func methodAttr(r *http.Request) slog.Attr {
 	method := r.Method
 	if rc := requestFrom(r.Context()); rc != nil {
 		method = rc.method
 	}
-	loggerFrom(r.Context()).LogAttrs(r.Context(), slog.LevelInfo, "geta: the response could not be written",
-		slog.String("method", method), routeAttr(r.Context()), slog.Any("error", err))
-	panic(http.ErrAbortHandler)
+	return slog.String("method", clip(method, maxValueBytes))
 }
 
 // routeAttr returns the "route" log attribute (routeName). A log line never

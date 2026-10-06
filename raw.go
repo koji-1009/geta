@@ -69,7 +69,7 @@ func (p *rawPlan) bind(w http.ResponseWriter, r *http.Request, dst reflect.Value
 		}
 	}
 	if p.reader {
-		dst.Set(reflect.ValueOf(br))
+		dst.Set(reflect.ValueOf(&readerBody{br}))
 		return nil
 	}
 	data, err := io.ReadAll(br)
@@ -84,6 +84,25 @@ func (p *rawPlan) bind(w http.ResponseWriter, r *http.Request, dst reflect.Value
 	return nil
 }
 
+// readerBody is a raw io.Reader body. It marks a failure to read the request
+// (bodyReadError), so that dispatch answers it as it answers any body that
+// could not be read, whatever the handler returns it in.
+type readerBody struct{ r io.Reader }
+
+func (b *readerBody) Read(p []byte) (int, error) {
+	n, err := b.r.Read(p)
+	if err != nil && err != io.EOF {
+		err = &bodyReadError{err}
+	}
+	return n, err
+}
+
+// bodyReadError is an error reading a raw io.Reader body.
+type bodyReadError struct{ err error }
+
+func (e *bodyReadError) Error() string { return e.err.Error() }
+func (e *bodyReadError) Unwrap() error { return e.err }
+
 // judge returns a 415 for a content coding or another media type, else nil.
 func (p *rawPlan) judge(w http.ResponseWriter, r *http.Request) *bindError {
 	if be := codingRefused(w, r); be != nil {
@@ -94,17 +113,6 @@ func (p *rawPlan) judge(w http.ResponseWriter, r *http.Request) *bindError {
 		return unsupported(w, ct, p.mediaType, p.method)
 	}
 	return nil
-}
-
-// tooLarge turns a handler error wrapping *http.MaxBytesError, returned by a
-// raw body's reader, into a 413.
-func tooLarge(err error) (*bindError, bool) {
-	mbe, ok := errors.AsType[*http.MaxBytesError](err)
-	if !ok {
-		return nil, false
-	}
-	return &bindError{status: http.StatusRequestEntityTooLarge,
-		detail: fmt.Sprintf("the request body exceeds %d bytes", mbe.Limit)}, true
 }
 
 // rawOut writes an envelope's raw body.

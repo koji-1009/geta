@@ -186,7 +186,7 @@ func (a *App) dispatch(w http.ResponseWriter, r *http.Request) {
 	if rc == nil {
 		writeDefect(w, r, a.log, "geta: a root middleware replaced the request context",
 			errors.New("context does not derive from r.Context()"),
-			slog.String("method", r.Method), routeAttr(r.Context()))
+			methodAttr(r), routeAttr(r.Context()))
 		return
 	}
 	rc.rematch(r)
@@ -398,19 +398,13 @@ func (c *compiledOp) fail(w http.ResponseWriter, r *http.Request, err error) {
 			slog.String("method", c.method), slog.String("route", c.path))
 		return
 	}
-	// A raw io.Reader body read past MaxBodyBytes is a 413, and past the
-	// body's window a 408, whatever row the error would meet.
-	if c.in.raw != nil && c.in.raw.reader {
-		if be, ok := tooLarge(err); ok {
-			closeUnread(w, r)
-			be.write(w, r)
-			return
-		}
-		if be, ok := lateBody(err); ok {
-			closeUnread(w, r)
-			be.write(w, r)
-			return
-		}
+	// A raw io.Reader body that could not be read is answered as any body:
+	// 413 past MaxBodyBytes, 408 past the body's window, else 400, whatever
+	// row the error would meet.
+	if re, ok := errors.AsType[*bodyReadError](err); ok {
+		closeUnread(w, r)
+		readFailure(re.err, c.limits).write(w, r)
+		return
 	}
 	// A PreconditionError is answered only by an operation whose input embeds
 	// a Conditional; anywhere else it is a 500 defect, whatever the rows.

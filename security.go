@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"maps"
 	"net"
 	"net/http"
@@ -243,7 +242,7 @@ func Secure(p Policy) Middleware {
 			switch {
 			case defect != nil:
 				writeDefect(w, r, loggerFrom(r.Context()), "geta: verifier failed", defect,
-					slog.String("method", r.Method), routeAttr(r.Context()))
+					methodAttr(r), routeAttr(r.Context()))
 			case unavailable:
 				writeProblem(w, r, http.StatusServiceUnavailable, "the credential source is unavailable", nil)
 			default:
