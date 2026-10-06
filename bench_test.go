@@ -129,7 +129,7 @@ type benchDrawingIn struct {
 	Body benchDrawing `body:"json"`
 }
 
-func benchSealedApp(b *testing.B) http.Handler {
+func benchSealedApp(b testing.TB) http.Handler {
 	b.Helper()
 	post := func(ctx context.Context, in *benchDrawingIn) (*benchCreated, error) {
 		return &benchCreated{Location: "/drawings/" + in.Body.ID}, nil

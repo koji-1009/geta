@@ -115,8 +115,9 @@ func Gzip() Middleware {
 // wins, and the earlier in codings wins a tie. "x-gzip" names gzip. A weight
 // outside the RFC 9110 §12.4.2 grammar counts as q=0.
 //
-// A body already encoded, a 204, a 304, and any response to a request
-// without Accept-Encoding pass uncoded. Every response but a stream gets
+// A body already encoded, a 204, a 206 (its Content-Range counts uncoded
+// bytes), a 304, and any response to a request without Accept-Encoding pass
+// uncoded. Every response but a stream gets
 // Vary: Accept-Encoding. A stream is never coded and gets no Vary
 // (RFC 9110 §12.5.5).
 //
@@ -147,7 +148,14 @@ func Compress(codings ...Coding) Middleware {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			tw := &tagWriter{ResponseWriter: w, cs: cs}
 			b := newBuffer(tw)
+			returned := false
+			defer func() {
+				if !returned {
+					b.lost()
+				}
+			}()
 			next.ServeHTTP(b, cs.decodeConditions(r))
+			returned = true
 			if !b.held() {
 				return
 			}
@@ -172,7 +180,9 @@ func Compress(codings ...Coding) Middleware {
 				use = ranked[0].c
 			}
 			var coded []byte
-			if use != nil && !bodyless(b.status) && len(body) > 0 && h.Get("Content-Encoding") == "" &&
+			// A 206's Content-Range counts the bytes of the representation
+			// uncoded, so its body is never coded.
+			if use != nil && !bodyless(b.status) && b.status != http.StatusPartialContent && len(body) > 0 && h.Get("Content-Encoding") == "" &&
 				(identity == 0 || len(body) >= CompressThreshold && compressible(h.Get("Content-Type"))) {
 				coded = use.encode(body)
 			}

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"maps"
 	"net"
 	"net/http"
@@ -75,6 +74,54 @@ type OAuthFlow struct {
 	TokenURL               string
 	RefreshURL             string
 	Scopes                 map[string]string
+}
+
+// clone returns s with its own flows and scope maps, so a change to what
+// the caller passed reaches nothing geta keeps.
+func (s Scheme) clone() Scheme {
+	if s.Flows == nil {
+		return s
+	}
+	fs := *s.Flows
+	for _, f := range []**OAuthFlow{&fs.Implicit, &fs.Password, &fs.ClientCredentials, &fs.AuthorizationCode, &fs.DeviceAuthorization} {
+		if *f != nil {
+			c := **f
+			c.Scopes = maps.Clone(c.Scopes)
+			*f = &c
+		}
+	}
+	s.Flows = &fs
+	return s
+}
+
+// describe writes s for an error message, its flows by value where %+v
+// would write a pointer.
+func (s Scheme) describe() string {
+	flows := s.Flows
+	s.Flows = nil
+	out := fmt.Sprintf("%+v", s)
+	if flows == nil {
+		return out
+	}
+	var fs []string
+	for _, fl := range flows.list() {
+		if fl.f != nil {
+			fs = append(fs, fmt.Sprintf("%s:%+v", fl.name, *fl.f))
+		}
+	}
+	return strings.TrimSuffix(out, "}") + " Flows:{" + strings.Join(fs, " ") + "}}"
+}
+
+// cloneSchemes returns ss with each scheme cloned, nil for nil.
+func cloneSchemes(ss []Scheme) []Scheme {
+	if ss == nil {
+		return nil
+	}
+	out := make([]Scheme, len(ss))
+	for i, s := range ss {
+		out[i] = s.clone()
+	}
+	return out
 }
 
 // flow is one of an [OAuthFlows]' flows, with its document name and the URLs
@@ -180,7 +227,8 @@ type Challenger interface {
 
 // Policy is the runtime half of the security declarations: the default
 // schemes for a route that declares none, and a verifier for each scheme.
-// [Secure] copies Default and Verifiers; later changes to them have no effect.
+// [Secure] copies Default, its schemes' flows and scopes included, and
+// Verifiers; later changes to them have no effect.
 type Policy struct {
 	Default   []Scheme
 	Verifiers map[string]Verifier
@@ -205,7 +253,7 @@ type Policy struct {
 // requires one scheme of each gate's default, and the document lists every
 // such combination as a requirement.
 func Secure(p Policy) Middleware {
-	policy := Policy{Default: slices.Clone(p.Default), Verifiers: maps.Clone(p.Verifiers)}
+	policy := Policy{Default: cloneSchemes(p.Default), Verifiers: maps.Clone(p.Verifiers)}
 	m := Ordered(OrderAuthenticate, func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			schemes := policy.Default
@@ -243,7 +291,7 @@ func Secure(p Policy) Middleware {
 			switch {
 			case defect != nil:
 				writeDefect(w, r, loggerFrom(r.Context()), "geta: verifier failed", defect,
-					slog.String("method", r.Method), routeAttr(r.Context()))
+					methodAttr(r), routeAttr(r.Context()))
 			case unavailable:
 				writeProblem(w, r, http.StatusServiceUnavailable, "the credential source is unavailable", nil)
 			default:

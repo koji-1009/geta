@@ -1,6 +1,6 @@
 # booking
 
-Meeting rooms and their bookings, behind an OpenID issuer's ES256 tokens. It depends on golang-jwt, getaotel, keyfunc, coder/websocket, klauspost/compress, and quic-go.
+Meeting rooms and their bookings, behind an OpenID issuer's ES256 tokens. It depends on golang-jwt, keyfunc, jwkset, getaotel, coder/websocket, klauspost/compress, golang.org/x/time, and quic-go.
 
 | Pattern | Where |
 | --- | --- |

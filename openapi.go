@@ -69,7 +69,7 @@ func (a *App) openAPI(info Info, reg *registry) ([]byte, error) {
 	tags := map[string]bool{}
 	addScheme := func(s Scheme, where string) error {
 		if prev, ok := schemes[s.Name]; ok && !prev.equal(s) {
-			return fmt.Errorf("%s: security scheme %q has two definitions: %+v and %+v", where, s.Name, prev, s)
+			return fmt.Errorf("%s: security scheme %q has two definitions: %s and %s", where, s.Name, prev.describe(), s.describe())
 		}
 		if !a.features.securityScheme32 {
 			if err := s.check31(); err != nil {

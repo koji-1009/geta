@@ -33,14 +33,8 @@ func AccessLog(log *slog.Logger) Middleware {
 						status = http.StatusInternalServerError
 					}
 				}
-				// Log the method served, which a root middleware may have
-				// changed.
-				method := r.Method
-				if rc := requestFrom(r.Context()); rc != nil {
-					method = rc.method
-				}
 				attrs := []slog.Attr{
-					slog.String("method", method),
+					methodAttr(r),
 					routeAttr(r.Context()),
 					slog.Int("status", status),
 					slog.Int64("bytes", o.bytes),

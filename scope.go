@@ -203,7 +203,7 @@ type mwScopes struct {
 // define, and scopes on an operation with no gate requiring scheme before
 // the middleware.
 func (m Middleware) Scopes(scheme Scheme, scopes ...string) Middleware {
-	m.scopes = append(append([]mwScopes(nil), m.scopes...), mwScopes{scheme: scheme, scopes: slices.Clone(scopes)})
+	m.scopes = append(append([]mwScopes(nil), m.scopes...), mwScopes{scheme: scheme.clone(), scopes: slices.Clone(scopes)})
 	return m
 }
 
@@ -262,7 +262,9 @@ func (m Middleware) Order() (Order, bool) {
 // [Doc.Scope] is one operation's own, run inside its URL's.
 type Scope []Middleware
 
-// checkOrder rejects a chain whose ordered entries descend.
+// checkOrder rejects a chain whose ordered entries descend. Every chain
+// holding the same two middleware in that order repeats the mistake, so it
+// is a sharedMistake.
 func checkOrder(chain []Middleware, where string) error {
 	var prev *Middleware
 	for i := range chain {
@@ -271,9 +273,22 @@ func checkOrder(chain []Middleware, where string) error {
 			continue
 		}
 		if prev != nil && m.order.Rank < prev.order.Rank {
-			return fmt.Errorf("%s: middleware %s runs after %s but has a lower order", where, m.order, prev.order)
+			// The same two middleware share their orders, wherever they are copied.
+			return &sharedMistake{key: fmt.Sprintf("order %p %p", prev.order, m.order),
+				err: fmt.Errorf("%s: middleware %s runs after %s but has a lower order", where, m.order, prev.order)}
 		}
 		prev = m
 	}
 	return nil
 }
+
+// sharedMistake is a mistake of a scope or a gate that every chain through
+// it repeats. [New] reports it once, where it first meets it; key tells two
+// apart.
+type sharedMistake struct {
+	key string
+	err error
+}
+
+func (e *sharedMistake) Error() string { return e.err.Error() }
+func (e *sharedMistake) Unwrap() error { return e.err }

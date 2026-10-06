@@ -1064,6 +1064,25 @@ func TestCompressLeavesAnEncodedBodyAsItIs(t *testing.T) {
 	}
 }
 
+// A 206 is left uncoded, even for a request that refuses identity: its
+// Content-Range counts the representation's bytes uncoded.
+func TestCompressLeavesAPartialResponseUncoded(t *testing.T) {
+	partial := geta.Use(func(http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "text/plain")
+			w.Header().Set("Content-Range", fmt.Sprintf("bytes 0-%d/%d", len(big)-1, 2*len(big)))
+			w.WriteHeader(http.StatusPartialContent)
+			io.WriteString(w, big)
+		})
+	}).Answers(http.StatusPartialContent, "Partial")
+	a := accepts(t, withRoot(one("/x", get(okHandler)), geta.Gzip(), partial))
+	for _, ae := range []string{"gzip", "identity;q=0, gzip"} {
+		if r := do(t, a, "GET", "/x", "Accept-Encoding", ae); r.Code != 206 || r.Header().Get("Content-Encoding") != "" || r.Body.String() != big {
+			t.Errorf("%q: %d %v", ae, r.Code, r.Header())
+		}
+	}
+}
+
 // An encoder whose Write fails leaves the body uncoded with the identity
 // form's tag.
 func TestCompressEncoderWriteFailureKeepsTheIdentityTag(t *testing.T) {

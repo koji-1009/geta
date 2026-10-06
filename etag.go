@@ -3,7 +3,6 @@ package geta
 import (
 	"crypto/sha256"
 	"encoding/base64"
-	"maps"
 	"net/http"
 	"strings"
 )
@@ -25,12 +24,15 @@ func ETag() Middleware {
 				return
 			}
 			inm := r.Header.Values("If-None-Match")
-			var before http.Header // the header a 400 restores
-			if len(inm) > 0 {
-				before = w.Header().Clone()
-			}
 			b := newBuffer(w)
+			returned := false
+			defer func() {
+				if !returned {
+					b.lost()
+				}
+			}()
 			next.ServeHTTP(b, r)
+			returned = true
 			if !b.held() || b.status == 0 {
 				return
 			}
@@ -48,8 +50,7 @@ func ETag() Middleware {
 			if len(inm) > 0 {
 				tags, star, ok := conditionTags(*conditionField(inm))
 				if !ok {
-					clear(h)
-					maps.Copy(h, before)
+					b.lost()
 					writeProblem(w, r, http.StatusBadRequest, "the request does not match its contract",
 						[]Violation{{In: "header", Path: "If-None-Match", Message: malformedTags}})
 					return

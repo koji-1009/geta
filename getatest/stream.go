@@ -25,6 +25,7 @@ type EventStream struct {
 	Comments int
 	// conforms checks one raw event against the document.
 	conforms func(raw []byte)
+	err      error // what ended the stream, if not its end
 }
 
 // Stream sends GET path with Accept: text/event-stream, unless the client
@@ -51,7 +52,9 @@ func (c *Client) Stream(path string) *EventStream {
 	s := &EventStream{Response: &Response{t: c.t, Status: res.StatusCode, Header: res.Header, opts: c.app.JSONOptions()}}
 	if !strings.HasPrefix(res.Header.Get("Content-Type"), "text/event-stream") {
 		defer res.Body.Close()
-		s.Response.Body, _ = io.ReadAll(res.Body)
+		if s.Response.Body, err = io.ReadAll(res.Body); err != nil {
+			c.t.Fatalf("getatest: GET %s: reading response: %v", path, err)
+		}
 		c.conforms(req, sv, res, s.Response.Body)
 		return s
 	}
@@ -71,8 +74,9 @@ func (c *Client) Stream(path string) *EventStream {
 	return s
 }
 
-// Next reads the next event. It reports false when the stream has ended.
-// An event whose data does not match the document's schema fails the test.
+// Next reads the next event. It reports false when the stream has ended, or
+// was cut off; [EventStream.Err] tells the two apart. An event whose data
+// does not match the document's schema fails the test.
 func (s *EventStream) Next() (Event, bool) {
 	if s.r == nil {
 		return Event{}, false
@@ -84,6 +88,13 @@ func (s *EventStream) Next() (Event, bool) {
 	for {
 		line, err := s.r.ReadString('\n')
 		if err != nil {
+			if err != io.EOF || line != "" || seen {
+				// A stream ends after a whole event; anything else is cut.
+				s.err = err
+				if err == io.EOF {
+					s.err = io.ErrUnexpectedEOF
+				}
+			}
 			return Event{}, false
 		}
 		line = strings.TrimSuffix(line, "\n")
@@ -114,6 +125,12 @@ func (s *EventStream) Next() (Event, bool) {
 		}
 	}
 }
+
+// Err returns nil once Next reported the stream's end, after a whole event
+// or none; otherwise the error that cut it off, such as the server aborting
+// the response, io.ErrUnexpectedEOF for a stream that ended inside an
+// event, or the error closing the stream left.
+func (s *EventStream) Err() error { return s.err }
 
 // Close closes the stream.
 func (s *EventStream) Close() {
@@ -167,7 +184,9 @@ func (c *Client) Upgrade(path, protocol string) *Upgraded {
 		return out
 	}
 	defer res.Body.Close()
-	out.Response.Body, _ = io.ReadAll(res.Body)
+	if out.Response.Body, err = io.ReadAll(res.Body); err != nil {
+		c.t.Fatalf("getatest: upgrade %s: reading response: %v", path, err)
+	}
 	c.conforms(req, sv, res, out.Response.Body)
 	return out
 }

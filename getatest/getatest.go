@@ -351,6 +351,10 @@ func (c *Client) Multipart(method, path string, values url.Values, files ...File
 //
 // Send fails the test if the status is not in the OpenAPI document for the
 // served operation, or if a header or JSON body does not conform to it.
+//
+// Send reads the body to its end, an event stream's included: read a stream
+// that stays open with [Client.Stream], or Send waits until the test's
+// deadline.
 func (c *Client) Send(req *http.Request) *Response {
 	c.t.Helper()
 	c.addHeaders(req)
@@ -484,15 +488,17 @@ func (d documenting) RoundTrip(req *http.Request) (*http.Response, error) {
 		return res, err
 	}
 	d.c.documented(req, sv, res.StatusCode)
-	if checked(res) {
-		body, err := io.ReadAll(res.Body)
-		res.Body.Close()
-		if err != nil {
-			return nil, err
-		}
-		d.c.conforms(req, sv, res, body)
-		res.Body = io.NopCloser(bytes.NewReader(body))
+	if !checked(res) {
+		d.c.conforms(req, sv, res, nil) // the headers, as Send checks them
+		return res, nil
 	}
+	body, err := io.ReadAll(res.Body)
+	res.Body.Close()
+	if err != nil {
+		return nil, err
+	}
+	d.c.conforms(req, sv, res, body)
+	res.Body = io.NopCloser(bytes.NewReader(body))
 	return res, nil
 }
 

@@ -134,6 +134,8 @@ geta.Table{Root: scope, Routes: []geta.Entry{{Path: "/users/{id}", Route: r, Sco
 | `cmd/geta` | `geta sync [-check] [dir]`, `geta check [dir]` |
 | `examples/*` | Running applications; see [Examples](#examples) |
 | `internal/tree` | What `geta sync` and `geta check` read and write; `internal/fixture` holds packages the tests load |
+| `internal/vet` | The rules `geta.New` shares with getavet and getaclient, set by `geta` when it is initialized |
+| `scripts` | `bump.sh`, which sets the version getaotel and getavet require; see [`RELEASING.md`](RELEASING.md) |
 | `testdata` | Compile-failure packages, golden documents, the JSON Schema Test Suite's format tests, a fuzz corpus |
 | `docs` | [`claims.md`](docs/claims.md) |
 

@@ -34,6 +34,14 @@ func TestDoRunsOncePerKey(t *testing.T) {
 		if v, replayed, err := k.Do("c", "fp", f); v != 3 || replayed || err != nil {
 			t.Fatalf("a retry after a failure: %d %v %v", v, replayed, err)
 		}
+		// Nor does a panic, which a Recover outside turns into a 500.
+		func() {
+			defer func() { recover() }()
+			k.Do("p", "fp", func() (int, error) { panic("boom") })
+		}()
+		if _, _, err := k.Do("p", "fp", func() (int, error) { return 0, nil }); err != nil {
+			t.Fatalf("a retry after a panic: %v", err)
+		}
 
 		// While the first request runs, a second with its key is told so.
 		started, release := make(chan struct{}), make(chan struct{})

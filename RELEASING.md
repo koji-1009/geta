@@ -24,7 +24,7 @@ In the repository, `go.work` makes every module use the root in this checkout, s
    git push origin vX.Y.Z
    ```
 
-   The `release` workflow checks that `getaotel/go.mod` and `getavet/go.mod` on the tagged commit require the root at exactly `vX.Y.Z`, then creates `getaotel/vX.Y.Z` and `getavet/vX.Y.Z` on that commit. If the check fails, it creates no tag.
+   The `release` workflow checks that `getaotel/go.mod` and `getavet/go.mod` on the tagged commit require the root at exactly `vX.Y.Z`, then creates `getaotel/vX.Y.Z` and `getavet/vX.Y.Z` on that commit. If the check fails, or either tag already names another commit, it creates no tag. If creating the second tag fails, re-run the workflow: it keeps a tag already on the commit and creates the missing one.
 
 ## Verify
 

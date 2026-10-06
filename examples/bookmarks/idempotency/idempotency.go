@@ -76,14 +76,23 @@ func (k *Keys[T]) Do(key, fingerprint string, f func() (T, error)) (result T, re
 	k.entries[key] = e
 	k.mu.Unlock()
 
+	// A panic in f leaves nothing kept, as an error does; otherwise the key
+	// would answer ErrInFlight until the process ends.
+	kept := false
+	defer func() {
+		if !kept {
+			k.mu.Lock()
+			delete(k.entries, key)
+			k.mu.Unlock()
+		}
+	}()
 	result, err = f()
-
-	k.mu.Lock()
-	defer k.mu.Unlock()
 	if err != nil {
-		delete(k.entries, key)
 		return result, false, err
 	}
+	k.mu.Lock()
+	defer k.mu.Unlock()
 	e.done, e.result, e.expires = true, result, k.now().Add(k.ttl)
+	kept = true
 	return result, false, nil
 }

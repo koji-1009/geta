@@ -22,7 +22,7 @@ func Recover(log *slog.Logger) Middleware {
 				if p == http.ErrAbortHandler {
 					panic(p)
 				}
-				attrs := []slog.Attr{slog.String("method", r.Method), routeAttr(r.Context()),
+				attrs := []slog.Attr{methodAttr(r), routeAttr(r.Context()),
 					slog.String("stack", string(debug.Stack()))}
 				if o.status != 0 || o.upgraded {
 					log.LogAttrs(r.Context(), slog.LevelError, "geta: panic", append(attrs, slog.Any("panic", p))...)

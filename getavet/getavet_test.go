@@ -171,6 +171,45 @@ func TestSoundTreePasses(t *testing.T) {
 	}
 }
 
+// A module nested under a route tree is no part of it, as geta sync leaves it
+// out: a package there is not judged against the URL of its directory.
+func TestANestedModuleUnderATreeIsNotPartOfIt(t *testing.T) {
+	if testing.Short() {
+		t.Skip("runs the go command")
+	}
+	_, here, _, _ := runtime.Caller(0)
+	geta := filepath.Join(filepath.Dir(here), "..")
+	bin := filepath.Join(t.TempDir(), "getavet")
+	build := exec.Command("go", "build", "-o", bin, "./cmd/getavet")
+	build.Dir = filepath.Dir(here)
+	if out, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	root := t.TempDir()
+	mod := func(path string) string {
+		return "module " + path + "\n\ngo 1.27\n\nrequire github.com/koji-1009/geta v0.0.0\n\nreplace github.com/koji-1009/geta => " + geta + "\n"
+	}
+	for rel, content := range map[string]string{
+		"go.mod":                 mod("example.com/app"),
+		"routes/zz_routes.go":    "package routes\n",
+		"routes/tool/go.mod":     mod("example.com/tool"),
+		"routes/tool/lib/lib.go": route("lib", "type In struct{ ID string `path:\"id\" schema:\"maxLength=64\"` }\n"),
+	} {
+		p := filepath.Join(root, rel)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	vet := exec.Command("go", "vet", "-vettool="+bin, "./...")
+	vet.Dir = filepath.Join(root, "routes", "tool")
+	if out, err := vet.CombinedOutput(); err != nil {
+		t.Fatalf("%v\n%s", err, out)
+	}
+}
+
 // A directory in a route tree holding only an external test package, which
 // go/packages loads as a package of no files beside its test, is vetted
 // with no failure.

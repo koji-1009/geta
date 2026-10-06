@@ -2,6 +2,7 @@ package geta_test
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
@@ -61,6 +62,34 @@ func TestCORSMaxAgeIsWholeSeconds(t *testing.T) {
 	a := accepts(t, withRoot(one("/x", get(okHandler)), geta.CORS(geta.AllowOrigins("*"), geta.PreflightMaxAge(time.Second))))
 	if r := do(t, a, "OPTIONS", "/x", "Origin", "https://a.example", "Access-Control-Request-Method", "GET"); r.Header().Get("Access-Control-Max-Age") != "1" {
 		t.Fatal(r.Code, r.Header())
+	}
+}
+
+// An allowed origin is written as a browser sends it; one no Origin header
+// could match is refused: a path, a trailing slash, upper case, user info,
+// no scheme.
+func TestCORSOriginsAreSerializedOrigins(t *testing.T) {
+	for _, o := range []string{"https://app.example/", "https://app.example/x", "https://App.example", "https://u@app.example", "app.example", ""} {
+		rejects(t, withRoot(one("/x", get(okHandler)), geta.CORS(geta.AllowOrigins(o))), fmt.Sprintf("AllowOrigins %q is not an origin", o))
+	}
+	accepts(t, withRoot(one("/x", get(okHandler)), geta.CORS(geta.AllowOrigins("https://app.example", "http://localhost:5173", "*"))))
+}
+
+// A flush before anything is written sends the header complete: the page
+// may read what the operation declares, and the response varies on Origin.
+func TestCORSCompletesAFlushedResponse(t *testing.T) {
+	flush := geta.Use(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Vary", "Accept")
+			http.NewResponseController(w).Flush()
+			next.ServeHTTP(w, r)
+		})
+	})
+	a := accepts(t, withRoot(one("/x", get(okHandler)), geta.CORS(geta.AllowOrigins("https://a.example"), geta.ExposeHeaders("X-Total")), flush))
+	// The header as it went out with the flush, not as it was left.
+	sent := do(t, a, "GET", "/x", "Origin", "https://a.example").Result().Header
+	if sent.Get("Access-Control-Expose-Headers") != "X-Total" || !strings.Contains(strings.Join(sent.Values("Vary"), ","), "Origin") {
+		t.Fatal(sent)
 	}
 }
 

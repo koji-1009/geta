@@ -200,6 +200,10 @@ func TestJSONBodyContent(t *testing.T) {
 	}
 }
 
+type rqReaderIn struct {
+	Body io.Reader `body:"text/csv"`
+}
+
 // rqBrokenBody sends its content, then fails.
 type rqBrokenBody struct{ content string }
 
@@ -219,8 +223,15 @@ func TestABodyThatCannotBeReadIs400(t *testing.T) {
 		{Path: "/j", Route: post(func(context.Context, *rqJSONIn) (*ok, error) { return &ok{true}, nil })},
 		{Path: "/f", Route: post(func(context.Context, *rqLimitFormIn) (*ok, error) { return &ok{true}, nil })},
 		{Path: "/r", Route: post(func(context.Context, *rqRawOptIn) (*rqRawOut, error) { return &rqRawOut{}, nil })},
+		// The handler returns the reader's error as its own, wrapped.
+		{Path: "/i", Route: post(func(_ context.Context, in *rqReaderIn) (*ok, error) {
+			if _, err := io.ReadAll(in.Body); err != nil {
+				return nil, fmt.Errorf("import: %w", err)
+			}
+			return &ok{true}, nil
+		})},
 	}})
-	for path, ct := range map[string]string{"/j": "application/json", "/f": "application/x-www-form-urlencoded", "/r": "text/csv"} {
+	for path, ct := range map[string]string{"/j": "application/json", "/f": "application/x-www-form-urlencoded", "/r": "text/csv", "/i": "text/csv"} {
 		for _, content := range []string{"", "{"} {
 			req := httptest.NewRequest(http.MethodPost, path, &rqBrokenBody{content})
 			req.Header.Set("Content-Type", ct)
@@ -567,10 +578,16 @@ func TestMultipartFilesAndTheirStore(t *testing.T) {
 	if got := res.JSON[rqFilesOut](); res.Status != 200 || got.Files != 1 || got.OnDisk != 0 {
 		t.Fatal(res.Status, res.Text())
 	}
+	// MaxItems caps the parts of the body, whatever they name.
 	tight := geta.DefaultLimits
 	tight.MaxItems = 2
+	if res := serve(tight).Multipart(http.MethodPost, "/m", nil, files(2, 1)...); res.Status != 200 || res.JSON[rqFilesOut]().Files != 2 {
+		t.Fatal(res.Status, res.Text())
+	}
 	same(t, violations(t, serve(tight).Multipart(http.MethodPost, "/m", nil, files(3, 1)...)),
-		"body $.files: array length 3 exceeds the ceiling of 2 items")
+		"body $: the multipart body has more parts than the ceiling of 2")
+	same(t, violations(t, serve(tight).Multipart(http.MethodPost, "/m", url.Values{"x": {"1"}, "y": {"2"}}, files(1, 1)...)),
+		"body $: the multipart body has more parts than the ceiling of 2")
 	for _, mem := range []int64{0, -1} {
 		l := geta.DefaultLimits
 		l.MaxMultipartMemory = mem

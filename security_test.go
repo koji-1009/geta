@@ -226,6 +226,22 @@ func TestChangesAfterNewChangeNoDecision(t *testing.T) {
 	}
 }
 
+// Secure keeps its schemes' flows: a scope added to the map the caller
+// passed, after Secure returned, reaches neither New nor the document.
+func TestSecureKeepsItsFlows(t *testing.T) {
+	scopes := map[string]string{"read": "Read"}
+	s := geta.Scheme{Name: "o", Type: "oauth2", Flows: &geta.OAuthFlows{ClientCredentials: &geta.OAuthFlow{TokenURL: "https://id.example/token", Scopes: scopes}}}
+	gate := geta.Secure(geta.Policy{Default: []geta.Scheme{s}, Verifiers: map[string]geta.Verifier{"o": apiKeyVerifier}})
+	scopes["write"] = "Write"
+	a, err := geta.New(geta.Table{Root: geta.Scope{gate}, Routes: []geta.Entry{route("/x", nil)}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(a.OpenAPI()), `"write"`) {
+		t.Fatal("the document lists a scope added after Secure returned")
+	}
+}
+
 // Two gates must both admit, and with no Doc.Security each checks its own
 // default.
 func TestTwoGatesEachRequireTheirDefault(t *testing.T) {

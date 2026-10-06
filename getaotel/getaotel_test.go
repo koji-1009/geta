@@ -353,6 +353,37 @@ func TestWhatTheClientChoosesIsNotRecorded(t *testing.T) {
 	}
 }
 
+// A User-Agent or a method past 128 bytes is recorded cut; the chain sees
+// both whole.
+func TestLongClientValuesAreRecordedCut(t *testing.T) {
+	var seen string
+	tb := table(nil)
+	tb.Root = geta.Scope{geta.Use(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			seen = r.UserAgent()
+			next.ServeHTTP(w, r)
+		})
+	})}
+	h := serve(t, tb)
+	ua := strings.Repeat("u", 1000)
+	if res := h.c.With("User-Agent", ua).Get("/users/7"); res.Status != 200 || seen != ua {
+		t.Fatal(res.Status, len(seen))
+	}
+	if v, _ := attr(h.span(), "user_agent.original"); v.AsString() != strings.Repeat("u", 128)+"…" {
+		t.Fatalf("user_agent.original: %d bytes", len(v.AsString()))
+	}
+	// The cut splits no rune.
+	h.c.With("User-Agent", "a"+strings.Repeat("é", 500)).Get("/users/7")
+	if v, _ := attr(h.span(), "user_agent.original"); v.AsString() != "a"+strings.Repeat("é", 63)+"…" {
+		t.Fatalf("user_agent.original: %q", v.AsString())
+	}
+	req, _ := http.NewRequest(strings.Repeat("M", 1000), h.c.URL()+"/users/7", nil)
+	h.c.Send(req)
+	if v, _ := attr(h.span(), "http.request.method_original"); v.AsString() != strings.Repeat("M", 128)+"…" {
+		t.Fatalf("http.request.method_original: %d bytes", len(v.AsString()))
+	}
+}
+
 // Two paths of one template are one series: the raw path never reaches a
 // metric attribute.
 func TestPathsOfOneTemplateShareASeries(t *testing.T) {

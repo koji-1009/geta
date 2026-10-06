@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	jsonv2 "encoding/json/v2"
+	"errors"
 	"log/slog"
 	"mime/multipart"
 	"net/http"
@@ -268,6 +269,40 @@ func TestARequestsValueIsQuotedUpToTheBound(t *testing.T) {
 	}
 	if got := (&decoder{written: true}).value(at + "b"); got != at+"b" {
 		t.Errorf("a response's: %q", got)
+	}
+}
+
+// longErr is a type whose UnmarshalJSON fails with longErrMsg.
+type longErr struct{}
+
+var longErrMsg string
+
+func (*longErr) UnmarshalJSON([]byte) error { return errors.New(longErrMsg) }
+
+// A type's own decoding error is quoted whole up to maxErrorBytes, and cut
+// one byte past it.
+func TestADecodeErrorIsQuotedUpToTheBound(t *testing.T) {
+	var v struct {
+		X longErr `json:"x"`
+	}
+	data := []byte(`{"x":1}`)
+	longErrMsg = ""
+	base := len(jsonv2.Unmarshal(data, &v).Error())
+	for _, n := range []int{maxErrorBytes, maxErrorBytes + 1} {
+		longErrMsg = strings.Repeat("e", n-base)
+		full := jsonv2.Unmarshal(data, &v).Error()
+		if len(full) != n {
+			t.Fatalf("the error is %d bytes, want %d", len(full), n)
+		}
+		want := full
+		if n > maxErrorBytes {
+			want = full[:maxErrorBytes] + pathMark
+		}
+		d := &decoder{}
+		d.decodeJSON(data, reflect.ValueOf(&v).Elem(), jsonv2.JoinOptions())
+		if len(d.errs) != 1 || d.errs[0].Message != want {
+			t.Fatalf("%d bytes: %q", n, d.errs)
+		}
 	}
 }
 

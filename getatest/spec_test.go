@@ -162,6 +162,11 @@ func sse() geta.Middleware {
 			if r.URL.Query().Has("hold") {
 				<-r.Context().Done()
 			}
+			if r.URL.Query().Has("cut") {
+				io.WriteString(w, "data: half")
+				http.NewResponseController(w).Flush()
+				panic(http.ErrAbortHandler)
+			}
 		})
 	})
 }
@@ -177,8 +182,16 @@ func TestStreamReadsEventsCommentsAndRefusals(t *testing.T) {
 	if !ok || e != (Event{Name: "e", ID: "1", Data: "a\nb"}) || s.Comments != 1 || s.Response.Status != http.StatusOK {
 		t.Fatalf("%+v %v comments %d status %d", e, ok, s.Comments, s.Response.Status)
 	}
-	if _, ok := s.Next(); ok {
-		t.Fatal("an event after the stream ended")
+	if _, ok := s.Next(); ok || s.Err() != nil {
+		t.Fatalf("after the stream ended: %v", s.Err())
+	}
+	// A stream the server cut off ends, and Err says so.
+	cut := c.Stream("/raw?cut")
+	if _, ok := cut.Next(); !ok {
+		t.Fatal("no event")
+	}
+	if _, ok := cut.Next(); ok || cut.Err() == nil {
+		t.Fatalf("a cut stream: %v", cut.Err())
 	}
 
 	held := c.Stream("/raw?hold")

@@ -88,7 +88,10 @@ func draining(ctx context.Context) <-chan struct{} {
 // and [DefaultIdleTimeout]; neither is set when srv.ReadTimeout is. A
 // negative value means no limit. Run sets no ReadTimeout or WriteTimeout,
 // which would cut event streams and upgraded connections; bound an operation
-// with [Timeout] instead.
+// with [Timeout] instead. A Timeout bounds the time to a response, not a
+// client's taking of it: a client that stops reading holds its connection
+// until the server's WriteTimeout, which an App serving no stream or upgrade
+// can set, or a proxy in front ends it.
 //
 // Run sets DisableGeneralOptionsHandler, so OPTIONS * reaches the handler
 // rather than net/http's own answer.

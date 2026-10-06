@@ -55,8 +55,9 @@ type Limits struct {
 	// MaxStringLength caps, in code points, a string with no maxLength,
 	// including the keys of a map or WithSchema object.
 	MaxStringLength int
-	// MaxItems caps an array with no maxItems, and the member count of a map
-	// or WithSchema object with no maxProperties.
+	// MaxItems caps an array with no maxItems, the member count of a map or
+	// WithSchema object with no maxProperties, and the parts of a multipart
+	// body, ignored ones included; more parts are a 400.
 	MaxItems int
 	// MaxDepth caps the nesting of a JSON body.
 	MaxDepth int
