@@ -10,6 +10,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -618,6 +619,12 @@ type srCeilingIn struct {
 	S string `query:"s" schema:"pattern=^a+$"`
 }
 
+type srCeilingBody struct {
+	Body struct {
+		S string `json:"s" schema:"pattern=^a+$"`
+	} `body:"json"`
+}
+
 // A string enum is compared byte for byte; a string past the pattern
 // ceiling is refused before its pattern runs, whatever the Limits.
 func TestStringEnumAndPatternCeilingOverHTTP(t *testing.T) {
@@ -637,6 +644,22 @@ func TestStringEnumAndPatternCeilingOverHTTP(t *testing.T) {
 	if rec := do(t, app, "GET", "/p?s="+strings.Repeat("a", 4096)); rec.Code != 200 {
 		t.Fatal(rec.Code, rec.Body)
 	}
+	// One code point past the ceiling is refused, a multi-byte one counted
+	// once.
+	for _, s := range []string{strings.Repeat("a", 4097), strings.Repeat("a", 4096) + "é"} {
+		if p := problemOf(t, do(t, app, "GET", "/p?s="+url.QueryEscape(s))); fmt.Sprint(listed(p)) !=
+			"[query s: string length 4097 exceeds the pattern-validation ceiling of 4096 code points]" {
+			t.Fatal(listed(p))
+		}
+	}
+	// A JSON body's string alike, on the one-pass read.
+	l.MaxBodyBytes = 1 << 20
+	jb := getatest.New(t, one("/b", post(func(context.Context, *srCeilingBody) (*ok, error) { return &ok{true}, nil })), geta.WithLimits(l))
+	if res := jb.Post("/b", `{"s":"`+strings.Repeat("a", 4096)+`"}`); res.Status != 200 {
+		t.Fatal(res.Status, res.Text())
+	}
+	same(t, violations(t, jb.Post("/b", `{"s":"`+strings.Repeat("a", 4097)+`"}`)),
+		"body $.s: string length 4097 exceeds the pattern-validation ceiling of 4096 code points")
 }
 
 type srTextStruct struct {

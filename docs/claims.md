@@ -114,7 +114,8 @@ Every behaviour geta states has a test or a command that checks it. [`llms.txt`]
 | `time.Time` is read by RFC 3339's grammar | `TestTimeTakesExactlyRFC3339DateTimes`, `TestDateTimeIsRFC3339` |
 | `geta.Password` is written in full as JSON but printed `[redacted]` | `TestPasswordIsRedacted`, `TestFormatTypesInTheDocument` |
 | Path parameter names follow ServeMux's rule, in any script | `TestPathParameterNamesInAnyScript` |
-| Backstops: string, pattern, array, nesting, body size | `TestStringBackstop`, `TestPatternCeiling`, `TestArrayBackstop`, `TestNestingCeiling`, `TestSinglePassHoldsMaxDepthInsideAnyJSON`, `TestBodyLimitIs413AtTheExactBoundary` |
+| Backstops: string, pattern, array, nesting, body size | `TestStringBackstop`, `TestPatternCeiling`, `TestArrayBackstop`, `TestNestingCeiling`, `TestSinglePassHoldsMaxDepthInsideAnyJSON`, `TestBodyLimitIs413AtTheExactBoundary`, `TestBodyLimitHoldsAtTheBoundForEveryBody`, `TestStringEnumAndPatternCeilingOverHTTP` |
+| A type's own decoding error is quoted up to 512 bytes, then cut | `TestADecodeErrorIsQuotedUpToTheBound` |
 | `Doc.Limits` are the operation's own, in reading, buffering, and the document | `TestOperationLimitsAreTheOperationsOwn`, `TestOperationLimitsKeepComponentsTruthful`, `TestOperationLimitsBufferTheResponse` |
 | `WithLimits` replaces `DefaultLimits` whole; a zero cap is refused | `TestWithLimitsRefusesAZeroCap` |
 | Content of the wrong media type is a 415 naming the right one | `TestUnsupportedMediaTypeIs415` |

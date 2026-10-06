@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
+	"net/http/httptest"
 	"reflect"
 	"slices"
 	"strings"
@@ -203,6 +205,58 @@ func TestBodyLimitIs413AtTheExactBoundary(t *testing.T) {
 	res := c.Post("/x", body(65))
 	if res.Status != 413 || !strings.Contains(res.Problem().Detail, "exceeds 64 bytes") {
 		t.Fatalf("%d %s", res.Status, res.Body)
+	}
+}
+
+type limitFormIn struct {
+	Body struct {
+		Name string `form:"name"`
+	} `body:"form"`
+}
+
+type limitRawIn struct {
+	Body []byte `body:"text/plain"`
+}
+
+// MaxBodyBytes holds at its bound for every encoding, the body's length
+// declared or not: a body of 64 bytes is read, one of 65 is a 413.
+func TestBodyLimitHoldsAtTheBoundForEveryBody(t *testing.T) {
+	limits := geta.DefaultLimits
+	limits.MaxBodyBytes = 64
+	tbl := geta.Table{Routes: []geta.Entry{
+		{Path: "/j", Route: post(func(context.Context, *bodyIn) (*ok, error) { return &ok{true}, nil })},
+		{Path: "/f", Route: post(func(context.Context, *limitFormIn) (*ok, error) { return &ok{true}, nil })},
+		{Path: "/r", Route: post(func(context.Context, *limitRawIn) (*ok, error) { return &ok{true}, nil })},
+	}}
+	app, err := geta.New(tbl, geta.WithLimits(limits))
+	if err != nil {
+		t.Fatal(err)
+	}
+	of := map[string]func(n int) string{
+		"/j": func(n int) string {
+			s := `{"name":"","price":1}`
+			return strings.Replace(s, `""`, `"`+strings.Repeat("a", n-len(s))+`"`, 1)
+		},
+		"/f": func(n int) string { return "name=" + strings.Repeat("a", n-len("name=")) },
+		"/r": func(n int) string { return strings.Repeat("a", n) },
+	}
+	ct := map[string]string{"/j": "application/json", "/f": "application/x-www-form-urlencoded", "/r": "text/plain"}
+	for path, body := range of {
+		for _, declared := range []bool{true, false} {
+			for n, want := range map[int]int{64: 200, 65: 413} {
+				req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body(n)))
+				req.Header.Set("Content-Type", ct[path])
+				if !declared {
+					req.Body = io.NopCloser(strings.NewReader(body(n)))
+					req.ContentLength = -1
+				}
+				rec := httptest.NewRecorder()
+				app.ServeHTTP(rec, req)
+				if rec.Code != want {
+					t.Errorf("%s, %d bytes, length declared %v: %d %s", path, n, declared, rec.Code, rec.Body)
+				}
+			}
+		}
 	}
 }
 
