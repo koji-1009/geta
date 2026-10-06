@@ -188,7 +188,7 @@ func New(t Table, opts ...Option) (*App, error) {
 		params, _ := parsePath(op.path)
 		rt := &route{
 			h:         wrap(op.routeChain, op),
-			match:     &Match{Template: op.path, Method: op.method, Doc: op.op.snapshot().doc, Operation: true},
+			match:     &Match{Template: op.path, Method: op.method, Doc: op.op.snapshot().doc},
 			params:    params,
 			op:        op,
 			pattern:   op.method + " " + op.path,

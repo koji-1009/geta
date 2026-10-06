@@ -211,7 +211,7 @@ func TestADeclaredObjectIsHeldToTheBackstop(t *testing.T) {
 		t.Errorf("response: %s", got)
 	}
 	// A response is held to no backstop.
-	if err := app.Conforms(geta.Match{Template: "/x", Method: "POST", Operation: true}, http.StatusOK, nil, []byte(`{"own":{"a":1,"b":2,"c":3}}`)); err != nil {
+	if err := app.Conforms(geta.Match{Template: "/x", Method: "POST"}, http.StatusOK, nil, []byte(`{"own":{"a":1,"b":2,"c":3}}`)); err != nil {
 		t.Error(err)
 	}
 
@@ -267,7 +267,7 @@ type conformsMapDeclared struct {
 func TestConformsHoldsAMapToItsDeclaredSize(t *testing.T) {
 	lim := geta.DefaultLimits
 	lim.MaxItems = 2
-	get := geta.Match{Template: "/x", Method: "GET", Operation: true}
+	get := geta.Match{Template: "/x", Method: "GET"}
 	app := conformsApp(t, lim, &conformsMap{M: map[string]int{"a": 1, "b": 2, "c": 3}})
 	if d := string(app.OpenAPI()); strings.Contains(d, `"maxProperties"`) {
 		t.Fatalf("document: %s", d)

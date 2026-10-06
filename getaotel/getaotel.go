@@ -246,7 +246,7 @@ func served(r *http.Request) {
 	if m, _, _ := read(); m != "" {
 		method = m
 	}
-	if mt, ok := geta.Matched(r.Context()); ok && mt.Operation {
+	if mt, ok := geta.Matched(r.Context()); ok {
 		route := semconv.HTTPRoute(mt.Template)
 		span.SetAttributes(route)
 		if l, ok := otelhttp.LabelerFromContext(r.Context()); ok {
@@ -277,7 +277,6 @@ func served(r *http.Request) {
 func spanName(_ string, r *http.Request) string {
 	method := r.Method
 	mt, matched := geta.Matched(r.Context())
-	matched = matched && mt.Operation
 	if !standard[method] {
 		method = "HTTP"
 	}

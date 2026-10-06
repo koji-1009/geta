@@ -33,7 +33,7 @@ func TestCORSBelowTheRootIsRefused(t *testing.T) {
 // challenge and what its 415 names.
 func TestCORSQueryPreflightBehindTheGate(t *testing.T) {
 	a, err := geta.New(withRoot(one("/search", geta.Route{Query: geta.Op(http.StatusOK, querySearchHandler, geta.Doc{})}),
-		geta.CORS(geta.AllowOrigins("https://a.example"), geta.MaxAge(90*time.Second)), gate()), geta.WithOpenAPI(geta.OpenAPI32))
+		geta.CORS(geta.AllowOrigins("https://a.example"), geta.PreflightMaxAge(90*time.Second)), gate()), geta.WithOpenAPI(geta.OpenAPI32))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -50,15 +50,15 @@ func TestCORSQueryPreflightBehindTheGate(t *testing.T) {
 	sameHeaders(t, "QUERY 401", r.Header().Get("Access-Control-Expose-Headers"), "Accept", "Accept-Query", "WWW-Authenticate")
 }
 
-// Access-Control-Max-Age carries whole seconds: a MaxAge that is not a whole
+// Access-Control-Max-Age carries whole seconds: a PreflightMaxAge that is not a whole
 // positive number of them (a fraction cut, a sub-second age sent as 0, which
 // caches nothing) is refused.
 func TestCORSMaxAgeIsWholeSeconds(t *testing.T) {
 	for _, d := range []time.Duration{500 * time.Millisecond, 90*time.Second + 500*time.Millisecond, 0, -time.Second} {
-		rejects(t, withRoot(one("/x", get(okHandler)), geta.CORS(geta.AllowOrigins("*"), geta.MaxAge(d))),
-			"geta.CORS: MaxAge "+d.String()+" is not a positive whole number of seconds")
+		rejects(t, withRoot(one("/x", get(okHandler)), geta.CORS(geta.AllowOrigins("*"), geta.PreflightMaxAge(d))),
+			"geta.CORS: PreflightMaxAge "+d.String()+" is not a positive whole number of seconds")
 	}
-	a := accepts(t, withRoot(one("/x", get(okHandler)), geta.CORS(geta.AllowOrigins("*"), geta.MaxAge(time.Second))))
+	a := accepts(t, withRoot(one("/x", get(okHandler)), geta.CORS(geta.AllowOrigins("*"), geta.PreflightMaxAge(time.Second))))
 	if r := do(t, a, "OPTIONS", "/x", "Origin", "https://a.example", "Access-Control-Request-Method", "GET"); r.Header().Get("Access-Control-Max-Age") != "1" {
 		t.Fatal(r.Code, r.Header())
 	}

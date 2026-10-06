@@ -22,8 +22,6 @@ type Match struct {
 	Template string
 	Method   string
 	Doc      Doc
-	// Operation is true for every match geta gives.
-	Operation bool
 }
 
 // requestContext is geta's per-request state in the request's context: the

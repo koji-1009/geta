@@ -27,6 +27,12 @@ import (
 // on several lines is read as one list (RFC 9110 §5.3).
 //
 // A client sets the fields it sends: Conditional{IfMatch: new(`"v1"`)}.
+//
+// Check reads the request's method, which geta records when it binds the
+// input. A Conditional built by hand has none and is checked as for a method
+// other than GET or HEAD: a matching If-None-Match is 412, never 304, and
+// If-Modified-Since is ignored. Test a GET's 304 through a request, as
+// getatest sends it.
 type Conditional struct {
 	// IfMatch is "*" or a list of entity tags, compared strongly.
 	IfMatch *string `header:"If-Match"`

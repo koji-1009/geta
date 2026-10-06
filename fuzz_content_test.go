@@ -315,7 +315,7 @@ func FuzzContentHeaders(f *testing.F) {
 			t.Fatalf("%s: Content-Encoding %q", where, enc)
 		}
 		if gz, id, clean := refAcceptEncoding(aeLines); clean && aeLines != nil {
-			wantCoded := gz > 0 && gz >= id && len(got) > 0 && (id == 0 || len(got) >= geta.GzipThreshold)
+			wantCoded := gz > 0 && gz >= id && len(got) > 0 && (id == 0 || len(got) >= geta.CompressThreshold)
 			if coded != wantCoded {
 				t.Fatalf("%s: coded %v, want %v (gzip q %v, identity q %v, %d bytes)", where, coded, wantCoded, gz, id, len(got))
 			}

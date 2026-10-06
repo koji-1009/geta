@@ -309,7 +309,7 @@ func TestKeyKeywordsHoldEachKey(t *testing.T) {
 		t.Error(g)
 	}
 	c.Get("/o")
-	if err := c.App().Conforms(geta.Match{Template: "/o", Method: "GET", Operation: true}, http.StatusOK, nil, []byte(`{"tags":{"abcd":1},"free":{}}`)); err == nil ||
+	if err := c.App().Conforms(geta.Match{Template: "/o", Method: "GET"}, http.StatusOK, nil, []byte(`{"tags":{"abcd":1},"free":{}}`)); err == nil ||
 		!strings.Contains(err.Error(), "key length 4 exceeds maxLength 3") {
 		t.Errorf("Conforms: %v", err)
 	}

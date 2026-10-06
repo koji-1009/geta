@@ -70,8 +70,8 @@ func TestMWConstructionMistakesNameTheMiddleware(t *testing.T) {
 		"root scope: middleware 1 (timeout): geta.Timeout -1s is not positive":                 geta.Timeout(-time.Second),
 		"root scope: middleware 1 (cors): geta.CORS allows no origin":                          geta.CORS(),
 		`root scope: middleware 1 (cors): geta.CORS: "*" with credentials is forbidden`:        geta.CORS(geta.AllowOrigins("*"), geta.AllowCredentials()),
-		"root scope: middleware 1 (cors): geta.CORS: MaxAge 500ms is not a positive whole number of seconds": geta.CORS(geta.AllowOrigins("*"),
-			geta.MaxAge(500*time.Millisecond)),
+		"root scope: middleware 1 (cors): geta.CORS: PreflightMaxAge 500ms is not a positive whole number of seconds": geta.CORS(geta.AllowOrigins("*"),
+			geta.PreflightMaxAge(500*time.Millisecond)),
 	} {
 		rejects(t, withRoot(one("/x", get(okHandler)), geta.Use(noop), m), want)
 	}
@@ -352,7 +352,7 @@ func TestMWDefectsGoToSlogDefault(t *testing.T) {
 	}
 }
 
-// Access-Control-Max-Age is sent only with MaxAge, and only on an allowed
+// Access-Control-Max-Age is sent only with PreflightMaxAge, and only on an allowed
 // origin's preflight.
 func TestMWCORSMaxAgeOnlyWhenSetAndAllowed(t *testing.T) {
 	pre := func(a *geta.App, origin string) http.Header {
@@ -362,7 +362,7 @@ func TestMWCORSMaxAgeOnlyWhenSetAndAllowed(t *testing.T) {
 	if h := pre(a, "https://a.example"); h.Get("Access-Control-Allow-Origin") == "" || len(h.Values("Access-Control-Max-Age")) != 0 {
 		t.Fatal(h)
 	}
-	a = accepts(t, withRoot(one("/x", get(okHandler)), geta.CORS(geta.AllowOrigins("https://a.example"), geta.MaxAge(10*time.Second))))
+	a = accepts(t, withRoot(one("/x", get(okHandler)), geta.CORS(geta.AllowOrigins("https://a.example"), geta.PreflightMaxAge(10*time.Second))))
 	if h := pre(a, "https://a.example"); h.Get("Access-Control-Max-Age") != "10" {
 		t.Fatal(h)
 	}

@@ -168,8 +168,8 @@ func TestOperationScopeAnswersAreDocumentedOnItsOperation(t *testing.T) {
 		}
 	}
 	a := c.App()
-	postMatch := geta.Match{Template: "/items", Method: http.MethodPost, Operation: true}
-	getMatch := geta.Match{Template: "/items", Method: http.MethodGet, Operation: true}
+	postMatch := geta.Match{Template: "/items", Method: http.MethodPost}
+	getMatch := geta.Match{Template: "/items", Method: http.MethodGet}
 	if ok, _ := a.Documented(postMatch, http.StatusForbidden); !ok {
 		t.Error("Documented: POST 403 is not listed")
 	}

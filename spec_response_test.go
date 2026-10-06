@@ -980,7 +980,7 @@ func TestETagReadsIfNoneMatchAsCheckDoes(t *testing.T) {
 	}
 }
 
-// Compress codes a body of at least GzipThreshold bytes of every text-like
+// Compress codes a body of at least CompressThreshold bytes of every text-like
 // media type, and none shorter.
 func TestCompressCodesTextLikeBodiesFromTheThreshold(t *testing.T) {
 	serve := func(ct string, n int) *httptest.ResponseRecorder {
@@ -994,15 +994,15 @@ func TestCompressCodesTextLikeBodiesFromTheThreshold(t *testing.T) {
 	}
 	for _, ct := range []string{"text/html; charset=utf-8", "application/xml", "application/javascript", "application/x-ndjson",
 		"application/atom+xml", "application/geo+json", "application/json"} {
-		if r := serve(ct, geta.GzipThreshold); r.Header().Get("Content-Encoding") != "gzip" {
+		if r := serve(ct, geta.CompressThreshold); r.Header().Get("Content-Encoding") != "gzip" {
 			t.Errorf("%s: %v", ct, r.Header())
 		}
-		if r := serve(ct, geta.GzipThreshold-1); r.Header().Get("Content-Encoding") != "" {
+		if r := serve(ct, geta.CompressThreshold-1); r.Header().Get("Content-Encoding") != "" {
 			t.Errorf("%s below the threshold: %v", ct, r.Header())
 		}
 	}
 	for _, ct := range []string{"application/octet-stream", "image/png", "application/pdf"} {
-		if r := serve(ct, 4*geta.GzipThreshold); r.Header().Get("Content-Encoding") != "" {
+		if r := serve(ct, 4*geta.CompressThreshold); r.Header().Get("Content-Encoding") != "" {
 			t.Errorf("%s: %v", ct, r.Header())
 		}
 	}

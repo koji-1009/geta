@@ -180,7 +180,7 @@ func TestConformsChecksDocumentedHeaders(t *testing.T) {
 		Header(http.StatusTooManyRequests, "X-RateLimit-Policy", "", geta.HeaderOf[string]("enum=burst|steady")).
 		Header(http.StatusTooManyRequests, "X-Plain", "")
 	a := accepts(t, withRoot(one("/x", get(okHandler)), typed))
-	x := geta.Match{Template: "/x", Method: http.MethodGet, Operation: true}
+	x := geta.Match{Template: "/x", Method: http.MethodGet}
 	const limited = http.StatusTooManyRequests
 	for _, c := range []struct {
 		status int
@@ -206,7 +206,7 @@ func TestConformsChecksDocumentedHeaders(t *testing.T) {
 
 	// A described row's header, optional where a plain cause shares its status.
 	d := accepts(t, describedTable())
-	f := geta.Match{Template: "/f", Method: http.MethodGet, Operation: true}
+	f := geta.Match{Template: "/f", Method: http.MethodGet}
 	if err := d.Conforms(f, http.StatusTooManyRequests, http.Header{"Retry-After": {"soon"}}, nil); err == nil || !strings.Contains(err.Error(), "Retry-After: expected integer, got string") {
 		t.Error("row:", err)
 	}
@@ -217,7 +217,7 @@ func TestConformsChecksDocumentedHeaders(t *testing.T) {
 	// An output's header field, required unless it is a pointer; the body is
 	// checked beside it.
 	e := accepts(t, one("/e", get(func(context.Context, *struct{}) (*headedOut, error) { return &headedOut{Count: 1}, nil })))
-	m := geta.Match{Template: "/e", Method: http.MethodGet, Operation: true}
+	m := geta.Match{Template: "/e", Method: http.MethodGet}
 	for _, c := range []struct {
 		h    http.Header
 		body string
@@ -270,7 +270,7 @@ func TestAHeaderIsStatedOnceWhateverItsCase(t *testing.T) {
 	if got := compact(t, at(t, doc(t, b), "paths", "/f", "get", "responses", "429", "headers")); got != `{"retry-after":{"required":true,"schema":{"format":"int64","type":"integer"}}}` {
 		t.Error("two rows:", got)
 	}
-	f := geta.Match{Template: "/f", Method: http.MethodGet, Operation: true}
+	f := geta.Match{Template: "/f", Method: http.MethodGet}
 	if err := b.Conforms(f, http.StatusTooManyRequests, http.Header{}, nil); err == nil || !strings.Contains(err.Error(), "retry-after: missing required header") {
 		t.Error("Conforms:", err)
 	}
@@ -294,7 +294,7 @@ func TestMiddlewareHeaderSchemasAgree(t *testing.T) {
 			geta.OnAsProblem(limited, "q", func(*quotaError) lowerRetry { return lowerRetry{} }),
 		}})}), root...)
 	}
-	f := geta.Match{Template: "/f", Method: http.MethodGet, Operation: true}
+	f := geta.Match{Template: "/f", Method: http.MethodGet}
 
 	// A row's and a middleware's.
 	rejects(t, rowed(typed("Retry-After", "minimum=1")),
@@ -329,7 +329,7 @@ func TestMiddlewareHeaderSchemasAgree(t *testing.T) {
 	if got := compact(t, at(t, doc(t, b), "paths", "/x", "get", "responses", "429", "headers")); got != `{"Retry-After":{"required":false,"schema":{"format":"int64","minimum":1,"type":"integer"}}}` {
 		t.Error("untyped then typed:", got)
 	}
-	xm := geta.Match{Template: "/x", Method: http.MethodGet, Operation: true}
+	xm := geta.Match{Template: "/x", Method: http.MethodGet}
 	if err := b.Conforms(xm, limited, http.Header{"Retry-After": {"0"}}, nil); err == nil || !strings.Contains(err.Error(), "Retry-After: 0 is less than minimum 1") {
 		t.Error("untyped then typed, Conforms:", err)
 	}
@@ -344,7 +344,7 @@ func TestMiddlewareHeaderSchemasAgree(t *testing.T) {
 	rejects(t, e(cached(geta.HeaderOf[int]("minimum=5"))),
 		`GET /e (`, `): status 200: the output states header X-Count with schema {"format":"int64","type":"integer"}, `+
 			`but middleware 0 (middleware) states x-count with schema {"format":"int64","minimum":5,"type":"integer"}`)
-	em := geta.Match{Template: "/e", Method: http.MethodGet, Operation: true}
+	em := geta.Match{Template: "/e", Method: http.MethodGet}
 	for _, typ := range [][]geta.HeaderType{{geta.HeaderOf[int]("")}, nil} {
 		c := accepts(t, e(cached(typ...)))
 		ok200 := at(t, doc(t, c), "paths", "/e", "get", "responses", "200")

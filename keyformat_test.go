@@ -88,7 +88,7 @@ func TestAKeyTypesFormatIsStatedAndHeld(t *testing.T) {
 		`body $.mail.nope: key "nope" is not a valid email`)
 	same(t, violations(t, c.Post("/b", `{"mail":{"nope":-1},"secrets":{}}`)), `body $.mail.nope: key "nope" is not a valid email`)
 	c.Get("/o")
-	if err := c.App().Conforms(geta.Match{Template: "/o", Method: "GET", Operation: true}, http.StatusOK, nil, []byte(`{"mail":{"nope":1}}`)); err == nil ||
+	if err := c.App().Conforms(geta.Match{Template: "/o", Method: "GET"}, http.StatusOK, nil, []byte(`{"mail":{"nope":1}}`)); err == nil ||
 		!strings.Contains(err.Error(), `key "nope" is not a valid email`) {
 		t.Errorf("Conforms: %v", err)
 	}

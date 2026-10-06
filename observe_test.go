@@ -89,14 +89,14 @@ func TestDocumentedTakesTheMatch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	post := geta.Match{Template: "/items", Method: "POST", Operation: true}
+	post := geta.Match{Template: "/items", Method: "POST"}
 	if documented, matched := app.Documented(post, http.StatusCreated); !documented || !matched {
 		t.Fatal(documented, matched)
 	}
 	if documented, matched := app.Documented(post, http.StatusTeapot); documented || !matched {
 		t.Fatal(documented, matched)
 	}
-	if _, matched := app.Documented(geta.Match{Template: "/items", Method: "PUT", Operation: true}, http.StatusCreated); matched {
+	if _, matched := app.Documented(geta.Match{Template: "/items", Method: "PUT"}, http.StatusCreated); matched {
 		t.Fatal("a match no operation gave")
 	}
 	if _, matched := app.Documented(geta.Match{}, http.StatusNotFound); matched {
@@ -146,7 +146,7 @@ func TestConformsHoldsResponsesToTheDeclaredSchemaOnly(t *testing.T) {
 	lim := geta.DefaultLimits
 	lim.MaxStringLength, lim.MaxItems = 10, 2
 	const eleven, twelve = "abcdefghijk", "abcdefghijkl"
-	get := geta.Match{Template: "/x", Method: "GET", Operation: true}
+	get := geta.Match{Template: "/x", Method: "GET"}
 	conforms := func(t *testing.T, app *geta.App, body string) {
 		t.Helper()
 		if err := app.Conforms(get, http.StatusOK, nil, []byte(body)); err != nil {
