@@ -1,6 +1,6 @@
 # register-sql
 
-How an application writes its own database adapter. geta ships none. This is a separate module (`go.mod`) because it imports drivers.
+How an application writes its own database adapter. geta ships none. It imports drivers, and the register example as a module.
 
 | Pattern | Where |
 | --- | --- |

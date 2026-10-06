@@ -2,7 +2,10 @@ go 1.27
 
 use (
 	.
+	./examples/auth
 	./examples/booking
+	./examples/bookmarks
+	./examples/register
 	./examples/register-sql
 	./getaotel
 	./getavet

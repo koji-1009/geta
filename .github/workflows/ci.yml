@@ -19,7 +19,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        module: [., getavet, getaotel, examples/booking, examples/register-sql]
+        module: [., getavet, getaotel, examples/auth, examples/booking, examples/bookmarks, examples/register, examples/register-sql]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -36,21 +36,9 @@ jobs:
       - name: go test
         run: go test ./...
         working-directory: ${{ matrix.module }}
-
-  race:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.mod
-          cache-dependency-path: |
-            **/go.sum
-            go.work.sum
       - name: go test -race
         run: go test -race ./...
+        working-directory: ${{ matrix.module }}
 
   checks:
     runs-on: ubuntu-latest
@@ -97,4 +85,6 @@ jobs:
       - name: getavet
         run: |
           go build -C getavet -o "$RUNNER_TEMP/getavet" ./cmd/getavet
-          go vet -C examples/booking -vettool="$RUNNER_TEMP/getavet" ./...
+          for module in examples/auth examples/booking examples/bookmarks examples/register examples/register-sql; do
+            go vet -C "$module" -vettool="$RUNNER_TEMP/getavet" ./...
+          done

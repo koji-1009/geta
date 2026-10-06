@@ -139,25 +139,28 @@ geta.Table{Root: scope, Routes: []geta.Entry{{Path: "/users/{id}", Route: r, Sco
 
 ## Examples
 
+Each example is its own module.
+
 | Example | What it shows |
 | --- | --- |
 | [`examples/register`](examples/register) | Users and teams: CRUD behind a bearer gate, shared failure rows, admin-only writes through `Doc.Scope`, conditional writes with `ETag`, a multipart upload, an event feed |
 | [`examples/auth`](examples/auth) | Bearer tokens and cookie sessions behind one gate, 401 versus 403, a rate-limited login form, revocation that closes a live feed, OpenAPI 3.2 beside 3.1 |
-| [`examples/booking`](examples/booking) | OpenID ES256 tokens verified by its own `jwtauth` package on golang-jwt, sealed types, format types, zstd beside gzip, getaotel, a WebSocket over `geta.Upgrade`, HTTP/3 (separate module) |
+| [`examples/booking`](examples/booking) | OpenID ES256 tokens verified by its own `jwtauth` package on golang-jwt, sealed types, format types, zstd beside gzip, getaotel, a WebSocket over `geta.Upgrade`, HTTP/3 |
 | [`examples/bookmarks`](examples/bookmarks) | A cross-origin single-page app with a session cookie behind a reverse proxy: CORS with credentials, a rate limit keyed through trusted proxies, an `Idempotency-Key` header, per-template counts with `geta.Observe`, a QUERY operation |
-| [`examples/register-sql`](examples/register-sql) | How to write a database adapter: SQLite and PostgreSQL adapters checked by its conformance suite, and the register example served over SQLite (separate module) |
+| [`examples/register-sql`](examples/register-sql) | How to write a database adapter: SQLite and PostgreSQL adapters checked by its conformance suite, and the register example served over SQLite |
 
 ## Running the checks
 
 ```
-go test ./...                                 # the core, the examples, the tools
+go test ./...                                 # the core and the tools
 go test -C getavet ./...                      # the analyzer
 go test -C getaotel ./...                     # spans and metrics on otelhttp, streams and upgrades through it
 go build -C getavet -o "$TMPDIR/getavet" ./cmd/getavet
 "$TMPDIR/getavet" -test=false ./...            # getavet over this module, less the tests' deliberately bad fixtures
+go test -C examples/register ./...            # each example is its own module: register, auth, bookmarks, booking, register-sql
 go test -C examples/register-sql ./...        # the example adapters' conformance and the register flow on SQLite and PostgreSQL (embedded, or GETA_POSTGRES_URL)
 go test -C examples/booking ./...             # the booking example: JWT, sealed types, zstd, OpenTelemetry, WebSocket, HTTP/3
-go vet -C examples/booking -vettool="$TMPDIR/getavet" ./...   # getavet over the booking module
+go vet -C examples/booking -vettool="$TMPDIR/getavet" ./...   # getavet over an example module
 go test -run XXX -fuzz FuzzBinding -fuzzminimizetime 10s .   # fuzz the binder
 uvx openapi-spec-validator examples/register/openapi.json examples/auth/openapi.json examples/auth/openapi.3.2.json examples/booking/openapi.json examples/booking/openapi.3.2.json testdata/formats.openapi.json testdata/forms.openapi.json testdata/query.openapi.3.2.json testdata/schema.openapi.json testdata/responses.openapi.json testdata/security.openapi.json testdata/security.openapi.3.2.json examples/bookmarks/openapi.json
 ```
@@ -166,7 +169,7 @@ Go's fuzzer minimizes each input that finds new coverage, running the target on 
 
 Each example's `clientcheck/roundtrip.py` drives the running server through a client that `openapi-python-client` generates from the committed `openapi.json`. The script's docstring has the commands.
 
-The committed `go.work` makes getaotel, getavet, and the separate examples use the root module in this checkout. Releasing is in [`RELEASING.md`](RELEASING.md).
+The committed `go.work` makes getaotel, getavet, and the examples use the root module in this checkout. Releasing is in [`RELEASING.md`](RELEASING.md).
 
 Every behaviour geta states has a test or a command that checks it: see [`docs/claims.md`](docs/claims.md).
 

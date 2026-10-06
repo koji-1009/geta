@@ -6,6 +6,7 @@ require (
 	github.com/fergusstrange/embedded-postgres v1.34.0
 	github.com/jackc/pgx/v5 v5.11.0
 	github.com/koji-1009/geta v0.0.0
+	github.com/koji-1009/geta/examples/register v0.0.0
 	modernc.org/sqlite v1.60.1
 )
 
@@ -28,4 +29,7 @@ require (
 	modernc.org/memory v1.12.1 // indirect
 )
 
-replace github.com/koji-1009/geta => ../..
+replace (
+	github.com/koji-1009/geta => ../..
+	github.com/koji-1009/geta/examples/register => ../register
+)
