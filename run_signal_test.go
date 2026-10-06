@@ -4,7 +4,6 @@ package geta
 
 import (
 	"context"
-	"net"
 	"net/http"
 	"syscall"
 	"testing"
@@ -16,28 +15,13 @@ import (
 // test process.
 func TestRunStopsOnASignal(t *testing.T) {
 	for _, sig := range []syscall.Signal{syscall.SIGINT, syscall.SIGTERM} {
-		l, err := net.Listen("tcp", "127.0.0.1:0")
-		if err != nil {
-			t.Fatal(err)
-		}
-		addr := l.Addr().String()
-		l.Close()
+		l := newPipeListener()
+		listenOn(t, l)
 		done := make(chan error, 1)
-		go func() { done <- Run(context.Background(), &http.Server{Addr: addr, Handler: http.NotFoundHandler()}) }()
-		// Once Run answers, it has registered for the signals: it does so
+		go func() { done <- Run(context.Background(), &http.Server{Handler: http.NotFoundHandler()}) }()
+		// Once Run accepts, it has registered for the signals: it does so
 		// before it serves.
-		var up bool
-		for range 200 {
-			if res, err := http.Get("http://" + addr + "/"); err == nil {
-				res.Body.Close()
-				up = true
-				break
-			}
-			time.Sleep(10 * time.Millisecond)
-		}
-		if !up {
-			t.Fatal("Run did not serve")
-		}
+		l.dial(t).Close()
 		if err := syscall.Kill(syscall.Getpid(), sig); err != nil {
 			t.Fatal(err)
 		}

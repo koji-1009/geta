@@ -9,7 +9,6 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/koji-1009/geta"
 )
@@ -18,17 +17,11 @@ import (
 // root rewrite, or a mount, and the templates geta.New refuses because the
 // document could not state them truthfully.
 
-// sendRaw writes one raw HTTP/1.1 request to addr and reads its response.
+// sendRaw writes one raw HTTP/1.1 request to addr, which is listening, and
+// reads its response.
 func sendRaw(t *testing.T, addr, raw string) *http.Response {
 	t.Helper()
-	var c net.Conn
-	var err error
-	for range 100 {
-		if c, err = net.Dial("tcp", addr); err == nil {
-			break
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
+	c, err := net.Dial("tcp", addr)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -44,21 +37,10 @@ func sendRaw(t *testing.T, addr, raw string) *http.Response {
 	return res
 }
 
-// freeAddr is a loopback address no one listens on, for Run to bind.
-func freeAddr(t *testing.T) string {
-	t.Helper()
-	l, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	addr := l.Addr().String()
-	l.Close()
-	return addr
-}
-
-// OPTIONS * reaches the App through geta.Run and geta.Serve, where
-// net/http would otherwise answer it itself (200, no Allow) unless the
-// server's DisableGeneralOptionsHandler is set.
+// OPTIONS * reaches the App through geta.Serve (and geta.Run,
+// TestRunPassesOptionsAsteriskOn), where net/http would otherwise answer it
+// itself (200, no Allow) unless the server's DisableGeneralOptionsHandler is
+// set.
 func TestOptionsAsteriskThroughARealServer(t *testing.T) {
 	var mu sync.Mutex
 	var rootRan bool
@@ -98,15 +80,6 @@ func TestOptionsAsteriskThroughARealServer(t *testing.T) {
 	done := make(chan error, 1)
 	go func() { done <- geta.Serve(ctx, &http.Server{Handler: a}, l) }()
 	check("Serve", l.Addr().String())
-	cancel()
-	if err := <-done; err != nil {
-		t.Fatal(err)
-	}
-
-	addr := freeAddr(t)
-	ctx, cancel = context.WithCancel(context.Background())
-	go func() { done <- geta.Run(ctx, &http.Server{Addr: addr, Handler: a}) }()
-	check("Run", addr)
 	cancel()
 	if err := <-done; err != nil {
 		t.Fatal(err)

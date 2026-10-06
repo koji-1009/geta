@@ -53,6 +53,19 @@ func capture() (geta.Middleware, func() []seen) {
 
 func greet(context.Context, *struct{}) (*greeting, error) { return &greeting{"hi"}, nil }
 
+// A header the request sets itself wins over the client's: a form keeps its
+// own Content-Type under a client given another, and a header only the
+// client has is added.
+func TestARequestsOwnHeaderWins(t *testing.T) {
+	m, got := capture()
+	c := New(t, geta.Table{Root: geta.Scope{m}, Routes: []geta.Entry{{Path: "/g", Route: geta.Route{Get: geta.Op(http.StatusOK, greet, geta.Doc{})}}}})
+	c.With("Content-Type", "text/plain").With("X-Client", "c").Form(http.MethodPost, "/c", url.Values{"a": {"1"}})
+	s := got()
+	if len(s) != 1 || s[0].contentType != "application/x-www-form-urlencoded" || s[0].header.Get("X-Client") != "c" {
+		t.Fatalf("%+v", s)
+	}
+}
+
 // Do sends a string or []byte as is and any other body as JSON, as
 // application/json unless the client was given a Content-Type; the method
 // helpers are Do with their method.

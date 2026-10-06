@@ -175,6 +175,45 @@ func TestUniqueItemsComparesNulls(t *testing.T) {
 	}
 }
 
+type fastMapSet struct {
+	M []map[string]int8 `json:"m" schema:"uniqueItems=true"`
+}
+
+type fastAnyMember struct {
+	X *rawAny `json:"x,omitzero"`
+	N int8    `json:"n"`
+}
+
+type fastAnySet struct {
+	S []fastAnyMember `json:"s" schema:"uniqueItems=true"`
+}
+
+// Under uniqueItems, maps are equal elements whatever their members' order,
+// and an object's null member of a type that takes any JSON value counts, on
+// both paths.
+func TestUniqueItemsComparesMapsAndNullMembers(t *testing.T) {
+	for body, valid := range map[string]bool{
+		`{"m":[{"a":1,"b":2},{"b":2,"a":1}]}`: false,
+		`{"m":[{},{}]}`:                       false,
+		`{"m":[{"a":1},{"a":2}]}`:             true,
+		`{"m":[{"a":1},{"b":1}]}`:             true,
+		`{"m":[{"a":1},{"a":1,"b":1}]}`:       true,
+	} {
+		if agree[fastMapSet](t, []byte(body), DefaultLimits) != valid {
+			t.Errorf("%s: want accepted %v", body, valid)
+		}
+	}
+	for body, valid := range map[string]bool{
+		`{"s":[{"x":null,"n":1},{"x":null,"n":1}]}`: false,
+		`{"s":[{"x":null,"n":1},{"x":null,"n":2}]}`: true,
+		`{"s":[{"x":null,"n":1},{"x":1,"n":1}]}`:    true,
+	} {
+		if agree[fastAnySet](t, []byte(body), DefaultLimits) != valid {
+			t.Errorf("%s: want accepted %v", body, valid)
+		}
+	}
+}
+
 // A discriminator not followed by a colon, and a tag cut off before its
 // closing quote, are no hint: the object is read in full and refused there,
 // on both paths.
@@ -231,6 +270,45 @@ func TestSealedOptionsKeepTheClientsOwn(t *testing.T) {
 	utf := json.JoinOptions(fastShapes.JSONOptions(), jsontext.AllowInvalidUTF8(true))
 	if err := json.Unmarshal([]byte("{\"kind\":\"circle\",\"r\":1,\"x\":\"\xff\"}"), &s, utf); err != nil || s.(fastCircle).R != 1 {
 		t.Fatalf("%v %#v", err, s)
+	}
+}
+
+// An error inside a sealed value has the offset and pointer whether the value
+// is read in one pass or whole (as it is when the client allows duplicate
+// names): relative to the sealed object, at any depth, for a wrong type, a
+// syntax error, and an unknown tag inside.
+func TestSealedErrorsArePlacedAlikeOnBothReads(t *testing.T) {
+	whole := json.JoinOptions(fastShapes.JSONOptions(), jsontext.AllowDuplicateNames(true))
+	where := func(err error) string {
+		var se *json.SemanticError
+		var xe *jsontext.SyntacticError
+		switch {
+		case errors.As(err, &se):
+			return fmt.Sprintf("semantic %d %q", se.ByteOffset, se.JSONPointer)
+		case errors.As(err, &xe):
+			return fmt.Sprintf("syntactic %d %q", xe.ByteOffset, xe.JSONPointer)
+		}
+		return fmt.Sprintf("%T %v", err, err)
+	}
+	for _, body := range []string{
+		`{"kind":"circle","r":"x"}`,
+		`{"kind":"square","side":1,"inner":{"kind":"circle","r":"x"}}`,
+		`{"kind":"square","side":1,"inner":{"kind":"square","side":1,"inner":{"kind":"circle","r":"x"}}}`,
+		`{"kind":"square","side":1,"inner":{"kind":"circle","r":1,}}`,
+		`{"kind":"square","side":1,"inner":{"kind":"hexagon"}}`,
+		`{"kind":"square","side":1,"inner":[]}`,
+		`[{"kind":"square","side":1,"inner":{"kind":"circle","r":"x"}}]`,
+	} {
+		var one, two []fastShape
+		data := body
+		if body[0] != '[' {
+			data = "[" + body + "]"
+		}
+		e1 := json.Unmarshal([]byte(data), &one, fastShapes.JSONOptions())
+		e2 := json.Unmarshal([]byte(data), &two, whole)
+		if e1 == nil || e2 == nil || where(e1) != where(e2) {
+			t.Errorf("%s:\n one pass %s\n whole    %s", body, where(e1), where(e2))
+		}
 	}
 }
 
