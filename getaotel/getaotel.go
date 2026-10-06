@@ -9,6 +9,10 @@
 //
 //   - the span name and http.route come from [geta.Matched], never the raw
 //     path, so both stay low-cardinality;
+//   - what a client chooses is not recorded as fact: no url.path (the raw
+//     path), server.address and server.port only from [WithServerName] (not
+//     the Host header), and client.address from the connection's peer (not
+//     X-Forwarded-For);
 //   - QUERY is recorded as QUERY, where otelhttp would write _OTHER;
 //   - a protocol switch is recorded as 101;
 //   - the middleware is ordered at [geta.OrderObserve].
@@ -53,6 +57,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 
 	"github.com/koji-1009/geta"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
@@ -69,9 +74,18 @@ import (
 type Option func(*config)
 
 type config struct {
-	tp trace.TracerProvider
-	mp metric.MeterProvider
-	pr propagation.TextMapPropagator
+	tp     trace.TracerProvider
+	mp     metric.MeterProvider
+	pr     propagation.TextMapPropagator
+	server string
+}
+
+// WithServerName sets server.address and server.port on the span and the
+// metrics, such as "api.example.com" or "api.example.com:8443". Without it
+// they carry no server name: the request's Host is the client's to choose,
+// and each distinct value would start a new metric series.
+func WithServerName(name string) Option {
+	return func(c *config) { c.server = name }
 }
 
 // WithTracerProvider sets where spans go. The default is the global
@@ -130,10 +144,13 @@ func Middleware(opts ...Option) geta.Middleware {
 	return geta.Ordered(geta.OrderObserve, func(next http.Handler) http.Handler {
 		inner := instrument(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			s := switched(w)
-			// The chain sees the pattern geta gave the request.
-			r.Pattern = s.pattern
+			// The chain sees the request as it arrived.
+			r.Pattern, r.URL, r.Host = s.pattern, s.url, s.host
+			peer(r)
 			abort, p := serve(next, w, r)
 			served(r)
+			// otelhttp reads the metrics' server.address from r.Host.
+			r.Host = c.server
 			switch {
 			case p != nil:
 				panicked(w, r, s, p)
@@ -146,15 +163,19 @@ func Middleware(opts ...Option) geta.Middleware {
 			}
 		}))
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			s := &switcher{ResponseWriter: w, pattern: r.Pattern}
+			s := &switcher{ResponseWriter: w, pattern: r.Pattern, url: r.URL, host: r.Host}
 			// served leaves the method here for queryMeters.
 			r = r.WithContext(context.WithValue(r.Context(), servedKey{}, new(servedMethod)))
-			if r.Pattern != "" {
-				// otelhttp would record the arrival or ServeMux pattern as the
-				// route at span start, and it cannot be removed later. served
-				// records the operation's route instead.
-				r.Pattern = "" // r is already a copy
-			}
+			// otelhttp records at span start what it is given, and what it
+			// records cannot be removed later. It is given no pattern (served
+			// records the operation's route instead), no path (url.path would
+			// carry the raw one), and the server name as the Host. r is
+			// already a copy.
+			r.Pattern = ""
+			u := *r.URL
+			u.Path, u.RawPath = "", ""
+			r.URL = &u
+			r.Host = c.server
 			inner.ServeHTTP(s, r)
 			switch {
 			case s.panic != nil:
@@ -272,6 +293,20 @@ func served(r *http.Request) {
 	span.SetName(spanName("", r))
 }
 
+// peer sets client.address to the connection's peer where otelhttp took it
+// from X-Forwarded-For, which any client can send. An application behind a
+// proxy it trusts can set client.address itself.
+func peer(r *http.Request) {
+	if r.Header.Get("X-Forwarded-For") == "" {
+		return
+	}
+	addr := r.RemoteAddr
+	if host, _, err := net.SplitHostPort(addr); err == nil {
+		addr = host
+	}
+	trace.SpanFromContext(r.Context()).SetAttributes(semconv.ClientAddress(addr))
+}
+
 // spanName is "METHOD /template" for a request served by an operation, and
 // the method alone otherwise. The raw path is never used.
 func spanName(_ string, r *http.Request) string {
@@ -297,7 +332,10 @@ type switcher struct {
 	aborted  bool        // the response was aborted: nothing more reaches it
 	panic    *panicValue // the handler panicked: nothing more reaches it
 	wrote    bool        // the status went out
-	pattern  string
+	// The request's pattern, URL, and Host as they arrived.
+	pattern string
+	url     *url.URL
+	host    string
 }
 
 func (s *switcher) WriteHeader(code int) {
