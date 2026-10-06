@@ -241,6 +241,36 @@ func TestListViolationsBoundsTheWrittenArray(t *testing.T) {
 	}
 }
 
+// A problem lists maxViolations violations whole, and from one more on counts
+// the rest as omitted.
+func TestListViolationsBoundsTheCount(t *testing.T) {
+	for n, want := range map[int]int{maxViolations: 0, maxViolations + 1: 1} {
+		errs := make([]Violation, n)
+		for i := range errs {
+			errs[i] = Violation{In: "query", Path: "q", Message: "m"}
+		}
+		listed, omitted := listViolations(errs, 0)
+		if len(listed) != maxViolations || omitted != want {
+			t.Errorf("%d violations: %d listed, %d omitted", n, len(listed), omitted)
+		}
+	}
+}
+
+// A request's value of maxValueBytes is quoted whole, and one byte more is
+// cut; a response's value is whole whatever its length.
+func TestARequestsValueIsQuotedUpToTheBound(t *testing.T) {
+	at := strings.Repeat("a", maxValueBytes)
+	if got := (&decoder{}).value(at); got != at {
+		t.Errorf("%d bytes: %q", len(at), got)
+	}
+	if got := (&decoder{}).value(at + "b"); got != at+pathMark {
+		t.Errorf("%d bytes: %q", len(at)+1, got)
+	}
+	if got := (&decoder{written: true}).value(at + "b"); got != at+"b" {
+		t.Errorf("a response's: %q", got)
+	}
+}
+
 // refClip is clip's reference: the longest prefix of s, in n bytes or
 // fewer, that splits no rune, a byte of invalid UTF-8 counting as one of its
 // own, and "…"; s itself if it fits.

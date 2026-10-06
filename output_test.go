@@ -105,6 +105,21 @@ func TestLargeBodiesStream(t *testing.T) {
 	}
 }
 
+// A body of exactly MaxResponseBuffer bytes has its Content-Length; one byte
+// more is streamed without it.
+func TestResponseBufferBoundary(t *testing.T) {
+	body := largeOf(512, false)
+	n := do(t, largeApp(t, body, 1<<20), http.MethodGet, "/x").Body.Len()
+	if rec := do(t, largeApp(t, body, n), http.MethodGet, "/x"); rec.Header().Get("Content-Length") != strconv.Itoa(n) {
+		t.Fatalf("limit %d: %v", n, rec.Header())
+	}
+	rec := do(t, largeApp(t, body, n-1), http.MethodGet, "/x")
+	if rec.Code != 200 || rec.Header().Get("Content-Length") != "" {
+		t.Fatalf("limit %d: %d %v", n-1, rec.Code, rec.Header())
+	}
+	wantJSON(t, rec.Body.Bytes(), body)
+}
+
 type badText struct{}
 
 func (badText) MarshalText() ([]byte, error) { return nil, errors.New("no text") }

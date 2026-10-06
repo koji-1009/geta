@@ -307,6 +307,30 @@ func TestMultipartMemoryBoundsTheTotal(t *testing.T) {
 	}
 }
 
+// The total's boundary: two files of MaxMultipartMemory bytes in all stay in
+// memory, and one byte more sends the second to a temporary file.
+func TestMultipartMemoryBoundary(t *testing.T) {
+	for second, want := range map[string]int{"def": 0, "defg": 1} {
+		dir := t.TempDir()
+		t.Setenv("TMPDIR", dir)
+		limits := geta.DefaultLimits
+		limits.MaxMultipartMemory = 6
+		held := -1
+		h := func(ctx context.Context, in *uploadIn) (*echoed, error) {
+			entries, _ := os.ReadDir(dir)
+			held = len(entries)
+			return echoUpload(ctx, in)
+		}
+		c := getatest.New(t, one("/m", geta.Route{Post: geta.Op(http.StatusOK, h, geta.Doc{})}), geta.WithLimits(limits))
+		got(t, c.Multipart(http.MethodPost, "/m", url.Values{"title": {"t"}},
+			getatest.FilePart{Field: "avatar", Filename: "a", Content: []byte("abc")},
+			getatest.FilePart{Field: "extra", Filename: "b", Content: []byte(second)}))
+		if held != want {
+			t.Errorf("%d bytes in all: %d files on disk; want %d", 3+len(second), held, want)
+		}
+	}
+}
+
 // What an operation's Doc.Limits returns is refused as WithLimits is: a
 // MaxBodyBytes, MaxStringLength, or MaxDepth below 1; MaxMultipartMemory
 // and MaxResponseBuffer may be zero.

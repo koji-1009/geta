@@ -60,12 +60,22 @@ func TestStreamsEndWhenTheServerDrains(t *testing.T) {
 	}
 }
 
+// listenOn makes Run listen on l, whatever the address.
+func listenOn(t *testing.T, l net.Listener) {
+	saved := listen
+	t.Cleanup(func() { listen = saved })
+	listen = func(string, string) (net.Listener, error) { return l, nil }
+}
+
+// Run serving stops when its context ends, and returns nil.
 func TestRunStopsWhenItsContextEnds(t *testing.T) {
+	l := newPipeListener()
+	listenOn(t, l)
 	ctx, cancel := context.WithCancel(context.Background())
-	srv := &http.Server{Addr: "127.0.0.1:0", Handler: http.NotFoundHandler()}
+	srv := &http.Server{Handler: http.NotFoundHandler()}
 	done := make(chan error, 1)
 	go func() { done <- Run(ctx, srv) }()
-	time.Sleep(50 * time.Millisecond)
+	l.dial(t).Close() // Run is serving
 	cancel()
 	select {
 	case err := <-done:
@@ -74,6 +84,35 @@ func TestRunStopsWhenItsContextEnds(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("Run did not return")
+	}
+}
+
+// OPTIONS * reaches the handler through Run, where net/http would otherwise
+// answer it itself; TestOptionsAsteriskThroughARealServer covers Serve.
+func TestRunPassesOptionsAsteriskOn(t *testing.T) {
+	l := newPipeListener()
+	listenOn(t, l)
+	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.RequestURI == "*" {
+			w.WriteHeader(http.StatusTeapot)
+		}
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- Run(ctx, &http.Server{Handler: h}) }()
+	c := l.dial(t)
+	if _, err := io.WriteString(c, "OPTIONS * HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n"); err != nil {
+		t.Fatal(err)
+	}
+	res, err := http.ReadResponse(bufio.NewReader(c), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
+	c.Close()
+	cancel()
+	if err := <-done; err != nil || res.StatusCode != http.StatusTeapot {
+		t.Fatal(res.StatusCode, err)
 	}
 }
 

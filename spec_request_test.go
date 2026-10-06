@@ -488,6 +488,10 @@ func TestJSONBodyRulesOverHTTP(t *testing.T) {
 			t.Errorf("%s:\n got %q\nwant %q", body, got, want)
 		}
 	}
+	// A map at its ceiling of members is read.
+	if res := c.Post("/i", srWith("map", `{"a":1,"b":2}`)); res.Status != 200 {
+		t.Fatal(res.Status, res.Text())
+	}
 	// Unknown members are listed sorted, after the declared members'
 	// violations.
 	same(t, violations(t, c.Post("/i", `{"zz":1,"name":7,"b":2,"Plain":"p","list":[1],"small":1,"f32":1,"f64":1,"map":{},"notes":{}}`)),
