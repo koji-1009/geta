@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -110,11 +111,18 @@ type harness struct {
 
 func serve(t *testing.T, tb geta.Table, opts ...geta.Option) *harness {
 	t.Helper()
+	return serveWith(t, tb, nil, opts...)
+}
+
+// serveWith is serve with options for the middleware.
+func serveWith(t *testing.T, tb geta.Table, otelOpts []getaotel.Option, opts ...geta.Option) *harness {
+	t.Helper()
 	h := &harness{t: t, ended: make(chan sdktrace.ReadOnlySpan, 16), rec: tracetest.NewSpanRecorder(), reader: sdkmetric.NewManualReader()}
 	tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(h.rec), sdktrace.WithSpanProcessor(ending{h.ended}))
 	mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(h.reader))
-	tb.Root = append(geta.Scope{getaotel.Middleware(getaotel.WithTracerProvider(tp), getaotel.WithMeterProvider(mp),
-		getaotel.WithPropagators(propagation.TraceContext{}))}, tb.Root...)
+	otelOpts = append([]getaotel.Option{getaotel.WithTracerProvider(tp), getaotel.WithMeterProvider(mp),
+		getaotel.WithPropagators(propagation.TraceContext{})}, otelOpts...)
+	tb.Root = append(geta.Scope{getaotel.Middleware(otelOpts...)}, tb.Root...)
 	h.c = getatest.New(t, tb, append([]geta.Option{geta.WithLogger(slog.New(slog.DiscardHandler))}, opts...)...)
 	return h
 }
@@ -285,6 +293,63 @@ func TestAMatchedOperationIsNamedByItsTemplate(t *testing.T) {
 	method, _ := sets[0].Value("http.request.method")
 	if route.AsString() != "/users/{id}" || code.AsInt64() != 200 || method.AsString() != "GET" {
 		t.Fatal(sets[0].Encoded(attribute.DefaultEncoder()))
+	}
+}
+
+// What the client chooses is not recorded: neither the raw path nor the Host
+// nor X-Forwarded-For reaches the span or the metrics, and two Hosts are one
+// series. The handler still sees the request as it arrived.
+func TestWhatTheClientChoosesIsNotRecorded(t *testing.T) {
+	for _, server := range []string{"", "api.example:8443"} {
+		var seen []string
+		tb := table(nil)
+		tb.Root = geta.Scope{geta.Use(func(next http.Handler) http.Handler {
+			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				seen = append(seen, r.Host+r.URL.Path)
+				next.ServeHTTP(w, r)
+			})
+		})}
+		var opts []getaotel.Option
+		if server != "" {
+			opts = append(opts, getaotel.WithServerName(server))
+		}
+		h := serveWith(t, tb, opts)
+		for _, host := range []string{"a.example", "b.example"} {
+			req, err := http.NewRequest(http.MethodGet, h.c.URL()+"/users/"+host, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			req.Host = host
+			req.Header.Set("X-Forwarded-For", "203.0.113.9")
+			if res := h.c.Send(req); res.Status != 200 {
+				t.Fatal(res.Status)
+			}
+			s := h.span()
+			for _, kv := range s.Attributes() {
+				if v := kv.Value.Emit(); strings.Contains(v, host) || strings.Contains(v, "203.0.113.9") {
+					t.Errorf("span attribute %v", kv)
+				}
+			}
+			if v, _ := attr(s, "server.address"); v.AsString() != strings.Split(server, ":")[0] {
+				t.Errorf("server.address %q", v.AsString())
+			}
+			client, _ := attr(s, "client.address")
+			if peer, _ := attr(s, "network.peer.address"); client.AsString() == "" || client.AsString() != peer.AsString() {
+				t.Errorf("client.address %q, peer %q", client.AsString(), peer.AsString())
+			}
+		}
+		if want := []string{"a.example/users/a.example", "b.example/users/b.example"}; !slices.Equal(seen, want) {
+			t.Errorf("the chain saw %q", seen)
+		}
+		sets := h.durations()
+		if len(sets) != 1 {
+			t.Fatalf("server %q: %d duration series", server, len(sets))
+		}
+		addr, _ := sets[0].Value("server.address")
+		port, hasPort := sets[0].Value("server.port")
+		if addr.AsString() != strings.Split(server, ":")[0] || hasPort != (server != "") || hasPort && port.AsInt64() != 8443 {
+			t.Errorf("server %q: %s", server, sets[0].Encoded(attribute.DefaultEncoder()))
+		}
 	}
 }
 
