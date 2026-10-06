@@ -3,6 +3,7 @@ package geta_test
 import (
 	"bufio"
 	"context"
+	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -213,6 +214,59 @@ func TestEachAssemblyMistakeIsReportedOnce(t *testing.T) {
 	for _, f := range []string{`path "users" does not start with /`, `"/a/./b"`, "/x: the route serves no method"} {
 		if n := strings.Count(err.Error(), f); n != 1 {
 			t.Errorf("%q reported %d times:\n%v", f, n, err)
+		}
+	}
+	// A root scope's or a shared directory scope's mistake, which every
+	// chain through it repeats, is reported once, where New meets it first.
+	log := quietLogger()
+	dir := geta.Scope{geta.Timeout(0)}
+	_, err = geta.New(geta.Table{Root: geta.Scope{geta.Recover(log), geta.AccessLog(log)}, Routes: []geta.Entry{
+		{Path: "/a", Route: get(okHandler), Scopes: []geta.Scope{dir}},
+		{Path: "/b", Route: get(okHandler), Scopes: []geta.Scope{dir}},
+	}})
+	for _, f := range []string{"runs after recover(3000) but has a lower order", "geta.Timeout 0s is not positive"} {
+		if n := strings.Count(fmt.Sprint(err), f); n != 1 {
+			t.Errorf("%q reported %d times:\n%v", f, n, err)
+		}
+	}
+}
+
+// geta.New reports every mistake at once: each middleware of a scope, an
+// operation's own scope and BeforeGate beside its failure rows, and the
+// operation's other mistakes.
+func TestEveryAssemblyMistakeIsReportedAtOnce(t *testing.T) {
+	_, err := geta.New(geta.Table{Routes: []geta.Entry{{Path: "/a", Route: geta.Route{Get: geta.Op(http.StatusOK, okHandler, geta.Doc{
+		Scope: geta.Scope{geta.Timeout(0)}, BeforeGate: geta.Scope{geta.ConcurrencyLimit(0)}, Failures: []geta.Failure{{}},
+	})}}}})
+	for _, want := range []string{"geta.Timeout 0s is not positive", "geta.ConcurrencyLimit 0 is less than 1", "zero geta.Failure"} {
+		if !strings.Contains(fmt.Sprint(err), want) {
+			t.Errorf("missing %q:\n%v", want, err)
+		}
+	}
+	_, err = geta.New(geta.Table{Root: geta.Scope{geta.ConcurrencyLimit(0), geta.Timeout(0)}})
+	for _, want := range []string{"ConcurrencyLimit 0", "Timeout 0s"} {
+		if !strings.Contains(fmt.Sprint(err), want) {
+			t.Errorf("root: missing %q:\n%v", want, err)
+		}
+	}
+}
+
+// A nil option, a zero Union, and a nil handler are assembly mistakes, not
+// panics.
+func TestNilAndZeroArgumentsAreRefused(t *testing.T) {
+	var h func(context.Context, *empty) (*ok, error)
+	for name, c := range map[string]struct {
+		tbl  geta.Table
+		opts []geta.Option
+		want string
+	}{
+		"nil option":  {geta.Table{}, []geta.Option{nil}, "option 0 is nil"},
+		"zero union":  {geta.Table{}, []geta.Option{geta.WithUnion(geta.Union{})}, "a zero geta.Union"},
+		"nil handler": {one("/x", geta.Route{Get: geta.Op(http.StatusOK, h, geta.Doc{})}), nil, "the handler is nil"},
+		"nil no-body": {one("/x", geta.Route{Delete: geta.OpNoBody[empty](http.StatusNoContent, nil, geta.Doc{})}), nil, "the handler is nil"},
+	} {
+		if _, err := geta.New(c.tbl, c.opts...); err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("%s: %v", name, err)
 		}
 	}
 }

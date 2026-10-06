@@ -2,6 +2,7 @@ package geta_test
 
 import (
 	"context"
+	"net/http"
 	"strings"
 	"testing"
 
@@ -41,6 +42,29 @@ func TestRecoverLogsTheMethodServed(t *testing.T) {
 	}
 	if l := buf.String(); !strings.Contains(l, "method=DELETE route=/items") {
 		t.Fatalf("log: %s", l)
+	}
+}
+
+// A response Gzip or ETag held when a panic struck is lost, and so is what
+// it set: the 500 Recover writes carries none of its headers or cookies.
+func TestAPanicBehindABufferLeavesNoOutputHeaders(t *testing.T) {
+	type out struct {
+		Session *http.Cookie `cookie:"session"`
+		Note    string       `header:"X-Note"`
+		Body    ok           `body:"json"`
+	}
+	h := func(context.Context, *empty) (*out, error) {
+		return &out{Session: &http.Cookie{Value: "s1"}, Note: "n", Body: ok{true}}, nil
+	}
+	boom := geta.Ordered(geta.Order{Rank: geta.OrderValidate.Rank + 500, Name: "boom"}, func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { next.ServeHTTP(w, r); panic("after") })
+	})
+	for name, buffering := range map[string]geta.Middleware{"Gzip": geta.Gzip(), "ETag": geta.ETag()} {
+		a := accepts(t, withRoot(one("/x", get(h)), geta.Recover(quietLogger()), buffering, boom))
+		rec := do(t, a, "GET", "/x", "Accept-Encoding", "gzip")
+		if rec.Code != 500 || len(rec.Header().Values("Set-Cookie")) > 0 || rec.Header().Get("X-Note") != "" {
+			t.Errorf("%s: %d %v", name, rec.Code, rec.Header())
+		}
 	}
 }
 

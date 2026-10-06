@@ -23,8 +23,30 @@ import (
 // rows, schemes without a verifier or a gate, duplicate operation IDs and
 // schema names, and a body on a status that has none.
 func New(t Table, opts ...Option) (*App, error) {
+	var errs []error
+	reported := map[string]bool{}
+	var fail func(error)
+	fail = func(err error) {
+		if j, ok := err.(interface{ Unwrap() []error }); ok {
+			for _, e := range j.Unwrap() {
+				fail(e)
+			}
+			return
+		}
+		if sm, ok := errors.AsType[*sharedMistake](err); ok {
+			if reported[sm.key] {
+				return
+			}
+			reported[sm.key] = true
+		}
+		errs = append(errs, err)
+	}
 	cfg := config{log: slog.Default(), limits: DefaultLimits, info: Info{Title: "API", Version: "0.0.0"}, oas: OpenAPI31}
-	for _, o := range opts {
+	for i, o := range opts {
+		if o == nil {
+			fail(fmt.Errorf("option %d is nil", i))
+			continue
+		}
 		o(&cfg)
 	}
 	a := &App{
@@ -32,8 +54,6 @@ func New(t Table, opts ...Option) (*App, error) {
 		limits: cfg.limits,
 		oas:    cfg.oas,
 	}
-	var errs []error
-	fail := func(err error) { errs = append(errs, err) }
 	if cfg.log == nil {
 		// A nil logger would turn every defect's 500 into a panic.
 		fail(errors.New("WithLogger: nil logger"))
@@ -106,17 +126,19 @@ func New(t Table, opts ...Option) (*App, error) {
 		for _, m := range methods {
 			m.op.op = m.op.op.snapshot()
 			// The operation's own scope runs innermost, for that method only.
+			// A refused scope is left out of the chain, so the operation's
+			// other mistakes are still reported.
 			opChain := chain
+			broken := false
 			if s := m.op.op.doc.Scope; len(s) > 0 {
-				if err := checkScope(s, fmt.Sprintf("%s %s: operation scope", m.method, where)); err != nil {
+				err := errors.Join(checkScope(s, fmt.Sprintf("%s %s: operation scope", m.method, where)),
+					checkBelowRoot(s, fmt.Sprintf("%s %s: operation scope", m.method, where)))
+				if err != nil {
 					fail(err)
-					continue
+					broken = true
+				} else {
+					opChain = slices.Concat(chain, s)
 				}
-				if err := checkBelowRoot(s, fmt.Sprintf("%s %s: operation scope", m.method, where)); err != nil {
-					fail(err)
-					continue
-				}
-				opChain = slices.Concat(chain, s)
 			}
 			// BeforeGate goes just before the first gate: in the root scope
 			// via the slot (rootSlot), otherwise in the route's own chain.
@@ -126,9 +148,8 @@ func New(t Table, opts ...Option) (*App, error) {
 			if len(before) > 0 {
 				if err := checkBeforeGate(before, fmt.Sprintf("%s %s: Doc.BeforeGate", m.method, where)); err != nil {
 					fail(err)
-					continue
-				}
-				if g := firstGate(t.Root); g >= 0 {
+					broken = true
+				} else if g := firstGate(t.Root); g >= 0 {
 					opChain = slices.Concat(t.Root[:g], before, t.Root[g:], routeChain)
 					slotted = true
 				} else {
@@ -140,6 +161,9 @@ func New(t Table, opts ...Option) (*App, error) {
 			op, err := a.compile(reg, e.Path, params, m, opChain)
 			if err != nil {
 				fail(err)
+				continue
+			}
+			if broken {
 				continue
 			}
 			op.routeChain = routeChain
@@ -238,30 +262,39 @@ func New(t Table, opts ...Option) (*App, error) {
 	return a, nil
 }
 
+// checkScope returns the construction mistakes of every middleware of s,
+// each a sharedMistake of s: the entries s is shared by repeat them.
 func checkScope(s Scope, where string) error {
+	var errs []error
 	for i, m := range s {
-		if m.bad != nil {
-			return fmt.Errorf("%s: middleware %d (%s): %w", where, i, m.name, m.bad)
+		shared := func(err error) {
+			errs = append(errs, &sharedMistake{key: fmt.Sprintf("scope %p middleware %d", &s[0], i), err: err})
 		}
-		if m.fn == nil {
-			return fmt.Errorf("%s: middleware %d is the zero geta.Middleware", where, i)
-		}
-		if err := m.checkHeaders(); err != nil {
-			return fmt.Errorf("%s: middleware %d (%s): %w", where, i, m.name, err)
+		switch {
+		case m.bad != nil:
+			shared(fmt.Errorf("%s: middleware %d (%s): %w", where, i, m.name, m.bad))
+		case m.fn == nil:
+			shared(fmt.Errorf("%s: middleware %d is the zero geta.Middleware", where, i))
+		default:
+			if err := m.checkHeaders(); err != nil {
+				shared(fmt.Errorf("%s: middleware %d (%s): %w", where, i, m.name, err))
+			}
 		}
 	}
-	return nil
+	return errors.Join(errs...)
 }
 
 // checkBelowRoot refuses a root-only middleware in a scope below the root
-// (a directory's, a Doc.Scope, a Doc.BeforeGate).
+// (a directory's, a Doc.Scope, a Doc.BeforeGate), naming every one.
 func checkBelowRoot(s Scope, where string) error {
+	var errs []error
 	for i, m := range s {
 		if m.root != "" {
-			return fmt.Errorf("%s: middleware %d (%s) works only in the root scope: %s", where, i, m.name, m.root)
+			errs = append(errs, &sharedMistake{key: fmt.Sprintf("scope %p root-only %d", &s[0], i),
+				err: fmt.Errorf("%s: middleware %d (%s) works only in the root scope: %s", where, i, m.name, m.root)})
 		}
 	}
-	return nil
+	return errors.Join(errs...)
 }
 
 // rootGated reports whether a gate in root has a scheme to check for an
@@ -356,17 +389,27 @@ func parsePath(p string) ([]string, error) {
 	return params, nil
 }
 
+// compile checks and plans one operation. It reports every mistake it can
+// tell apart, skipping only the checks that depend on a part that failed.
 func (a *App) compile(reg *registry, path string, params []string, m methodOp, chain []Middleware) (*compiledOp, error) {
 	op := m.op.op
 	where := fmt.Sprintf("%s %s (%s)", m.method, path, op.site)
 	c := &compiledOp{method: m.method, path: path, op: op, chain: chain, app: a, limits: a.limits}
+	var errs []error
+	bad := func(format string, args ...any) {
+		errs = append(errs, fmt.Errorf("%s: "+format, append([]any{where}, args...)...))
+	}
+	if op.noFunc {
+		bad("the handler is nil")
+	}
 	if err := op.doc.checkText(); err != nil {
-		return nil, fmt.Errorf("%s: %w", where, err)
+		bad("%w", err)
 	}
 	if op.doc.Limits != nil {
 		c.limits = op.doc.Limits(a.limits)
 		if err := c.limits.check(); err != nil {
-			return nil, fmt.Errorf("%s: Doc.Limits: %w", where, err)
+			bad("Doc.Limits: %w", err)
+			c.limits = a.limits
 		}
 	}
 	// Plan the input under the operation's own limits.
@@ -375,99 +418,109 @@ func (a *App) compile(reg *registry, path string, params []string, m methodOp, c
 	defer func() { reg.limits = appLimits }()
 	// A 3.1 document has no field for QUERY.
 	if _, known := openAPIVersions[a.oas]; known && m.method == MethodQuery && !a.features.queryOperation {
-		return nil, fmt.Errorf("%s: OpenAPI %s has no QUERY operation; use geta.OpenAPI32", where, a.oas)
+		bad("OpenAPI %s has no QUERY operation; use geta.OpenAPI32", a.oas)
 	}
-	in, err := reg.inPlan(op.in)
-	if err != nil {
-		return nil, fmt.Errorf("%s: %w", where, err)
-	}
-	c.in = in
-	if in.body != nil || in.form != nil || in.raw != nil {
-		if err := checkMethodBody(m.method); err != nil {
-			return nil, fmt.Errorf("%s: %w", where, err)
+	if in, err := reg.inPlan(op.in); err != nil {
+		bad("%w", err)
+	} else {
+		c.in = in
+		if in.body != nil || in.form != nil || in.raw != nil {
+			if err := checkMethodBody(m.method); err != nil {
+				bad("%w", err)
+			}
 		}
-	}
-	if in.body != nil {
-		in.body.method = m.method
-		// Types in a request body must be readable, not only writable.
-		if err := reg.checkRead(in.body.c); err != nil {
-			return nil, fmt.Errorf("%s: %w", where, err)
+		if in.body != nil {
+			in.body.method = m.method
+			// Types in a request body must be readable, not only writable.
+			if err := reg.checkRead(in.body.c); err != nil {
+				bad("%w", err)
+			}
 		}
-	}
-	if in.form != nil {
-		in.form.method = m.method
-	}
-	if in.raw != nil {
-		in.raw.method = m.method
-	}
-	bound := map[string]bool{}
-	for _, p := range in.params {
-		if p.in != "path" {
-			continue
+		if in.form != nil {
+			in.form.method = m.method
 		}
-		if !slices.Contains(params, p.name) {
-			return nil, fmt.Errorf("%s: input binds path parameter %q not in the URL", where, p.name)
+		if in.raw != nil {
+			in.raw.method = m.method
 		}
-		bound[p.name] = true
-	}
-	for _, p := range params {
-		if !bound[p] {
-			return nil, fmt.Errorf("%s: input does not bind path parameter {%s}", where, p)
+		bound := map[string]bool{}
+		for _, p := range in.params {
+			if p.in != "path" {
+				continue
+			}
+			if !slices.Contains(params, p.name) {
+				bad("input binds path parameter %q not in the URL", p.name)
+			}
+			bound[p.name] = true
+		}
+		for _, p := range params {
+			if !bound[p] {
+				bad("input does not bind path parameter {%s}", p)
+			}
 		}
 	}
 	var outType reflect.Type
 	if op.out != nil {
 		outType = op.out
 	}
-	out, err := reg.outPlan(outType)
-	if err != nil {
-		return nil, fmt.Errorf("%s: %w", where, err)
-	}
-	c.out = out
-	if err := checkStatus(op.status, out, outType); err != nil {
-		return nil, fmt.Errorf("%s: %w", where, err)
+	if out, err := reg.outPlan(outType); err != nil {
+		bad("%w", err)
+	} else {
+		c.out = out
+		if err := checkStatus(op.status, out, outType); err != nil {
+			bad("%w", err)
+		}
 	}
 	c.rows = make([]*problemPlan, len(op.doc.Failures))
+	rowsBad := false
 	for i, f := range op.doc.Failures {
 		if err := f.check(); err != nil {
-			return nil, fmt.Errorf("%s: failure row %d: %w", where, i, err)
+			bad("failure row %d: %w", i, err)
+			rowsBad = true
+			continue
 		}
 		if f.describe != nil {
 			pp, err := reg.problemPlan(f.describe.t)
 			if err != nil {
-				return nil, fmt.Errorf("%s: failure row %d (%s): %w", where, i, f.label, err)
+				bad("failure row %d (%s): %w", i, f.label, err)
+				rowsBad = true
+				continue
 			}
 			c.rows[i] = pp
 		}
 	}
-	if err := c.checkRowHeaders(); err != nil {
-		return nil, fmt.Errorf("%s: %w", where, err)
+	if !rowsBad {
+		if err := c.checkRowHeaders(); err != nil {
+			bad("%w", err)
+		}
 	}
 	if err := checkOrder(chain, m.method+" "+path); err != nil {
-		return nil, err
+		errs = append(errs, err)
 	}
 	if err := checkDocTimeout(op.doc.Timeout); err != nil {
-		return nil, fmt.Errorf("%s: %w", where, err)
+		bad("%w", err)
 	}
-	switch t := op.doc.Timeout; {
-	case t > 0 && !slices.ContainsFunc(chain, func(m Middleware) bool { return m.timeout }):
-		return nil, fmt.Errorf("%s: Doc.Timeout %v, but the chain has no geta.Timeout", where, t)
+	if t := op.doc.Timeout; t > 0 && !slices.ContainsFunc(chain, func(m Middleware) bool { return m.timeout }) {
+		bad("Doc.Timeout %v, but the chain has no geta.Timeout", t)
 	}
 	c.window = chainWindow(chain, op.doc.Timeout)
-	reqs, err := checkSecurity(op.doc.Security, chain)
-	if err != nil {
-		return nil, fmt.Errorf("%s: %w", where, err)
+	if reqs, err := checkSecurity(op.doc.Security, chain); err != nil {
+		bad("%w", err)
+	} else if len(errs) == 0 {
+		// The rest reads the plans and rows checked above.
+		c.require(reqs)
+		// After require, so a gate that requires nothing declares nothing.
+		if err := c.checkMiddlewareHeaders(); err != nil {
+			bad("%w", err)
+		}
+		if err := c.planScopes(op.doc.Security); err != nil {
+			bad("%w", err)
+		}
+		if err := c.planDeprecation(); err != nil {
+			bad("%w", err)
+		}
 	}
-	c.require(reqs)
-	// After require, so a gate that requires nothing declares nothing.
-	if err := c.checkMiddlewareHeaders(); err != nil {
-		return nil, fmt.Errorf("%s: %w", where, err)
-	}
-	if err := c.planScopes(op.doc.Security); err != nil {
-		return nil, fmt.Errorf("%s: %w", where, err)
-	}
-	if err := c.planDeprecation(); err != nil {
-		return nil, fmt.Errorf("%s: %w", where, err)
+	if len(errs) > 0 {
+		return nil, errors.Join(errs...)
 	}
 	if c.deprecated != nil {
 		a.deprecates = true
@@ -522,8 +575,8 @@ func (c *compiledOp) planScopes(declared []Scheme) error {
 					i, m.name, sc.scheme.Name)
 			}
 			if !required.equal(sc.scheme) {
-				return fmt.Errorf("middleware %d (%s) defines scheme %q as %+v, but the gate defines it as %+v",
-					i, m.name, sc.scheme.Name, sc.scheme, *required)
+				return fmt.Errorf("middleware %d (%s) defines scheme %q as %s, but the gate defines it as %s",
+					i, m.name, sc.scheme.Name, sc.scheme.describe(), required.describe())
 			}
 			if required.Type == "oauth2" {
 				for _, s := range sc.scopes {
@@ -700,14 +753,16 @@ func checkSecurity(declared []Scheme, chain []Middleware) ([][]Scheme, error) {
 // cannot verify.
 func checkScheme(s Scheme, gates []*Policy) error {
 	if s.Name == "" || s.Type == "" {
-		return fmt.Errorf("security scheme %+v has no Name or Type", s)
+		return fmt.Errorf("security scheme %s has no Name or Type", s.describe())
 	}
 	if err := s.check(); err != nil {
 		return fmt.Errorf("security scheme %q: %w", s.Name, err)
 	}
 	for _, g := range gates {
 		if g.Verifiers[s.Name] == nil {
-			return fmt.Errorf("requires scheme %q, but the gate's policy has no verifier for it", s.Name)
+			// Every chain through the gate repeats it.
+			msg := fmt.Sprintf("requires scheme %q, but the gate's policy has no verifier for it", s.Name)
+			return &sharedMistake{key: fmt.Sprintf("gate %p: %s", g, msg), err: errors.New(msg)}
 		}
 	}
 	return nil

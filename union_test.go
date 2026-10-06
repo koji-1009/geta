@@ -154,6 +154,113 @@ func TestSealedTypeOutputDefects(t *testing.T) {
 	}
 }
 
+type sqShape interface{ isSQShape() }
+
+type sqSquare struct {
+	Kind string `json:"kind"`
+	Side int    `json:"side"`
+}
+
+func (sqSquare) isSQShape() {}
+
+type sqCircle struct {
+	Kind string `json:"kind"`
+	R    int    `json:"r"`
+}
+
+func (sqCircle) isSQShape() {}
+
+type sqTri struct {
+	Kind string `json:"kind"`
+}
+
+func (sqTri) isSQShape() {}
+
+// sqPlain implements sqShape but is no variant of it.
+type sqPlain struct {
+	N int `json:"n"`
+}
+
+func (sqPlain) isSQShape() {}
+
+type sqA interface{ isSQA() }
+type sqB interface{ isSQB() }
+
+// sqBoth is a variant of sqA and implements sqB, of which it is no variant.
+type sqBoth struct {
+	Kind string `json:"kind"`
+}
+
+func (sqBoth) isSQA() {}
+func (sqBoth) isSQB() {}
+
+type sqOnlyB struct {
+	Kind string `json:"kind"`
+}
+
+func (sqOnlyB) isSQB() {}
+
+// A type the App names in its own right is written as itself wherever it
+// implements a sealed type: a struct field's type, and a variant of one
+// sealed type that implements another; alike on every assembly.
+func TestSealedTypesWriteWhatTheAppNames(t *testing.T) {
+	type plainOut struct {
+		Main  sqShape `json:"main"`
+		Plain sqPlain `json:"plain"`
+	}
+	app := newApp(t, geta.Table{Routes: []geta.Entry{{Path: "/x", Route: get(func(context.Context, *empty) (*plainOut, error) {
+		return &plainOut{Main: sqSquare{Kind: "square", Side: 2}, Plain: sqPlain{1}}, nil
+	})}}}, geta.WithUnion(geta.Sealed[sqShape]("kind", geta.Case[sqSquare]("square"))))
+	if rec := do(t, app, "GET", "/x"); rec.Code != 200 || rec.Body.String() != `{"main":{"kind":"square","side":2},"plain":{"n":1}}` {
+		t.Fatalf("%d %s", rec.Code, rec.Body)
+	}
+	type twoOut struct {
+		A sqA `json:"a"`
+		B sqB `json:"b"`
+	}
+	for range 20 {
+		app := newApp(t, geta.Table{Routes: []geta.Entry{{Path: "/x", Route: get(func(context.Context, *empty) (*twoOut, error) {
+			return &twoOut{A: sqBoth{"a"}, B: sqOnlyB{"b"}}, nil
+		})}}}, geta.WithUnion(geta.Sealed[sqA]("kind", geta.Case[sqBoth]("a")), geta.Sealed[sqB]("kind", geta.Case[sqOnlyB]("b"))))
+		if rec := do(t, app, "GET", "/x"); rec.Code != 200 || rec.Body.String() != `{"a":{"kind":"a"},"b":{"kind":"b"}}` {
+			t.Fatalf("%d %s", rec.Code, rec.Body)
+		}
+	}
+}
+
+// Sealed copies its variants: changing the slice it was given changes
+// neither the document nor what a request may hold.
+func TestSealedKeepsItsVariants(t *testing.T) {
+	vs := []geta.Variant{geta.Case[sqSquare]("square"), geta.Case[sqCircle]("circle")}
+	u := geta.Sealed[sqShape]("kind", vs...)
+	vs[1] = geta.Case[sqTri]("tri")
+	type in struct {
+		Body sqShape `body:"json"`
+	}
+	app := newApp(t, geta.Table{Routes: []geta.Entry{{Path: "/x", Route: post(func(context.Context, *in) (*ok, error) { return &ok{true}, nil })}}},
+		geta.WithUnion(u))
+	if strings.Contains(string(app.OpenAPI()), "sqTri") {
+		t.Error("the document lists a variant set after Sealed returned")
+	}
+	req := httptest.NewRequest(http.MethodPost, "/x", strings.NewReader(`{"kind":"circle","r":1}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	app.ServeHTTP(rec, req)
+	if rec.Code != 200 {
+		t.Fatalf("%d %s", rec.Code, rec.Body)
+	}
+}
+
+// newApp assembles tbl with opts, failing the test on a mistake.
+func newApp(t *testing.T, tbl geta.Table, opts ...geta.Option) *geta.App {
+	t.Helper()
+	a, err := geta.New(tbl, opts...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return a
+}
+
 type noKind struct {
 	Name string `json:"name"`
 }

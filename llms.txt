@@ -421,7 +421,7 @@ func (h Handler) Delete(ctx context.Context, in *DeleteIn) error {
 ### Response checks
 
 - Response bodies are checked against the schema in tests (getatest, `App.Conforms`), never at runtime.
-- At runtime, a value that cannot be written as documented gets 500. That is a sealed value that is no declared variant or that leaves a required one nil, and output of a type with its own JSON methods that is not JSON.
+- At runtime, a value that cannot be written as documented gets 500. That is a sealed value whose discriminator is not its variant's tag, one of a type that is no variant and that no input or output names, a required one left nil, and output of a type with its own JSON methods that is not JSON. A type the App names in its own right (a struct field's type, another sealed type's variant) is written as itself wherever it implements a sealed type. `geta.Sealed` copies its variants.
 - Output headers are checked at runtime. A value no header carries as written (net/http would send its CR and LF as spaces), or a float header holding NaN or an infinity, gets 500.
 
 ### Response buffering
@@ -743,7 +743,7 @@ func Scope(env Env) geta.Scope {
 
 ### CORS
 
-- `geta.CORS(geta.AllowOrigins(...))`: root scope only (OPTIONS runs the root scope alone); `geta.New` refuses it in a directory scope, `Doc.Scope`, `Doc.BeforeGate`.
+- `geta.CORS(geta.AllowOrigins(...))`: root scope only (OPTIONS runs the root scope alone); `geta.New` refuses it in a directory scope, `Doc.Scope`, `Doc.BeforeGate`. An origin is written as a browser sends it (`https://app.example`, `http://localhost:5173`); `geta.New` refuses a path, a trailing slash, upper case, or user info, which no `Origin` would match.
 - Wildcard and specific origins (`Vary: Origin` for allowed and refused), credentials (`AllowCredentials`). A preflight (QUERY's behind a gate too) needs no credentials, spends no root rate-limiter token. An unwritten response is completed as any other.
 - Preflight `Access-Control-Allow-Methods`: the path's `Allow` less HEAD and OPTIONS; none for an unserved path. `AllowMethods` only adds.
 - Preflight `Access-Control-Allow-Headers`: the asked operation's request headers: header parameters (`Conditional`'s four included), `Authorization` or an apiKey header for its schemes, `Content-Type` with a body.
@@ -1093,4 +1093,4 @@ geta ships no database layer, driver, or adapter; the database is `database/sql`
 
 ## Not in geta
 
-DI containers, string route registration, router replacement, HTTP error types, transaction middleware, WebSocket framing, static files, non-JSON negotiation, sessions, templates, config reload, automatic retries, doc UI, client generation, rate limiting. Cookie-session app needs (CSRF, client address behind proxies, idempotency keys, per-template request counts with `geta.Observe`): see `examples/bookmarks`.
+DI containers, string route registration, router replacement, HTTP error types, transaction middleware, WebSocket framing, static files, non-JSON negotiation, sessions, templates, config reload, automatic retries, doc UI, client generation, rate limiting, security headers (HSTS, Content-Security-Policy, X-Frame-Options, Referrer-Policy: a root middleware of your own sets them; geta sets only `X-Content-Type-Options: nosniff` on what it writes). Cookie-session app needs (CSRF, client address behind proxies, idempotency keys, per-template request counts with `geta.Observe`): see `examples/bookmarks`.

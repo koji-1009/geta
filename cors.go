@@ -1,10 +1,13 @@
 package geta
 
 import (
+	"bufio"
 	"errors"
 	"fmt"
 	"maps"
+	"net"
 	"net/http"
+	"net/url"
 	"slices"
 	"strconv"
 	"strings"
@@ -24,7 +27,10 @@ type corsConfig struct {
 	maxAgeSet   bool
 }
 
-// AllowOrigins lists the origins allowed; "*" allows any.
+// AllowOrigins lists the origins allowed; "*" allows any. Each other is
+// written as a browser sends it, such as "https://app.example" or
+// "http://localhost:5173": [New] refuses a path, a trailing slash, or an
+// upper-case letter, which no request's Origin would match.
 func AllowOrigins(origins ...string) CORSOption {
 	return func(c *corsConfig) { c.origins = append(c.origins, origins...) }
 }
@@ -77,8 +83,8 @@ func PreflightMaxAge(d time.Duration) CORSOption {
 // listed ones.
 //
 // [New] refuses CORS outside the root scope, since OPTIONS runs the root
-// scope alone. It also refuses no origin, "*" with [AllowCredentials], and a
-// bad [PreflightMaxAge].
+// scope alone. It also refuses no origin, an origin no browser sends, "*"
+// with [AllowCredentials], and a bad [PreflightMaxAge].
 func CORS(opts ...CORSOption) Middleware {
 	cfg := corsConfig{}
 	for _, o := range opts {
@@ -93,6 +99,11 @@ func CORS(opts ...CORSOption) Middleware {
 		bad = errors.New(`geta.CORS: "*" with credentials is forbidden by the Fetch standard`)
 	case cfg.maxAgeSet && (cfg.maxAge <= 0 || cfg.maxAge%time.Second != 0):
 		bad = fmt.Errorf("geta.CORS: PreflightMaxAge %v is not a positive whole number of seconds", cfg.maxAge)
+	}
+	for _, o := range cfg.origins {
+		if bad == nil && o != "*" && !serializedOrigin(o) {
+			bad = fmt.Errorf("geta.CORS: AllowOrigins %q is not an origin as a browser sends it: scheme://host[:port], in lower case, with no path", o)
+		}
 	}
 	m := Ordered(OrderCrossOrigin, func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -144,6 +155,14 @@ func CORS(opts ...CORSOption) Middleware {
 	m.bad = bad
 	m.root = "it answers preflights"
 	return m
+}
+
+// serializedOrigin reports whether o is an origin as a browser serializes it
+// in the Origin header (RFC 6454 §6.2), which CORS compares byte for byte.
+func serializedOrigin(o string) bool {
+	u, err := url.Parse(o)
+	return err == nil && u.Scheme != "" && u.Host != "" && u.User == nil &&
+		o == u.Scheme+"://"+u.Host && o == strings.ToLower(o)
 }
 
 // preflight returns the methods r's path serves, less HEAD and OPTIONS, and
@@ -230,6 +249,20 @@ func (c *corsWriter) Write(b []byte) (int, error) {
 		c.WriteHeader(http.StatusOK)
 	}
 	return c.ResponseWriter.Write(b)
+}
+
+// Flush completes the response first: a flush before any write sends the
+// header, which an unwrapping http.ResponseController would send past
+// complete.
+func (c *corsWriter) Flush() { _ = c.FlushError() }
+
+func (c *corsWriter) FlushError() error {
+	c.complete()
+	return http.NewResponseController(c.ResponseWriter).Flush()
+}
+
+func (c *corsWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	return http.NewResponseController(c.ResponseWriter).Hijack()
 }
 
 func (c *corsWriter) Unwrap() http.ResponseWriter { return c.ResponseWriter }

@@ -148,7 +148,14 @@ func Compress(codings ...Coding) Middleware {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			tw := &tagWriter{ResponseWriter: w, cs: cs}
 			b := newBuffer(tw)
+			returned := false
+			defer func() {
+				if !returned {
+					b.lost()
+				}
+			}()
 			next.ServeHTTP(b, cs.decodeConditions(r))
+			returned = true
 			if !b.held() {
 				return
 			}

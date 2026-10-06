@@ -3,6 +3,7 @@ package geta
 import (
 	"bufio"
 	"bytes"
+	"maps"
 	"net"
 	"net/http"
 	"strconv"
@@ -62,13 +63,26 @@ func (o *observer) Unwrap() http.ResponseWriter { return o.ResponseWriter }
 type buffer struct {
 	w       http.ResponseWriter
 	header  http.Header
+	before  http.Header // header as it was when the buffer began
 	status  int
 	body    bytes.Buffer
 	through bool // passing through: nothing is held
 }
 
 func newBuffer(w http.ResponseWriter) *buffer {
-	return &buffer{w: w, header: w.Header()}
+	return &buffer{w: w, header: w.Header(), before: w.Header().Clone()}
+}
+
+// lost puts the header back as it was when the buffer began, for a response
+// held when the handler panicked: the response is lost, and what it set,
+// such as a cookie, must not reach the 500 a Recover outside writes. It
+// does nothing once the response passed through.
+func (b *buffer) lost() {
+	if b.through {
+		return
+	}
+	clear(b.header)
+	maps.Copy(b.header, b.before)
 }
 
 func (b *buffer) Header() http.Header { return b.header }

@@ -1,6 +1,7 @@
 package geta
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"slices"
@@ -14,18 +15,13 @@ func firstGate(chain []Middleware) int {
 // checkBeforeGate returns an error for a Doc.BeforeGate holding an invalid
 // middleware, a root-only one, or a gate.
 func checkBeforeGate(s Scope, where string) error {
-	if err := checkScope(s, where); err != nil {
-		return err
-	}
-	if err := checkBelowRoot(s, where); err != nil {
-		return err
-	}
+	errs := []error{checkScope(s, where), checkBelowRoot(s, where)}
 	for i, m := range s {
 		if m.gate != nil {
-			return fmt.Errorf("%s: middleware %d is a geta.Secure gate; use Doc.Scope", where, i)
+			errs = append(errs, fmt.Errorf("%s: middleware %d is a geta.Secure gate; use Doc.Scope", where, i))
 		}
 	}
-	return nil
+	return errors.Join(errs...)
 }
 
 // rootChain returns root with a rootSlot inserted before its first gate when

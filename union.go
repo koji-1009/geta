@@ -6,8 +6,10 @@ import (
 	"encoding/json/v2"
 	"errors"
 	"fmt"
+	"maps"
 	"math"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -33,6 +35,10 @@ type Union struct {
 	cases []Variant
 	enc   *json.Marshalers
 	dec   *json.Unmarshalers
+	// marshal builds the marshaler, refusing a value of a type that is no
+	// variant only where foreign reports it to be one the App has no codec
+	// for; nil foreign refuses none (enc, for a client).
+	marshal func(foreign func(reflect.Type) bool) *json.Marshalers
 }
 
 // Sealed declares the interface type T as a sealed type with the given
@@ -43,33 +49,43 @@ type Union struct {
 // Each variant is a named struct that implements T and declares the
 // discriminator as a required string member holding its tag. A request is
 // checked against the variant its discriminator selects. A response value
-// that is not a declared variant, or whose discriminator differs from its
-// tag, is a defect.
+// whose discriminator differs from its variant's tag is a defect, and so is
+// one of a type that is no variant and that no input or output of the App
+// names. A type the App names in its own right, such as a struct field's
+// type, is written as itself wherever it implements T. Sealed copies cases.
 func Sealed[T any](discriminator string, cases ...Variant) Union {
+	cases = slices.Clone(cases)
 	u := Union{t: reflect.TypeFor[T](), disc: discriminator, cases: cases}
 	tags := map[reflect.Type]string{}
 	types := map[string]reflect.Type{}
 	for _, c := range cases {
 		tags[c.t], types[c.tag] = c.tag, c.t
 	}
-	// v2 calls this for every value implementing T. It checks the value is a
-	// declared variant carrying its own tag, then lets v2 write it.
-	u.enc = json.MarshalToFunc(func(_ *jsontext.Encoder, v T) error {
-		// v is non-nil: v2 writes a nil pointer as null without calling a
-		// marshaler, and nilUnion refuses one in a response first.
-		rv := reflect.ValueOf(v)
-		for rv.Kind() == reflect.Pointer {
-			rv = rv.Elem()
-		}
-		tag, ok := tags[rv.Type()]
-		if !ok {
-			return fmt.Errorf("%s is not a declared variant of %s", rv.Type(), u.t)
-		}
-		if got := discriminatorOf(rv, discriminator); got != tag {
-			return fmt.Errorf("%s has %s %q, but its variant's tag is %q", rv.Type(), discriminator, got, tag)
-		}
-		return errors.ErrUnsupported
-	})
+	// v2 calls this for every value implementing T, whatever the static type
+	// it is written as. It checks a variant carries its own tag, then lets
+	// v2 write it.
+	u.marshal = func(foreign func(reflect.Type) bool) *json.Marshalers {
+		return json.MarshalToFunc(func(_ *jsontext.Encoder, v T) error {
+			// v is non-nil: v2 writes a nil pointer as null without calling
+			// a marshaler, and nilUnion refuses one in a response first.
+			rv := reflect.ValueOf(v)
+			for rv.Kind() == reflect.Pointer {
+				rv = rv.Elem()
+			}
+			tag, ok := tags[rv.Type()]
+			if !ok {
+				if foreign != nil && foreign(rv.Type()) {
+					return fmt.Errorf("%s is not a declared variant of %s", rv.Type(), u.t)
+				}
+				return errors.ErrUnsupported
+			}
+			if got := discriminatorOf(rv, discriminator); got != tag {
+				return fmt.Errorf("%s has %s %q, but its variant's tag is %q", rv.Type(), discriminator, got, tag)
+			}
+			return errors.ErrUnsupported
+		})
+	}
+	u.enc = u.marshal(nil)
 	s := &sealedReader{t: u.t, disc: discriminator, types: types}
 	u.dec = json.UnmarshalFromFunc(func(dec *jsontext.Decoder, v *T) error {
 		x, err := s.read(dec)
@@ -310,6 +326,9 @@ type variantCodec struct {
 // declareUnion records a WithUnion declaration; its variants are analysed
 // when a type first reaches the interface.
 func (r *registry) declareUnion(u Union) error {
+	if u.t == nil {
+		return errors.New("WithUnion: a zero geta.Union; build one with geta.Sealed")
+	}
 	where := "geta.Sealed[" + qualified(u.t) + "]"
 	switch {
 	case u.t.Kind() != reflect.Interface:
@@ -393,11 +412,22 @@ func (r *registry) unionCodec(t reflect.Type) (*codec, error) {
 
 // unionOptions returns the marshalers and unmarshalers of every declared
 // sealed type, plus timeUnmarshaler.
+//
+// A marshaler refuses a value of a type that is no variant of its sealed
+// type only if the App has no codec for the type: one it has is written
+// where the App names it, and v2 calls every marshaler whose interface the
+// value implements. Once New returns, the codecs are read only. The order
+// is fixed, so every assembly writes alike.
 func (r *registry) unionOptions() (enc, dec json.Options) {
 	var ms []*json.Marshalers
 	us := []*json.Unmarshalers{timeUnmarshaler}
-	for _, u := range r.unions {
-		ms, us = append(ms, u.enc), append(us, u.dec)
+	foreign := func(t reflect.Type) bool {
+		_, named := r.codecs[t]
+		return !named
+	}
+	for _, t := range slices.SortedFunc(maps.Keys(r.unions), func(a, b reflect.Type) int { return strings.Compare(qualified(a), qualified(b)) }) {
+		u := r.unions[t]
+		ms, us = append(ms, u.marshal(foreign)), append(us, u.dec)
 	}
 	return json.WithMarshalers(json.JoinMarshalers(ms...)), json.WithUnmarshalers(json.JoinUnmarshalers(us...))
 }

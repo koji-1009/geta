@@ -3,7 +3,9 @@ package geta_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/koji-1009/geta"
@@ -300,10 +302,15 @@ func TestRejectsSchemeWithoutVerifier(t *testing.T) {
 	rejects(t, tbl, "GET /x", `requires scheme "bearer"`, "no verifier")
 }
 
+// A root gate's default without a verifier is the root scope's mistake,
+// reported there once, not again for each operation.
 func TestRejectsDefaultSchemeWithoutVerifier(t *testing.T) {
-	tbl := one("/x", get(okHandler))
+	tbl := geta.Table{Routes: []geta.Entry{{Path: "/x", Route: get(okHandler)}, {Path: "/y", Route: get(okHandler)}}}
 	tbl.Root = geta.Scope{geta.Secure(geta.Policy{Default: []geta.Scheme{geta.Bearer}})}
-	rejects(t, tbl, "GET /x", `requires scheme "bearer"`)
+	_, err := geta.New(tbl)
+	if msg := fmt.Sprint(err); strings.Count(msg, `requires scheme "bearer"`) != 1 || !strings.Contains(msg, "root scope: ") {
+		t.Fatal(msg)
+	}
 }
 
 func TestRejectsProtectedRouteWithoutGate(t *testing.T) {

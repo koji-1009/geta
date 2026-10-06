@@ -67,6 +67,7 @@ type operation struct {
 	out    reflect.Type // the type a *Out points to; nil for OpNoBody
 	call   func(ctx context.Context, in any) (any, error)
 	site   string // where Op was called, for assembly errors
+	noFunc bool   // Op was given a nil handler; New refuses it
 }
 
 // Doc is the documentation and the failure table of an operation.
@@ -145,7 +146,8 @@ func Op[In, Out any](status int, h func(context.Context, *In) (*Out, error), doc
 			}
 			return out, nil
 		},
-		site: caller(),
+		site:   caller(),
+		noFunc: h == nil,
 	}}
 }
 
@@ -158,7 +160,8 @@ func OpNoBody[In any](status int, h func(context.Context, *In) error, doc Doc) O
 		call: func(ctx context.Context, in any) (any, error) {
 			return nil, h(ctx, in.(*In))
 		},
-		site: caller(),
+		site:   caller(),
+		noFunc: h == nil,
 	}}
 }
 
@@ -172,7 +175,7 @@ func (op *operation) snapshot() *operation {
 	d := &c.doc
 	d.Tags = slices.Clone(d.Tags)
 	d.Failures = slices.Clone(d.Failures)
-	d.Security = slices.Clone(d.Security)
+	d.Security = cloneSchemes(d.Security)
 	d.Scope = slices.Clone(d.Scope)
 	d.BeforeGate = slices.Clone(d.BeforeGate)
 	return &c
