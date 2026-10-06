@@ -45,16 +45,20 @@ jobs:
           VERSION: ${{ github.ref_name }}
         run: |
           sha=$(git rev-parse HEAD)
+          missing=""
           for module in getaotel getavet; do
             tag="$module/$VERSION"
             if existing=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$tag" --jq .object.sha 2>/dev/null); then
-              if [ "$existing" = "$sha" ]; then
-                echo "$tag already points at $sha"
-                continue
+              if [ "$existing" != "$sha" ]; then
+                echo "::error::$tag already exists at $existing, not $sha"
+                exit 1
               fi
-              echo "::error::$tag already exists at $existing, not $sha"
-              exit 1
+              echo "$tag already points at $sha"
+            else
+              missing="$missing $tag"
             fi
+          done
+          for tag in $missing; do
             gh api "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/$tag" -f sha="$sha" --silent
             echo "created $tag at $sha"
           done

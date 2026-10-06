@@ -134,7 +134,9 @@ func (m *Memory) Book(ctx context.Context, owner string, b model.Booking) (*mode
 	}
 	rec := &record{b: b, owner: owner, version: 1}
 	m.bookings[b.ID] = rec
-	return &rec.b, rec.tag(), nil
+	// A copy, as every read returns: a change Apply makes under the lock
+	// must not reach a caller reading outside it.
+	return &b, rec.tag(), nil
 }
 
 // Bookings lists a room's bookings on a day, by start.

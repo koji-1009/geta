@@ -60,7 +60,10 @@ func SelfSigned() (*tls.Config, *x509.CertPool, error) {
 // the process gets SIGINT or SIGTERM. geta.Serve drains the TCP server (open
 // event streams end, requests in flight get geta.ShutdownGrace); the HTTP/3
 // server is this function's to stop, and it gives that one the same grace.
+// Serve closes tcp, as geta.Serve does, and udp, which closing an HTTP/3
+// server leaves open.
 func Serve(ctx context.Context, h http.Handler, tcp net.Listener, udp net.PacketConn, conf *tls.Config) error {
+	defer udp.Close()
 	h3 := &http3.Server{Handler: h, TLSConfig: http3.ConfigureTLSConfig(conf.Clone())}
 	h3err := make(chan error, 1)
 	go func() { h3err <- h3.Serve(udp) }()

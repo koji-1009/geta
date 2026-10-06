@@ -1,6 +1,6 @@
 # Claims and the tests that hold them
 
-Every behaviour geta states has a test or a command that checks it. [`llms.txt`](../llms.txt) explains each one; this file names the test.
+Every behaviour geta states has a test or a command that checks it. [`llms.txt`](../llms.txt) explains each one; this file names the test. CI runs every Go test; the two commands that need Python, marked "run by hand", are not run in CI.
 
 ## Checked by the compiler
 
@@ -155,7 +155,7 @@ Every behaviour geta states has a test or a command that checks it. [`llms.txt`]
 | The one-pass read sets a plain string, bool, integer, or float itself, as encoding/json/v2 would; a type with JSON or text methods, or one an unmarshaler in the options applies to, is read by v2; the strings it keeps are cleared when the decoder is released | `TestSinglePassSetsPlainLeavesItself`, `TestSinglePassYieldsToUnmarshalers`, `TestSinglePassAgreesOnPlainLeafBounds`, `TestInternKeepsStringsApart`, `TestReleaseClearsInternedStrings` |
 | A body's work is linear in its size: a violation's path is rendered only when the violation is kept, `uniqueItems` compares elements by a keyed hash made once per element and confirms a match canonically, defaults at depth and nested sealed values cost no more per level | `TestBodyWorkIsLinear`, `TestViolationPathRendering`, `TestNestedUniqueItems`, `TestUniqueItemsHashCollision`, `BenchmarkLinearMapPaths`, `BenchmarkLinearUniqueReference`, `BenchmarkLinearUniqueDepth`, `BenchmarkLinearUniqueSinglePass` |
 | Sealed values nested in one another are read in time linear in the body on both paths, the look-ahead's memo holds at most one span per 32 bytes, and a sealed type's unmarshaler reports the errors it reported reading each value whole and leaves no state behind | `TestLateDiscriminatorLookAheadIsLinear`, `TestLookAheadRecordsBoundedSpans`, `TestReferencePathReadsNestedSealedValuesInLinearTime`, `TestSealedReaderAgreesWithWhole`, `TestSealedReaderLeavesNoState`, `FuzzSealedReaderAgreesWithWhole` |
-| Sealed bodies are read in one pass: 41 allocs/op against 131 | `BenchmarkPostSealed`, `BenchmarkPostSealedLate` |
+| Sealed bodies are read in one pass, in at most 41 allocations a request, the discriminator first or last | `TestPostSealedAllocations`, `BenchmarkPostSealed`, `BenchmarkPostSealedLate` |
 | Output has the schema's shape: `[]`, `{}`, HTML-safe, sorted keys | `TestEncodeShapesMatchTheSchema`, `TestBodiesAreHTMLSafeAndNeverNull`, `TestProblemBodiesAreHTMLSafe`, `TestMapKeysAreWrittenSorted` |
 | Output headers are written as text; a bodiless envelope writes headers alone | `TestScalarHeadersAndABodilessEnvelope` |
 | A struct query parameter is a deepObject | `TestDeepObjectQueryParameters` |
@@ -235,8 +235,8 @@ Every behaviour geta states has a test or a command that checks it. [`llms.txt`]
 | A raw body is documented as its media type with no schema | `TestRawBodiesAreDocumented` |
 | Form and multipart bodies are documented as closed objects; every body operation documents its 415 | `TestFormDocument`, `TestUnsupportedMediaTypeIs415`, `TestContentCodingIs415` |
 | The document is OpenAPI 3.1.0, or 3.2.0 with `WithOpenAPI(OpenAPI32)` | `TestOpenAPIDefaultsTo31`, `TestOpenAPI32DescribesEventsWithItemSchema`, `TestOpenAPI32GivesResponsesASummary`, `TestOpenAPI32NamesTheCookiesSet`, `TestQueryNeedsOpenAPI32`, `TestDocument32` (auth) |
-| The documents pass their version's OpenAPI meta-schema, the goldens of `TestSchemaKeywordsGolden` and `TestResponsesGolden` included | `uvx openapi-spec-validator examples/register/openapi.json examples/auth/openapi.json examples/auth/openapi.3.2.json examples/booking/openapi.json examples/booking/openapi.3.2.json testdata/formats.openapi.json testdata/forms.openapi.json testdata/query.openapi.3.2.json testdata/schema.openapi.json testdata/responses.openapi.json testdata/security.openapi.json testdata/security.openapi.3.2.json examples/bookmarks/openapi.json` |
-| A generated Python client round-trips with each example | `examples/register/clientcheck/roundtrip.py`, `examples/auth/clientcheck/roundtrip.py`, `examples/booking/clientcheck/roundtrip.py` (`openapi-python-client`) |
+| The documents pass their version's OpenAPI meta-schema, the goldens of `TestSchemaKeywordsGolden` and `TestResponsesGolden` included | `uvx openapi-spec-validator examples/register/openapi.json examples/auth/openapi.json examples/auth/openapi.3.2.json examples/booking/openapi.json examples/booking/openapi.3.2.json testdata/formats.openapi.json testdata/forms.openapi.json testdata/query.openapi.3.2.json testdata/schema.openapi.json testdata/responses.openapi.json testdata/security.openapi.json testdata/security.openapi.3.2.json examples/bookmarks/openapi.json` (run by hand) |
+| A generated Python client round-trips with each example | `examples/register/clientcheck/roundtrip.py`, `examples/auth/clientcheck/roundtrip.py`, `examples/booking/clientcheck/roundtrip.py` (`openapi-python-client`; run by hand) |
 | getaclient round-trips with the handlers' own types | `TestTypedClientRoundTrip` (register), `TestTypedClientCoversEveryLocation`, `TestTypedClientReturnsTheProblem`, `TestTypedClientChecksTheCallAgainstTheApp` |
 | getaclient sends and reads raw bodies | `TestTypedClientCarriesRawBodies` |
 | `getaclient.Absent` leaves fields out so their defaults bind | `TestAbsentFieldsTakeTheirDefaults`, `TestAbsentRefusesWhatHasNoDefault`, `TestAbsentKeepsTheClientsJSONOptions` |
