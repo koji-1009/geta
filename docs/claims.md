@@ -236,6 +236,7 @@ Every behaviour geta states has a test or a command that checks it. [`llms.txt`]
 | getaclient sends and reads raw bodies | `TestTypedClientCarriesRawBodies` |
 | `getaclient.Absent` leaves fields out so their defaults bind | `TestAbsentFieldsTakeTheirDefaults`, `TestAbsentRefusesWhatHasNoDefault`, `TestAbsentKeepsTheClientsJSONOptions` |
 | getaclient reads declared 3xx as success and follows no redirect | `TestDeclaredRedirectsAreSuccesses`, `TestMiddlewareSuccessesAreNoOutput`, `TestASuccessOfAnotherMediaTypeIsAnError`, `TestProblemAsReadsSealedTypes`, `TestClientReadsHeadersOfEveryType`, `TestClientErrorText` |
+| getaclient reads a response body up to its limit | `TestAResponseBodyIsReadUpToTheLimit` |
 | `getaclient.ResponseHeader` exposes the response header | `TestResponseHeaderReadsADeprecatedSuccess`, `TestResponseHeaderRefusesANilPointer`, `TestDeprecationReadsTheHeadersForms` |
 | getaclient escapes paths and refuses values a header or cookie cannot carry | `TestTypedClientSendsDotValuesAsValues`, `TestTypedClientEscapesLiteralSegments`, `TestClientReadsEnvelopeEmbeddedFields`, `TestClientCallHeaderWinsOverDefault`, `TestClientRefusesCookieValuesACookieCannotCarry`, `TestClientRefusesAHeaderValueAHeaderCannotCarry`, `TestClientRefusesAHeaderListElementTheListCannotCarry` |
 | A changed document is an ordinary test failure | `TestOpenAPIGolden` (register), `TestDocumentCarriesTheDeclarations` and `TestDocument32` (auth), `TestFormatTypesInTheDocument`, `TestFormDocument` |

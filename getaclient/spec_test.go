@@ -57,6 +57,39 @@ func TestADecodeFailureIsAnError(t *testing.T) {
 	}
 }
 
+// A body is read up to MaxResponseBytes: a success at the limit is read, one
+// byte past it is an error naming the call, and a failure past it carries
+// its first MaxResponseBytes bytes. A negative limit reads everything.
+func TestAResponseBodyIsReadUpToTheLimit(t *testing.T) {
+	ctx := context.Background()
+	const body = `{"n":1}` // 7 bytes
+	c, _ := serve(t, http.StatusOK, "text/csv", body)
+	for limit, want := range map[int64]string{7: body, -1: body} {
+		c.MaxResponseBytes = limit
+		out, err := getaclient.Call[struct{}, specRaw](ctx, c, http.MethodGet, "/x", nil)
+		if err != nil || string(out.Body) != want {
+			t.Fatalf("limit %d: %q, %v", limit, out, err)
+		}
+	}
+	c.MaxResponseBytes = 6
+	if _, err := getaclient.Call[struct{}, specRaw](ctx, c, http.MethodGet, "/x", nil); err == nil ||
+		err.Error() != "getaclient: GET /x: response body exceeds MaxResponseBytes" {
+		t.Fatal(err)
+	}
+	if err := getaclient.CallNoBody[struct{}](ctx, c, http.MethodGet, "/x", nil); err != nil {
+		t.Fatal(err)
+	}
+	f, _ := serve(t, http.StatusTeapot, "text/plain", body)
+	f.MaxResponseBytes = 3
+	_, err := getaclient.Call[struct{}, specOut](ctx, f, http.MethodGet, "/x", nil)
+	if e, ok := errors.AsType[*getaclient.Error](err); !ok || string(e.Body) != `{"n` {
+		t.Fatal(err)
+	}
+	if getaclient.DefaultMaxResponseBytes != 64<<20 {
+		t.Fatal(getaclient.DefaultMaxResponseBytes)
+	}
+}
+
 type specRaw struct {
 	Body []byte `body:"text/csv"`
 }
