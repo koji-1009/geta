@@ -3,6 +3,7 @@ package getaclient_test
 import (
 	"context"
 	"errors"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -79,14 +80,48 @@ func TestAResponseBodyIsReadUpToTheLimit(t *testing.T) {
 	if err := getaclient.CallNoBody[struct{}](ctx, c, http.MethodGet, "/x", nil); err != nil {
 		t.Fatal(err)
 	}
+	// math.MaxInt64 reads everything, as no limit does.
+	c.MaxResponseBytes = math.MaxInt64
+	if out, err := getaclient.Call[struct{}, specRaw](ctx, c, http.MethodGet, "/x", nil); err != nil || string(out.Body) != body {
+		t.Fatalf("MaxInt64: %q, %v", out, err)
+	}
 	f, _ := serve(t, http.StatusTeapot, "text/plain", body)
 	f.MaxResponseBytes = 3
 	_, err := getaclient.Call[struct{}, specOut](ctx, f, http.MethodGet, "/x", nil)
-	if e, ok := errors.AsType[*getaclient.Error](err); !ok || string(e.Body) != `{"n` {
+	if e, ok := errors.AsType[*getaclient.Error](err); !ok || string(e.Body) != `{"n` || e.Cut == nil || !strings.HasSuffix(e.Error(), "; the body was cut short: response body exceeds MaxResponseBytes") {
 		t.Fatal(err)
 	}
-	if getaclient.DefaultMaxResponseBytes != 64<<20 {
-		t.Fatal(getaclient.DefaultMaxResponseBytes)
+	// 0 is DefaultMaxResponseBytes: a body of it is read, one byte more is not.
+	for n, ok := range map[int]bool{getaclient.DefaultMaxResponseBytes: true, getaclient.DefaultMaxResponseBytes + 1: false} {
+		big := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "text/csv")
+			w.Write(make([]byte, n))
+		}))
+		d := &getaclient.Client{Base: big.URL, HTTP: big.Client()}
+		out, err := getaclient.Call[struct{}, specRaw](ctx, d, http.MethodGet, "/x", nil)
+		big.Close()
+		if ok != (err == nil) || ok && len(out.Body) != n {
+			t.Fatalf("%d bytes: %v", n, err)
+		}
+	}
+}
+
+// A failure whose body the server cut off is an *Error that says so: Cut
+// holds the read error, so a partial body is not taken for the whole.
+func TestACutFailureSaysSo(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
+		w.Header().Set("Content-Length", "100")
+		w.WriteHeader(http.StatusTeapot)
+		w.Write([]byte("part"))
+		http.NewResponseController(w).Flush()
+		panic(http.ErrAbortHandler)
+	}))
+	t.Cleanup(srv.Close)
+	c := &getaclient.Client{Base: srv.URL, HTTP: srv.Client()}
+	_, err := getaclient.Call[struct{}, specOut](context.Background(), c, http.MethodGet, "/x", nil)
+	if e, ok := errors.AsType[*getaclient.Error](err); !ok || e.Cut == nil || string(e.Body) != "part" {
+		t.Fatal(err)
 	}
 }
 

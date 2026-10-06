@@ -205,6 +205,23 @@ func TestScanNeedsAModule(t *testing.T) {
 	if _, err := Scan(filepath.Join(root, "routes")); err == nil || !strings.Contains(err.Error(), "has no module line") {
 		t.Fatalf("no module line: %v", err)
 	}
+	// The module line is read as go.mod's grammar reads it.
+	for line, want := range map[string]string{
+		"module example.com/app":               "example.com/app",
+		"module\texample.com/app // the app":   "example.com/app",
+		`module "example.com/app" // quoted`:   "example.com/app",
+		"module `example.com/app`":             "example.com/app",
+		"  module   example.com/app//no space": "example.com/app",
+	} {
+		os.WriteFile(filepath.Join(root, "go.mod"), []byte(line+"\n\ngo 1.27\n"), 0o644)
+		tr, err := Scan(filepath.Join(root, "routes"))
+		if err != nil || tr.ImportPath != want+"/routes" {
+			t.Errorf("%q: %v %v", line, tr, err)
+		}
+	}
+	if p, ok := modulePath("modules example.com/app"); ok {
+		t.Errorf("modules: %q", p)
+	}
 }
 
 // Sync reports a table it cannot write.

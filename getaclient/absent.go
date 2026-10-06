@@ -16,22 +16,31 @@ import (
 // absence is one field named by Absent. The type tells the field apart from
 // a struct that begins at the same address.
 type absence struct {
-	ptr  uintptr
+	i    int // its place among Absent's arguments
 	typ  reflect.Type
 	used bool
 }
 
-// absences are the fields a call leaves out.
-type absences []*absence
+type absKey struct {
+	ptr uintptr
+	typ reflect.Type
+}
+
+// absences are the fields a call leaves out, by address and type, so a call
+// looks each field up in constant time.
+type absences map[absKey]*absence
 
 func newAbsences(fields []any) (absences, error) {
-	var out absences
-	for _, f := range fields {
+	out := absences{}
+	for i, f := range fields {
 		v := reflect.ValueOf(f)
 		if v.Kind() != reflect.Pointer || v.IsNil() {
 			return nil, fmt.Errorf("Absent: %T is not a pointer to a field of the input", f)
 		}
-		out = append(out, &absence{ptr: v.Pointer(), typ: v.Type().Elem()})
+		k := absKey{v.Pointer(), v.Type().Elem()}
+		if _, dup := out[k]; !dup {
+			out[k] = &absence{i: i, typ: k.typ}
+		}
 	}
 	return out, nil
 }
@@ -41,14 +50,12 @@ func (as absences) of(v reflect.Value) bool {
 	if len(as) == 0 || !v.CanAddr() {
 		return false
 	}
-	p := v.Addr().Pointer()
-	for _, a := range as {
-		if a.ptr == p && a.typ == v.Type() {
-			a.used = true
-			return true
-		}
+	a := as[absKey{v.Addr().Pointer(), v.Type()}]
+	if a == nil {
+		return false
 	}
-	return false
+	a.used = true
+	return true
 }
 
 // leave reports whether field f, holding v, is left out. Leaving out a field
@@ -63,13 +70,17 @@ func (as absences) leave(f reflect.StructField, v reflect.Value, what string) (b
 	return true, nil
 }
 
-// unused returns an error for a field named by Absent that the call did not
-// reach.
+// unused returns an error for the first field named by Absent that the call
+// did not reach.
 func (as absences) unused() error {
+	var first *absence
 	for _, a := range as {
-		if !a.used {
-			return fmt.Errorf("Absent: %s is not a field of the input", a.typ)
+		if !a.used && (first == nil || a.i < first.i) {
+			first = a
 		}
+	}
+	if first != nil {
+		return fmt.Errorf("Absent: %s is not a field of the input", first.typ)
 	}
 	return nil
 }
@@ -80,8 +91,8 @@ func jsonBody(v reflect.Value, opts json.Options, abs absences) ([]byte, error) 
 	if err != nil || len(abs) == 0 {
 		return b, err
 	}
-	var drop []string
-	if err := memberPaths(v, nil, abs, &drop); err != nil {
+	drop := map[string]bool{}
+	if err := memberPaths(v, nil, abs, drop); err != nil {
 		return nil, err
 	}
 	if len(drop) == 0 {
@@ -93,10 +104,10 @@ func jsonBody(v reflect.Value, opts json.Options, abs absences) ([]byte, error) 
 // pathKey is a member's path, its names and indices joined.
 func pathKey(path []string) string { return strings.Join(path, "\x00") }
 
-// memberPaths appends to drop the paths of the members in abs, walking v's
+// memberPaths adds to drop the paths of the members in abs, walking v's
 // members (vet.CheckMemberField) through pointers, interfaces, and slice
 // elements. A type with its own JSON or text methods is not walked.
-func memberPaths(v reflect.Value, path []string, abs absences, drop *[]string) error {
+func memberPaths(v reflect.Value, path []string, abs absences, drop map[string]bool) error {
 	for v.Kind() == reflect.Pointer || v.Kind() == reflect.Interface {
 		if v.IsNil() {
 			return nil
@@ -132,7 +143,7 @@ func memberPaths(v reflect.Value, path []string, abs absences, drop *[]string) e
 				if left, err := abs.leave(f, fv, fmt.Sprintf("member %q", member)); err != nil {
 					return err
 				} else if left {
-					*drop = append(*drop, pathKey(p))
+					drop[pathKey(p)] = true
 					continue
 				}
 				if err := memberPaths(fv, p, abs, drop); err != nil {
@@ -166,7 +177,7 @@ func ownJSON(t reflect.Type) bool {
 // omitMembers copies the JSON value b without the members at the paths in
 // drop (see pathKey). opts are the options b was marshaled with, so its
 // formatting is kept.
-func omitMembers(b []byte, drop []string, opts json.Options) ([]byte, error) {
+func omitMembers(b []byte, drop map[string]bool, opts json.Options) ([]byte, error) {
 	dec := jsontext.NewDecoder(bytes.NewReader(b), opts)
 	var out bytes.Buffer
 	enc := jsontext.NewEncoder(&out, opts)
@@ -195,7 +206,7 @@ func omitMembers(b []byte, drop []string, opts json.Options) ([]byte, error) {
 					return err
 				}
 				p := append(slices.Clone(path), name.String())
-				if slices.Contains(drop, pathKey(p)) {
+				if drop[pathKey(p)] {
 					if err := dec.SkipValue(); err != nil {
 						return err
 					}

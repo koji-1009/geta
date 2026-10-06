@@ -12,7 +12,8 @@
 //   - what a client chooses is not recorded as fact: no url.path (the raw
 //     path), server.address and server.port only from [WithServerName] (not
 //     the Host header), and client.address from the connection's peer (not
-//     X-Forwarded-For);
+//     X-Forwarded-For); user_agent.original and http.request.method_original
+//     are cut to 128 bytes, as geta logs a method;
 //   - QUERY is recorded as QUERY, where otelhttp would write _OTHER;
 //   - a protocol switch is recorded as 101;
 //   - the middleware is ordered at [geta.OrderObserve].
@@ -58,6 +59,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"unicode/utf8"
 
 	"github.com/koji-1009/geta"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
@@ -145,7 +147,10 @@ func Middleware(opts ...Option) geta.Middleware {
 		inner := instrument(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			s := switched(w)
 			// The chain sees the request as it arrived.
-			r.Pattern, r.URL, r.Host = s.pattern, s.url, s.host
+			r.Pattern, r.URL, r.Host, r.Method = s.pattern, s.url, s.host, s.method
+			if s.userAgent != nil {
+				r.Header["User-Agent"] = s.userAgent
+			}
 			peer(r)
 			abort, p := serve(next, w, r)
 			served(r)
@@ -176,6 +181,15 @@ func Middleware(opts ...Option) geta.Middleware {
 			u.Path, u.RawPath = "", ""
 			r.URL = &u
 			r.Host = c.server
+			// The method and User-Agent a client chooses are recorded cut to
+			// maxValueBytes, as geta logs a method. The header map is the
+			// chain's too, so the full User-Agent goes back before it runs.
+			s.method = r.Method
+			r.Method = clip(r.Method)
+			if ua := r.Header.Values("User-Agent"); len(ua) == 1 && len(ua[0]) > maxValueBytes {
+				s.userAgent = ua
+				r.Header["User-Agent"] = []string{clip(ua[0])}
+			}
 			inner.ServeHTTP(s, r)
 			switch {
 			case s.panic != nil:
@@ -287,7 +301,7 @@ func served(r *http.Request) {
 		if standard[method] {
 			span.SetAttributes(semconv.HTTPRequestMethodKey.String(method))
 		} else {
-			span.SetAttributes(semconv.HTTPRequestMethodKey.String("_OTHER"), semconv.HTTPRequestMethodOriginal(method))
+			span.SetAttributes(semconv.HTTPRequestMethodKey.String("_OTHER"), semconv.HTTPRequestMethodOriginal(clip(method)))
 		}
 	}
 	span.SetName(spanName("", r))
@@ -331,10 +345,30 @@ type switcher struct {
 	aborted  bool        // the response was aborted: nothing more reaches it
 	panic    *panicValue // the handler panicked: nothing more reaches it
 	wrote    bool        // the status went out
-	// The request's pattern, URL, and Host as they arrived.
-	pattern string
-	url     *url.URL
-	host    string
+	// The request's pattern, URL, Host, and method as they arrived, and its
+	// User-Agent where it was cut for otelhttp.
+	pattern   string
+	url       *url.URL
+	host      string
+	method    string
+	userAgent []string
+}
+
+// maxValueBytes bounds the bytes of a value a client chooses that a span
+// records, as geta bounds a method it logs.
+const maxValueBytes = 128
+
+// clip returns s if it fits maxValueBytes, and otherwise its first bytes up
+// to a rune boundary and "…".
+func clip(s string) string {
+	if len(s) <= maxValueBytes {
+		return s
+	}
+	i := maxValueBytes
+	for i > 0 && !utf8.RuneStart(s[i]) {
+		i--
+	}
+	return s[:i] + "…"
 }
 
 func (s *switcher) WriteHeader(code int) {

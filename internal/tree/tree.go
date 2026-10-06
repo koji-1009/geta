@@ -15,6 +15,7 @@ import (
 	"path"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -357,6 +358,30 @@ func exists(p string) bool {
 	return err == nil
 }
 
+// modulePath returns the path a go.mod line declares, if it is a module
+// line: the keyword, white space, and the path, bare, double-quoted, or
+// back-quoted, before any // comment.
+func modulePath(line string) (string, bool) {
+	rest, ok := strings.CutPrefix(strings.TrimSpace(line), "module")
+	if !ok || rest == "" || (rest[0] != ' ' && rest[0] != '\t') {
+		return "", false
+	}
+	rest = strings.TrimSpace(rest)
+	if rest != "" && (rest[0] == '"' || rest[0] == '`') {
+		if end := strings.IndexByte(rest[1:], rest[0]); end >= 0 {
+			if p, err := strconv.Unquote(rest[:end+2]); err == nil {
+				return p, true
+			}
+		}
+		return "", false
+	}
+	if i := strings.Index(rest, "//"); i >= 0 {
+		rest = rest[:i]
+	}
+	rest = strings.TrimSpace(rest)
+	return rest, rest != ""
+}
+
 // findModule walks up from dir to the go.mod and returns its directory and
 // module path.
 func findModule(dir string) (string, string, error) {
@@ -366,9 +391,8 @@ func findModule(dir string) (string, string, error) {
 			defer f.Close()
 			sc := bufio.NewScanner(f)
 			for sc.Scan() {
-				line := strings.TrimSpace(sc.Text())
-				if mod, ok := strings.CutPrefix(line, "module "); ok {
-					return d, strings.Trim(strings.TrimSpace(mod), `"`), nil
+				if mod, ok := modulePath(sc.Text()); ok {
+					return d, mod, nil
 				}
 			}
 			return "", "", fmt.Errorf("%s has no module line", filepath.Join(d, "go.mod"))

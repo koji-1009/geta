@@ -33,6 +33,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"mime"
 	"mime/multipart"
 	"net/http"
@@ -51,7 +52,9 @@ import (
 type Client struct {
 	// Base is the application's URL, without a trailing slash.
 	Base string
-	// HTTP sends the requests; nil means http.DefaultClient.
+	// HTTP sends the requests; nil means http.DefaultClient, which has no
+	// timeout: a call waits as long as its context lets it, so give the
+	// context a deadline or set HTTP.Timeout.
 	HTTP *http.Client
 	// Header is sent with every call.
 	Header http.Header
@@ -82,7 +85,7 @@ func (c *Client) readBody(r io.Reader) ([]byte, error) {
 	switch {
 	case limit == 0:
 		limit = DefaultMaxResponseBytes
-	case limit < 0:
+	case limit < 0 || limit == math.MaxInt64: // limit+1 would overflow
 		return io.ReadAll(r)
 	}
 	b, err := io.ReadAll(io.LimitReader(r, limit+1))
@@ -101,8 +104,12 @@ type Error struct {
 	Status int
 	// Problem is the problem document, if the body was one.
 	Problem *geta.Problem
-	// Body is the raw body.
+	// Body is the raw body, as much of it as was read.
 	Body []byte
+	// Cut is why Body is not the whole body, nil when it is: the body passed
+	// Client.MaxResponseBytes, or reading it failed, as when the server
+	// aborted the response.
+	Cut error
 	// Header is the response header, including headers a geta.OnAsProblem
 	// row sets, such as Retry-After.
 	Header http.Header
@@ -164,6 +171,9 @@ func (e *Error) Error() string {
 			s += fmt.Sprintf(", Location %q", loc)
 		}
 		s += ")"
+	}
+	if e.Cut != nil {
+		s += fmt.Sprintf("; the body was cut short: %v", e.Cut)
 	}
 	return s
 }
@@ -329,8 +339,8 @@ func (c *Client) do(ctx context.Context, method, template string, inT, outT refl
 	}
 	if !success(res, outT) {
 		defer res.Body.Close()
-		body, _ := c.readBody(res.Body)
-		e := &Error{Status: res.StatusCode, Body: body, Header: res.Header, JSON: c.JSON}
+		body, cut := c.readBody(res.Body)
+		e := &Error{Status: res.StatusCode, Body: body, Header: res.Header, JSON: c.JSON, Cut: cut}
 		if res.Header.Get("Content-Type") == geta.ProblemContentType {
 			var p geta.Problem
 			if json.Unmarshal(body, &p) == nil {

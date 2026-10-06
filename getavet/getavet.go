@@ -1333,7 +1333,8 @@ func streamMethod(t types.Type, name, arg string) bool {
 }
 
 // routeURL is the URL of the package's directory when it lies below a
-// directory holding the table geta sync writes.
+// directory holding the table geta sync writes, within the package's own
+// module: geta sync leaves a nested module out of the tree.
 func routeURL(pass *analysis.Pass) (string, bool) {
 	// go/packages drivers pass a directory holding only an x_test package
 	// with no files.
@@ -1352,7 +1353,8 @@ func routeURL(pass *analysis.Pass) (string, bool) {
 			url, err := tree.URLFor(rel)
 			return url, err == nil
 		}
-		if filepath.Dir(root) == root {
+		// A go.mod here is the module's root: no tree above it holds dir.
+		if _, err := os.Stat(filepath.Join(root, "go.mod")); err == nil || filepath.Dir(root) == root {
 			return "", false
 		}
 	}

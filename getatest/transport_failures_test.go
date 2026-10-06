@@ -62,6 +62,8 @@ func TestHelpersFailOnTransportFailures(t *testing.T) {
 		"abort a stream":   func(c *Client) { c.With("X-Abort", "1").Stream("/g") },
 		"abort an upgrade": func(c *Client) { c.With("X-Abort", "1").Upgrade("/g", "chat") },
 		"cut":              func(c *Client) { c.With("X-Cut", "1").Get("/g") },
+		"cut a stream":     func(c *Client) { c.With("X-Cut", "1").Stream("/g") },
+		"cut an upgrade":   func(c *Client) { c.With("X-Cut", "1").Upgrade("/g", "chat") },
 	} {
 		f := inGoroutine(t, func(f *failures) { fn(Serve(f, app)) })
 		if !f.fatal || len(f.errs) != 1 || !strings.HasPrefix(f.errs[0], "getatest: ") {
