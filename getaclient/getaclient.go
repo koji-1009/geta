@@ -61,6 +61,34 @@ type Client struct {
 	// has an operation for method and template taking in and returning out
 	// (out is nil for CallNoBody). getatest sets it from the app.
 	Check func(method, template string, in, out reflect.Type) error
+	// MaxResponseBytes is the most of a response body read: a larger
+	// success is an error, and a larger failure's Body is cut to it. 0 means
+	// DefaultMaxResponseBytes; a negative value means no limit.
+	MaxResponseBytes int64
+}
+
+// DefaultMaxResponseBytes is the most of a response body a [Client] reads
+// unless MaxResponseBytes says otherwise.
+const DefaultMaxResponseBytes = 64 << 20
+
+// errTooLarge is returned for a success body past the client's limit.
+var errTooLarge = errors.New("response body exceeds MaxResponseBytes")
+
+// readBody reads r up to the client's limit. It returns what it read, and
+// errTooLarge if r held more.
+func (c *Client) readBody(r io.Reader) ([]byte, error) {
+	limit := c.MaxResponseBytes
+	switch {
+	case limit == 0:
+		limit = DefaultMaxResponseBytes
+	case limit < 0:
+		return io.ReadAll(r)
+	}
+	b, err := io.ReadAll(io.LimitReader(r, limit+1))
+	if err == nil && int64(len(b)) > limit {
+		return b[:limit], errTooLarge
+	}
+	return b, err
 }
 
 // Error is a response that is not the call's success: a status outside 2xx
@@ -158,7 +186,11 @@ func Call[In, Out any](ctx context.Context, c *Client, method, template string, 
 	}
 	defer res.Body.Close()
 	out := new(Out)
-	if err := decodeOutput(res, reflect.ValueOf(out).Elem(), c.JSON); err != nil {
+	body, err := c.readBody(res.Body)
+	if err != nil {
+		return nil, fmt.Errorf("getaclient: %s %s: %w", method, template, err)
+	}
+	if err := decodeOutput(res, body, reflect.ValueOf(out).Elem(), c.JSON); err != nil {
 		return nil, fmt.Errorf("getaclient: %s %s: %w", method, template, err)
 	}
 	return out, nil
@@ -174,7 +206,9 @@ func CallNoBody[In any](ctx context.Context, c *Client, method, template string,
 	if err != nil {
 		return err
 	}
-	io.Copy(io.Discard, res.Body)
+	// Read what the limit allows, so a short body leaves the connection
+	// reusable.
+	c.readBody(res.Body)
 	return res.Body.Close()
 }
 
@@ -294,7 +328,7 @@ func (c *Client) do(ctx context.Context, method, template string, inT, outT refl
 	}
 	if !success(res, outT) {
 		defer res.Body.Close()
-		body, _ := io.ReadAll(res.Body)
+		body, _ := c.readBody(res.Body)
 		e := &Error{Status: res.StatusCode, Body: body, Header: res.Header, JSON: c.JSON}
 		if res.Header.Get("Content-Type") == geta.ProblemContentType {
 			var p geta.Problem
@@ -798,13 +832,9 @@ func text(v reflect.Value) (string, error) {
 	return "", fmt.Errorf("type %s is not a parameter type", v.Type())
 }
 
-// decodeOutput reads a success response into out: the body for a plain
-// output, or headers, cookies, and body for an envelope.
-func decodeOutput(res *http.Response, out reflect.Value, opts json.Options) error {
-	body, err := io.ReadAll(res.Body)
-	if err != nil {
-		return err
-	}
+// decodeOutput reads a success response, whose body is body, into out: the
+// body for a plain output, or headers, cookies, and body for an envelope.
+func decodeOutput(res *http.Response, body []byte, out reflect.Value, opts json.Options) error {
 	if out.Kind() != reflect.Struct || !isEnvelope(out.Type()) {
 		return json.Unmarshal(body, out.Addr().Interface(), opts)
 	}
