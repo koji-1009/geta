@@ -166,6 +166,7 @@ Every behaviour geta states has a test or a command that checks it. [`llms.txt`]
 | Every 401 carries one challenge per refusing scheme | `TestEveryRefusingSchemeChallenges`, `TestAChallengerWithNoChallengeKeepsTheSchemes` |
 | `Matched` follows a root rewrite from the next gate on | `TestMatchedFollowsARewriteFromTheNextGate`, `TestTwoRootGatesAroundARewrite`, `TestARedirectCarriesTheMatchOfItsCleanPath`, `TestBeforeGateFollowsARewriteBeforeTheGate`, `TestBeforeGateBesideAnOperationScopeGate`, `TestOptionsRunsNoBeforeGate` |
 | Several gates must all admit | `TestTwoGatesEachRequireTheirDefault`, `TestSecurityRequirementsMatchTheGates` |
+| Changing a Policy, a Doc, or a matched Doc after New changes no decision | `TestChangesAfterNewChangeNoDecision` |
 | Typed keys are distinct by identity; the zero key panics | `TestKeyRoundTrip` |
 
 ## Middleware, streams, upgrades (time in `testing/synctest`)

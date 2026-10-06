@@ -104,6 +104,7 @@ func New(t Table, opts ...Option) (*App, error) {
 			continue
 		}
 		for _, m := range methods {
+			m.op.op = m.op.op.snapshot()
 			// The operation's own scope runs innermost, for that method only.
 			opChain := chain
 			if s := m.op.op.doc.Scope; len(s) > 0 {
@@ -187,7 +188,7 @@ func New(t Table, opts ...Option) (*App, error) {
 		params, _ := parsePath(op.path)
 		rt := &route{
 			h:         wrap(op.routeChain, op),
-			match:     &Match{Template: op.path, Method: op.method, Doc: op.op.doc, Operation: true},
+			match:     &Match{Template: op.path, Method: op.method, Doc: op.op.snapshot().doc, Operation: true},
 			params:    params,
 			op:        op,
 			pattern:   op.method + " " + op.path,
