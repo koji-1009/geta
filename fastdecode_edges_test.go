@@ -2,6 +2,7 @@ package geta
 
 import (
 	"bytes"
+	"encoding/json/jsontext"
 	"encoding/json/v2"
 	"errors"
 	"fmt"
@@ -211,6 +212,24 @@ func TestSealedOptionsRefuseWhatIsNoVariant(t *testing.T) {
 	}
 	var s fastShape
 	if err := json.Unmarshal([]byte(`{"r":2,"kind":"circle"}`), &s, fastShapes.JSONOptions()); err != nil || s.(fastCircle).R != 2 {
+		t.Fatalf("%v %#v", err, s)
+	}
+}
+
+// Options a client adds to a sealed type's JSONOptions hold for the sealed
+// value too: with duplicate names allowed, the last of two wins; with invalid
+// UTF-8 allowed, it is read, as the variant alone would read them.
+func TestSealedOptionsKeepTheClientsOwn(t *testing.T) {
+	var s fastShape
+	dup := json.JoinOptions(fastShapes.JSONOptions(), jsontext.AllowDuplicateNames(true))
+	if err := json.Unmarshal([]byte(`{"kind":"circle","r":1,"r":2}`), &s, dup); err != nil || s.(fastCircle).R != 2 {
+		t.Fatalf("%v %#v", err, s)
+	}
+	if err := json.Unmarshal([]byte(`{"kind":"circle","r":1,"r":2}`), &s, fastShapes.JSONOptions()); err == nil {
+		t.Fatal("a duplicate name read without AllowDuplicateNames")
+	}
+	utf := json.JoinOptions(fastShapes.JSONOptions(), jsontext.AllowInvalidUTF8(true))
+	if err := json.Unmarshal([]byte("{\"kind\":\"circle\",\"r\":1,\"x\":\"\xff\"}"), &s, utf); err != nil || s.(fastCircle).R != 1 {
 		t.Fatalf("%v %#v", err, s)
 	}
 }
