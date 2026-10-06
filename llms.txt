@@ -1080,9 +1080,9 @@ Unit-test handlers as methods with fake stores; time-dependent behaviour with `t
   - every input-field, envelope-field, JSON-member, and type refusal of `geta.New` decidable from source, incl. a stream's event type and a `geta.OnAsProblem` description (type arguments inferred, given, or the first given);
   - a body on a `Get`/`Delete` operation built in place by a `geta.Route` literal;
   - a negative constant `Doc.Timeout`; a constant status outside a status field's list.
-- Exported shared rules: `geta.CheckInputType`, `CheckInputField`, `CheckFormField`, `CheckDeepObjectField`, `CheckEnvelopeField`, `CheckEnvelopeStatus`, `CheckMemberField`, `CheckStructMembers`, `CheckJSONType`, `CheckSchemaName`, `CheckSchemaTag`, `CheckRequestSchemaTag`, `CheckProblemType`, `CheckProblemField`, `CheckProblemMember`, `CheckMethodBody`, `CheckDocTimeout`. Silent where `geta.New` is (unexported members).
+- Shared rules: the rules `geta.New` shares with getavet (input, form, deepObject, envelope, member, type, self-holding type, component name, schema-tag, problem, method-body, success-status, and `Doc.Timeout` checks) live in geta's internal package `internal/vet`, which is not part of the API. Silent where `geta.New` is (unexported members).
 - Left to `geta.New` (needs options or the whole chain): positive `Doc.Timeout` without `geta.Timeout`; `WithUnion` sealed types; `WithSchema` declarations; keywords on types with own JSON methods; whether a `Query` operation has the 3.2 document; schema-name collisions; `SchemaFormat` returning ""; a `propertyNames.enum` member the key type's methods refuse; an input embedding `geta.Conditional` under an unexported alias; bounds only your `Limits` make unreachable (getavet reads no `WithLimits`, so reports no lower bound or enum member past a backstop, even `DefaultLimits`).
-- It does report `maxLength`, `minLength`, or an enum member past the 4096 pattern ceiling beside a pattern on an input-read value (`geta.CheckRequestSchemaTag`).
+- It does report `maxLength`, `minLength`, or an enum member past the 4096 pattern ceiling beside a pattern on an input-read value (the request-schema-tag rule in `internal/vet`).
 
 ## Database
 

@@ -12,7 +12,35 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/koji-1009/geta/internal/vet"
 )
+
+// The rules getavet and getaclient read through internal/vet.
+func init() {
+	vet.CheckSchemaTag = checkTag
+	vet.CheckRequestSchemaTag = checkRequestTag
+	vet.FieldOf = vetField
+	vet.CheckInputType = checkInputType
+	vet.CheckInputField = checkInputField
+	vet.CheckDeepObjectField = checkDeepObjectField
+	vet.CheckFormField = checkFormField
+	vet.CheckEnvelopeField = checkEnvelopeField
+	vet.EnvelopeEmbedded = envelopeEmbedded
+	vet.CheckProblemType = checkProblemType
+	vet.CheckProblemField = checkProblemField
+	vet.CheckProblemMember = checkProblemMember
+	vet.CheckEnvelopeStatus = checkEnvelopeStatus
+	vet.CheckDocTimeout = checkDocTimeout
+	vet.CheckMethodBody = checkMethodBody
+	vet.CheckSuccessStatus = checkSuccessStatus
+	vet.CheckMemberField = checkMemberField
+	vet.CheckStructMembers = checkStructMembers
+	vet.DeclaresDefault = declaresDefault
+	vet.CheckSchemaName = checkSchemaName
+	vet.CheckSelfHolding = checkSelfHolding
+	vet.CheckJSONType = checkJSONType
+}
 
 // vetKinds maps the kind names getavet passes for Go basic kinds, []byte,
 // and format types ("time.Time", "geta.Date") to their types.
@@ -32,8 +60,8 @@ var vetKinds = func() map[string]reflect.Type {
 	return m
 }()
 
-// CheckSchemaTag reports whether a schema tag is valid on a value of kind.
-// It applies geta.New's rule and is exported for getavet. kind is one of:
+// checkTag reports whether a schema tag is valid on a value of kind.
+// It applies geta.New's rule. kind is one of:
 //
 //   - a Go basic kind: "string", "int8", "float64", ...
 //   - "[]byte"
@@ -55,20 +83,20 @@ var vetKinds = func() map[string]reflect.Type {
 //     are judged as the key's.
 //
 // The rule covers every use, responses included; values a request reads
-// are also subject to [CheckRequestSchemaTag]. CheckSchemaTag does not see
+// are also subject to checkRequestTag. checkTag does not see
 // the program's [Limits], and it does not check a key enum against the key
 // type's methods; geta.New does both.
-func CheckSchemaTag(tag, kind string) error {
+func checkTag(tag, kind string) error {
 	_, err := checkSchemaTag(tag, kind)
 	return err
 }
 
-// CheckRequestSchemaTag is [CheckSchemaTag] for a value a request reads: a
+// checkRequestTag is checkTag for a value a request reads: a
 // parameter, a form field, or a member of a request body type. Alongside a
 // pattern, it also refuses a maxLength, minLength, enum member, default, or
 // example beyond the fixed pattern-validation ceiling of 4096 code points.
-// It applies geta.New's rule and is exported for getavet.
-func CheckRequestSchemaTag(tag, kind string) error {
+// It applies geta.New's rule.
+func checkRequestTag(tag, kind string) error {
 	s, err := checkSchemaTag(tag, kind)
 	if err != nil {
 		return err
@@ -119,14 +147,14 @@ func kindSchema(kind string) (*schema, *codec, error) {
 		// geta.New.
 		key, value, ok := strings.Cut(rest, "]")
 		if !ok {
-			return nil, nil, fmt.Errorf("geta.CheckSchemaTag: unknown kind %q", kind)
+			return nil, nil, fmt.Errorf("geta: unknown kind %q", kind)
 		}
 		ks, _, err := kindSchema(key)
 		if err != nil {
 			return nil, nil, err
 		}
 		if ks.Type != "string" || ks.binary || ks.ContentEncoding != "" || ks.Null {
-			return nil, nil, fmt.Errorf("geta.CheckSchemaTag: kind %q has a non-string key", kind)
+			return nil, nil, fmt.Errorf("geta: kind %q has a non-string key", kind)
 		}
 		var keys *schema
 		if ks.Format != "" {
@@ -165,7 +193,7 @@ func kindSchema(kind string) (*schema, *codec, error) {
 	}
 	t, ok := vetKinds[kind]
 	if !ok {
-		return nil, nil, fmt.Errorf("geta.CheckSchemaTag: unknown kind %q", kind)
+		return nil, nil, fmt.Errorf("geta: unknown kind %q", kind)
 	}
 	// Every kind vetKinds holds has a codec (TestEveryVetKindHasACodec).
 	c, _ := newRegistry().codecFor(t)
@@ -173,7 +201,7 @@ func kindSchema(kind string) (*schema, *codec, error) {
 }
 
 // paramCarried reports whether a parameter's schema tag admits only values
-// its location can carry (carried). A tag CheckSchemaTag refuses is left to
+// its location can carry (carried). A tag checkTag refuses is left to
 // it. kind is one paramType accepted.
 func paramCarried(loc, name, tag, kind string) error {
 	base, c, _ := kindSchema(kind)
@@ -185,43 +213,11 @@ func paramCarried(loc, name, tag, kind string) error {
 	if err != nil {
 		return err
 	}
-	// Values the schema refuses anyway are CheckSchemaTag's to report.
+	// Values the schema refuses anyway are checkTag's to report.
 	if use.checkValues(c) == nil {
 		return held.checkValues(c)
 	}
 	return nil
-}
-
-// VetField describes a struct field for CheckInputField,
-// CheckEnvelopeField, and CheckMemberField. geta.New builds it by
-// reflection, getavet from source.
-type VetField struct {
-	Name     string            // the field's name
-	Exported bool              // the field is exported
-	Embedded bool              // the field is embedded
-	Tag      reflect.StructTag // the field's tag
-	Type     string            // the field's type, as reflect writes it ("*main.Body")
-	Pointer  bool              // the type is a pointer
-	Struct   bool              // the type is a struct
-	// Object reports that the type, after one pointer, is a struct (in a
-	// query, a deepObject unless it has methods or is a geta.File).
-	Object    bool
-	Interface bool // the type is an interface
-	Cookie    bool // the type is *http.Cookie
-	// Text reports that the type (after one pointer) or a pointer to it
-	// implements encoding.TextMarshaler or encoding.TextUnmarshaler.
-	Text bool
-	// Methods reports that the type (after one pointer) or a pointer to it
-	// has a JSON or text method that encoding/json/v2 uses instead of its
-	// fields.
-	Methods bool
-	// Kind is the kind of the type after one pointer: a CheckSchemaTag kind
-	// ("[]string" for a slice), "json" for a type with its own JSON
-	// methods, "nullable", or "union" for an interface. "" leaves the type
-	// unjudged.
-	Kind string
-	// Nullable reports that the type after one pointer is a geta.Nullable.
-	Nullable bool
 }
 
 // v2Methods are the interfaces encoding/json/v2 uses instead of a type's
@@ -230,14 +226,14 @@ var v2Methods = append(append([]reflect.Type(nil), jsonMethods...), textMarshale
 
 // vetField describes f, leaving Kind for the caller to set once the codec
 // is known.
-func vetField(f reflect.StructField) VetField {
+func vetField(f reflect.StructField) vet.Field {
 	t := f.Type
 	if t.Kind() == reflect.Pointer {
 		t = t.Elem()
 	}
 	methods := v2Reads(t)
 	_, null := nullableOf(t)
-	return VetField{Name: f.Name, Exported: f.IsExported(), Embedded: f.Anonymous, Tag: f.Tag,
+	return vet.Field{Name: f.Name, Exported: f.IsExported(), Embedded: f.Anonymous, Tag: f.Tag,
 		Type: f.Type.String(), Pointer: f.Type.Kind() == reflect.Pointer, Struct: f.Type.Kind() == reflect.Struct,
 		Object:    t.Kind() == reflect.Struct,
 		Interface: f.Type.Kind() == reflect.Interface, Cookie: f.Type == cookieType,
@@ -257,12 +253,7 @@ func v2Reads(t reflect.Type) bool {
 	return false
 }
 
-// VetFieldOf describes f as geta.New does, with Kind left "". It is
-// exported for getaclient, which reads an envelope's embedded fields with
-// EnvelopeEmbedded.
-func VetFieldOf(f reflect.StructField) VetField { return vetField(f) }
-
-// vetKind returns c's kind as VetField.Kind names it.
+// vetKind returns c's kind as vet.Field.Kind names it.
 func vetKind(c *codec) string {
 	switch c.kind {
 	case kString:
@@ -303,7 +294,7 @@ func scalarKind(kind string) bool {
 
 // inputLocation returns the location and name an input field's tag binds;
 // loc is "" for an untagged field.
-func inputLocation(f VetField) (loc, name string, err error) {
+func inputLocation(f vet.Field) (loc, name string, err error) {
 	for _, l := range paramLocations {
 		if v, ok := f.Tag.Lookup(l); ok {
 			if loc != "" {
@@ -315,21 +306,20 @@ func inputLocation(f VetField) (loc, name string, err error) {
 	return loc, name, nil
 }
 
-// CheckInputType reports whether geta.New accepts typ as an operation's
-// input type. It applies geta.New's rule and is exported for getavet.
-func CheckInputType(typ string, isStruct bool) error {
+// checkInputType reports whether geta.New accepts typ as an operation's
+// input type. It applies geta.New's rule.
+func checkInputType(typ string, isStruct bool) error {
 	if !isStruct {
 		return fmt.Errorf("input type %s is not a struct", typ)
 	}
 	return nil
 }
 
-// CheckInputField reports whether geta.New accepts f as an input field. walk
+// checkInputField reports whether geta.New accepts f as an input field. walk
 // reports that f is an embedded struct whose fields the caller must check
 // in turn. seen records what earlier fields bind and is updated with f. The
-// error begins with the field's name. It applies geta.New's rule and is
-// exported for getavet.
-func CheckInputField(f VetField, seen map[string]string) (walk bool, err error) {
+// error begins with the field's name. It applies geta.New's rule.
+func checkInputField(f vet.Field, seen map[string]string) (walk bool, err error) {
 	loc, name, err := inputLocation(f)
 	if err != nil {
 		return false, err
@@ -447,7 +437,7 @@ func CheckInputField(f VetField, seen map[string]string) (walk bool, err error) 
 
 // deepKeys refuses a query parameter that overlaps a deepObject's keys: a
 // deepObject d binds every d[...], so a parameter named d[min] would be
-// bound twice. seen is CheckInputField's, holding "deep d" for each
+// bound twice. seen is checkInputField's, holding "deep d" for each
 // deepObject and "query q" for each query parameter.
 func deepKeys(field, name string, deep bool, seen map[string]string) error {
 	for _, k := range slices.Sorted(maps.Keys(seen)) {
@@ -473,7 +463,7 @@ func paramType(loc, name, typ, kind string) error {
 	case scalarKind(kind):
 	case strings.HasPrefix(kind, "[]") && scalarKind(kind[2:]) && (loc == "query" || loc == "header"):
 	case kind == "struct" && loc == "query":
-		// A deepObject (CheckDeepObjectField).
+		// A deepObject (checkDeepObjectField).
 	case loc == "query":
 		return fmt.Errorf("%s parameter %q has unsupported type %s", loc, name, typ)
 	default:
@@ -482,14 +472,14 @@ func paramType(loc, name, typ, kind string) error {
 	return nil
 }
 
-// CheckDeepObjectField reports whether geta.New accepts f as a field of a
+// checkDeepObjectField reports whether geta.New accepts f as a field of a
 // deepObject query parameter's struct. A field tagged form is one member,
-// sent as name[member]=value; it follows [CheckFormField]'s rules but must
+// sent as name[member]=value; it follows checkFormField's rules but must
 // be a scalar, since OpenAPI defines no array member of a deepObject. walk
 // reports an untagged embedded struct for the caller to check in turn. It
-// applies geta.New's rule and is exported for getavet.
-func CheckDeepObjectField(f VetField, seen map[string]string) (walk bool, err error) {
-	walk, err = CheckFormField(f, false, seen)
+// applies geta.New's rule.
+func checkDeepObjectField(f vet.Field, seen map[string]string) (walk bool, err error) {
+	walk, err = checkFormField(f, false, seen)
 	if err != nil || walk {
 		return walk, err
 	}
@@ -572,15 +562,15 @@ func formBody(field, enc, typ, kind string) error {
 	return fmt.Errorf("%s: a body:%q field has type %s, not a struct", field, enc, typ)
 }
 
-// CheckFormField reports whether geta.New accepts f as a field of a form
+// checkFormField reports whether geta.New accepts f as a field of a form
 // body's struct: body:"form", or body:"multipart" when multipart is set. A
 // field is tagged form with the field name it binds, and is a scalar or a
 // slice of scalars; in a multipart body, also a geta.File or []geta.File
 // (getavet passes those as Kind). walk reports an untagged embedded struct
 // for the caller to check in turn. seen records the names bound so far and
 // is updated with f's. The error begins with the field's name. It applies
-// geta.New's rule and is exported for getavet.
-func CheckFormField(f VetField, multipart bool, seen map[string]string) (walk bool, err error) {
+// geta.New's rule.
+func checkFormField(f vet.Field, multipart bool, seen map[string]string) (walk bool, err error) {
 	name, tagged := f.Tag.Lookup("form")
 	if !tagged {
 		switch {
@@ -642,13 +632,13 @@ func formType(name string, multipart bool, typ, kind, tag string) error {
 	return nil
 }
 
-// CheckEnvelopeField reports whether geta.New accepts f as a field of an
+// checkEnvelopeField reports whether geta.New accepts f as a field of an
 // output envelope. The fields of an accepted untagged embedded struct
-// ([EnvelopeEmbedded]) are written by their own tags; the caller checks them
+// (envelopeEmbedded) are written by their own tags; the caller checks them
 // in turn. seen records the status, body, header, and cookie names taken so
 // far and is updated with f's. The error begins with the field's name. It
-// applies geta.New's rule and is exported for getavet.
-func CheckEnvelopeField(f VetField, seen map[string]bool) error {
+// applies geta.New's rule.
+func checkEnvelopeField(f vet.Field, seen map[string]bool) error {
 	h, isH := f.Tag.Lookup("header")
 	ck, isC := f.Tag.Lookup("cookie")
 	b, isB := f.Tag.Lookup("body")
@@ -758,10 +748,9 @@ func CheckEnvelopeField(f VetField, seen map[string]bool) error {
 	return nil
 }
 
-// EnvelopeEmbedded reports whether f, an envelope field CheckEnvelopeField
+// envelopeEmbedded reports whether f, an envelope field checkEnvelopeField
 // accepts, is an embedded struct whose fields are written by their own tags.
-// It is exported for getavet.
-func EnvelopeEmbedded(f VetField) bool {
+func envelopeEmbedded(f vet.Field) bool {
 	for _, l := range envelopeTags {
 		if _, ok := f.Tag.Lookup(l); ok {
 			return false
@@ -770,21 +759,21 @@ func EnvelopeEmbedded(f VetField) bool {
 	return f.Embedded && f.Struct && !f.Text
 }
 
-// CheckProblemType reports whether geta.New accepts typ as the return type
+// checkProblemType reports whether geta.New accepts typ as the return type
 // of a geta.OnAsProblem row's function, or as that envelope's body: it must
-// be a struct. It applies geta.New's rule and is exported for getavet.
-func CheckProblemType(typ string, isStruct bool) error {
+// be a struct. It applies geta.New's rule.
+func checkProblemType(typ string, isStruct bool) error {
 	if !isStruct {
 		return fmt.Errorf("geta.OnAsProblem: %s is not a struct", typ)
 	}
 	return nil
 }
 
-// CheckProblemField reports whether geta.New accepts f, already accepted by
-// CheckEnvelopeField, in an envelope a geta.OnAsProblem row's function
+// checkProblemField reports whether geta.New accepts f, already accepted by
+// checkEnvelopeField, in an envelope a geta.OnAsProblem row's function
 // returns: only header fields and a body:"json" are allowed, not a cookie or
-// status field. It applies geta.New's rule and is exported for getavet.
-func CheckProblemField(f VetField) error {
+// status field. It applies geta.New's rule.
+func checkProblemField(f vet.Field) error {
 	switch {
 	case !f.Exported:
 		return nil
@@ -798,7 +787,7 @@ func CheckProblemField(f VetField) error {
 	return nil
 }
 
-func hasTag(f VetField, name string) bool {
+func hasTag(f vet.Field, name string) bool {
 	_, ok := f.Tag.Lookup(name)
 	return ok
 }
@@ -806,11 +795,11 @@ func hasTag(f VetField, name string) bool {
 // problemMembers are the members of [Problem] geta writes itself.
 var problemMembers = []string{"type", "title", "status", "instance", "errors", "omitted"}
 
-// CheckProblemMember reports whether geta.New accepts member, of kind, as an
+// checkProblemMember reports whether geta.New accepts member, of kind, as an
 // extension member of a geta.OnAsProblem row's problem. Members geta writes
 // itself are refused, and "detail" must be a string. It applies geta.New's
-// rule and is exported for getavet.
-func CheckProblemMember(member, kind string) error {
+// rule.
+func checkProblemMember(member, kind string) error {
 	switch {
 	case slices.Contains(problemMembers, member):
 		return fmt.Errorf("geta.OnAsProblem: member %q is reserved", member)
@@ -844,11 +833,10 @@ func successStatuses(tag string) ([]int, error) {
 	return out, nil
 }
 
-// CheckEnvelopeStatus reports whether a status field's tag lists the
+// checkEnvelopeStatus reports whether a status field's tag lists the
 // operation's success status, which the field's zero value answers. A tag
-// CheckEnvelopeField refuses is left to it. It applies geta.New's rule and
-// is exported for getavet.
-func CheckEnvelopeStatus(status int, tag string) error {
+// checkEnvelopeField refuses is left to it. It applies geta.New's rule.
+func checkEnvelopeStatus(status int, tag string) error {
 	statuses, err := successStatuses(tag)
 	if err != nil {
 		return nil
@@ -856,22 +844,22 @@ func CheckEnvelopeStatus(status int, tag string) error {
 	return statusDeclared(status, statuses)
 }
 
-// CheckDocTimeout reports whether geta.New accepts t as a Doc.Timeout. Zero
+// checkDocTimeout reports whether geta.New accepts t as a Doc.Timeout. Zero
 // keeps the chain's geta.Timeout, a positive value replaces its length, and
 // a negative value is refused. Only geta.New checks that a positive value
-// has a geta.Timeout in the chain. It is exported for getavet.
-func CheckDocTimeout(t time.Duration) error {
+// has a geta.Timeout in the chain.
+func checkDocTimeout(t time.Duration) error {
 	if t < 0 {
 		return fmt.Errorf("Doc.Timeout %v is negative", t)
 	}
 	return nil
 }
 
-// CheckMethodBody reports whether geta.New accepts an input body for method.
+// checkMethodBody reports whether geta.New accepts an input body for method.
 // GET, HEAD, and DELETE are refused: their content has no defined semantics
 // (RFC 9110 §9.3.1, §9.3.2, §9.3.5) and OpenAPI says to avoid a requestBody
-// there. It applies geta.New's rule and is exported for getavet.
-func CheckMethodBody(method string) error {
+// there. It applies geta.New's rule.
+func checkMethodBody(method string) error {
 	var instead string
 	switch method {
 	case http.MethodGet, http.MethodHead:
@@ -906,7 +894,7 @@ func redirect(n int) bool {
 	return false
 }
 
-// CheckSuccessStatus reports whether geta.New accepts status as the success
+// checkSuccessStatus reports whether geta.New accepts status as the success
 // status of an operation whose output is neither a stream nor an upgrade. It
 // must be a 2xx or 3xx other than 304, 305, and 306. If it, or a status the
 // status field declares, is a redirect (301, 302, 303, 307, 308), the output
@@ -915,9 +903,8 @@ func redirect(n int) bool {
 //
 // output is the output type ("" for geta.OpNoBody), tag its status field's
 // tag ("" if none), and location its Location header field (nil if none). A
-// tag CheckEnvelopeField refuses is left to it. It applies geta.New's rule
-// and is exported for getavet.
-func CheckSuccessStatus(status int, output, tag string, location *VetField) error {
+// tag checkEnvelopeField refuses is left to it. It applies geta.New's rule.
+func checkSuccessStatus(status int, output, tag string, location *vet.Field) error {
 	var statuses []int
 	if tag != "" {
 		statuses, _ = successStatuses(tag)
@@ -925,9 +912,9 @@ func CheckSuccessStatus(status int, output, tag string, location *VetField) erro
 	return checkSuccess(status, output, statuses, location)
 }
 
-// checkSuccess is CheckSuccessStatus with the status field's statuses parsed
+// checkSuccess is checkSuccessStatus with the status field's statuses parsed
 // (nil if none or invalid).
-func checkSuccess(status int, output string, statuses []int, location *VetField) error {
+func checkSuccess(status int, output string, statuses []int, location *vet.Field) error {
 	if status < 200 || status > 399 || status == http.StatusNotModified {
 		return fmt.Errorf("success status %d is not a 2xx or 3xx status", status)
 	}
@@ -984,7 +971,7 @@ func headerType(name, typ, kind string) error {
 
 // embeddedSchema refuses a schema or doc tag on an embedded struct, whose
 // fields carry their own tags.
-func embeddedSchema(f VetField) error {
+func embeddedSchema(f vet.Field) error {
 	if _, ok := f.Tag.Lookup("schema"); ok {
 		return fmt.Errorf("%s: an embedded struct takes no schema tag", f.Name)
 	}
@@ -996,7 +983,7 @@ func embeddedSchema(f VetField) error {
 
 // pointerDefault refuses a default on a pointer field, which is nil when
 // omitted.
-func pointerDefault(f VetField) error {
+func pointerDefault(f vet.Field) error {
 	if f.Pointer && declaresDefault(f.Tag.Get("schema")) {
 		return fmt.Errorf("%s: a pointer field takes no default; use %s", f.Name, strings.TrimPrefix(f.Type, "*"))
 	}
@@ -1005,17 +992,17 @@ func pointerDefault(f VetField) error {
 
 // embeddedText refuses an untagged embedded text type, which has no fields
 // to bind or write; what completes the message.
-func embeddedText(f VetField, what string) error {
+func embeddedText(f vet.Field, what string) error {
 	return fmt.Errorf("%s: embedded %s is a text type with no fields; %s", f.Name, f.Type, what)
 }
 
-// CheckMemberField reports whether geta.New accepts f as a field of a JSON
+// checkMemberField reports whether geta.New accepts f as a field of a JSON
 // body struct. It returns f's JSON member name ("" if f is not a member)
 // and walk, reporting an embedded struct whose promoted members the caller
 // checks in turn. seen records member names taken so far and is updated
 // with f's. The error begins with the field's name. It applies geta.New's
-// rule and is exported for getavet.
-func CheckMemberField(f VetField, seen map[string]bool) (member string, walk bool, err error) {
+// rule.
+func checkMemberField(f vet.Field, seen map[string]bool) (member string, walk bool, err error) {
 	tag, hasTag := f.Tag.Lookup("json")
 	if tag == "-" {
 		return "", false, nil
@@ -1081,86 +1068,47 @@ func CheckMemberField(f VetField, seen map[string]bool) (member string, walk boo
 	return name, false, nil
 }
 
-// CheckStructMembers reports whether geta.New accepts struct type typ with
+// checkStructMembers reports whether geta.New accepts struct type typ with
 // the given number of fields and of JSON members (promoted ones included):
 // a struct with fields but no members is refused. It applies geta.New's
-// rule and is exported for getavet.
-func CheckStructMembers(typ string, fields, members int) error {
+// rule.
+func checkStructMembers(typ string, fields, members int) error {
 	if members == 0 && fields > 0 {
 		return fmt.Errorf("%s has fields but no JSON members", typ)
 	}
 	return nil
 }
 
-// DeclaresDefault reports whether a schema tag declares a default
-// (default=v), which geta binds when a request omits the field. It is
-// exported for getaclient.
-func DeclaresDefault(tag string) bool { return declaresDefault(tag) }
-
 // componentKey is OpenAPI's pattern for Components Object keys.
 var componentKey = regexp.MustCompile(`^[a-zA-Z0-9._-]+$`)
 
-// CheckSchemaName reports whether geta.New accepts typ
+// checkSchemaName reports whether geta.New accepts typ
 // ("lib.Page[example.com/app/lib.User]") as a component. Its component
 // name, without package paths ("Page_User"), may contain only ASCII
 // letters, digits, '.', '_', and '-', as OpenAPI requires. Only geta.New
-// refuses two types with the same component name. It is exported for
-// getavet.
-func CheckSchemaName(typ string) error {
+// refuses two types with the same component name.
+func checkSchemaName(typ string) error {
 	if name := componentNameOf(typ); !componentKey.MatchString(name) {
 		return fmt.Errorf("type %s: component name %q does not match %s", typ, name, componentKey)
 	}
 	return nil
 }
 
-// CheckSelfHolding reports whether geta.New accepts typ, met again inside
+// checkSelfHolding reports whether geta.New accepts typ, met again inside
 // its own elements or members: a type may hold itself only through a named
 // struct type, which its component refers to. throughNamedStruct reports
 // that a named struct type (typ itself included) lies on the cycle from typ
-// back to typ. It applies geta.New's rule and is exported for getavet.
-func CheckSelfHolding(typ string, throughNamedStruct bool) error {
+// back to typ. It applies geta.New's rule.
+func checkSelfHolding(typ string, throughNamedStruct bool) error {
 	if throughNamedStruct {
 		return nil
 	}
 	return fmt.Errorf("%s holds itself other than through a named struct type", typ)
 }
 
-// VetType describes a type for CheckJSONType. geta.New builds it by
-// reflection, getavet from source.
-type VetType struct {
-	Type string // the type, as reflect writes it ("map[string]*main.Item")
-	Kind string // its kind, as reflect.Kind writes it ("map", "ptr", "chan")
-	// Marshaler reports that T or *T implements encoding.TextMarshaler or
-	// encoding.TextAppender; Unmarshaler, that *T implements
-	// encoding.TextUnmarshaler.
-	Marshaler, Unmarshaler bool
-	// StringKey reports that a map's key is of kind string.
-	StringKey bool
-	// Key is a map's key type. KeyMarshaler and KeyUnmarshaler are its
-	// Marshaler and Unmarshaler, both false when it has its own JSON
-	// methods.
-	Key                          string
-	KeyMarshaler, KeyUnmarshaler bool
-	// Elem is a slice's or map's element type; ElemPointer reports that it
-	// is a pointer.
-	Elem        string
-	ElemPointer bool
-	// Duration reports that the type is time.Duration.
-	Duration bool
-	// Format reports that T or *T has SchemaFormat() string (a FormatType).
-	Format bool
-	// JSON reports that T or *T has its own JSON methods.
-	JSON bool
-	// File reports that the type is geta.File.
-	File bool
-	// Nullable reports that the type is a geta.Nullable of Elem;
-	// ElemNullable, that Elem is a geta.Nullable too.
-	Nullable, ElemNullable bool
-}
-
-// vetType describes t for CheckJSONType.
-func vetType(t reflect.Type) VetType {
-	vt := VetType{Type: t.String(), Kind: t.Kind().String(),
+// vetType describes t for checkJSONType.
+func vetType(t reflect.Type) vet.Type {
+	vt := vet.Type{Type: t.String(), Kind: t.Kind().String(),
 		Marshaler:   writesText(t),
 		Unmarshaler: reflect.PointerTo(t).Implements(textUnmarshaler),
 		Duration:    t == durationType,
@@ -1181,15 +1129,15 @@ func vetType(t reflect.Type) VetType {
 	return vt
 }
 
-// CheckJSONType reports whether geta.New derives a JSON form for t, which is
+// checkJSONType reports whether geta.New derives a JSON form for t, which is
 // not an interface (interfaces are sealed types declared by
 // geta.WithUnion). It refuses geta.File, time.Duration, a Nullable of a
 // Nullable, a FormatType that is not a text type, a type with only one of
 // the text methods, a map without string keys, and pointer elements. A type
 // with its own JSON methods is refused only if it also has a format.
 // Elements and fields are the caller's to check in turn. It applies
-// geta.New's rule and is exported for getavet.
-func CheckJSONType(t VetType) error {
+// geta.New's rule.
+func checkJSONType(t vet.Type) error {
 	switch {
 	case t.Nullable && t.ElemNullable:
 		return fmt.Errorf("type %s is a geta.Nullable of a geta.Nullable; use %s", t.Type, t.Elem)

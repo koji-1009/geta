@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/koji-1009/geta"
+	"github.com/koji-1009/geta/internal/vet"
 )
 
 // absence is one field named by Absent. The type tells the field apart from
@@ -57,7 +57,7 @@ func (as absences) leave(f reflect.StructField, v reflect.Value, what string) (b
 	if !as.of(v) {
 		return false, nil
 	}
-	if !geta.DeclaresDefault(f.Tag.Get("schema")) {
+	if !vet.DeclaresDefault(f.Tag.Get("schema")) {
 		return false, fmt.Errorf("Absent: field %s (%s) declares no default", f.Name, what)
 	}
 	return true, nil
@@ -94,7 +94,7 @@ func jsonBody(v reflect.Value, opts json.Options, abs absences) ([]byte, error) 
 func pathKey(path []string) string { return strings.Join(path, "\x00") }
 
 // memberPaths appends to drop the paths of the members in abs, walking v's
-// members (geta.CheckMemberField) through pointers, interfaces, and slice
+// members (vet.CheckMemberField) through pointers, interfaces, and slice
 // elements. A type with its own JSON or text methods is not walked.
 func memberPaths(v reflect.Value, path []string, abs absences, drop *[]string) error {
 	for v.Kind() == reflect.Pointer || v.Kind() == reflect.Interface {
@@ -115,7 +115,7 @@ func memberPaths(v reflect.Value, path []string, abs absences, drop *[]string) e
 			t := v.Type()
 			for i := range t.NumField() {
 				f, fv := t.Field(i), v.Field(i)
-				member, embedded, err := geta.CheckMemberField(geta.VetFieldOf(f), seen)
+				member, embedded, err := vet.CheckMemberField(vet.FieldOf(f), seen)
 				if err != nil {
 					continue // geta.New refuses the type
 				}

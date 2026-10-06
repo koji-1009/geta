@@ -104,9 +104,9 @@ func (r *registry) formFields(p *formPlan) error {
 			var embedded bool
 			var err error
 			if p.enc == deepObject {
-				embedded, err = CheckDeepObjectField(vetField(sf), seen)
+				embedded, err = checkDeepObjectField(vetField(sf), seen)
 			} else {
-				embedded, err = CheckFormField(vetField(sf), multipart, seen)
+				embedded, err = checkFormField(vetField(sf), multipart, seen)
 			}
 			if err != nil {
 				return fmt.Errorf("%s.%w", t, err)

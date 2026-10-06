@@ -19,8 +19,7 @@ const MethodQuery = "QUERY"
 // Route is what one URL answers, one field per method. A zero field means
 // the URL does not answer that method. geta answers HEAD with Get, and
 // OPTIONS itself, listing the methods in Allow. A Get or Delete operation
-// takes no body ([CheckMethodBody]); serve one that reads a body as Query or
-// Post.
+// takes no body; serve one that reads a body as Query or Post.
 type Route struct {
 	Get    Operation
 	Post   Operation

@@ -62,7 +62,7 @@ func (f File) Open() (io.ReadCloser, error) {
 
 var fileType = reflect.TypeFor[File]()
 
-// fileKind is a File's kind, as VetField.Kind names it.
+// fileKind is a File's kind, as vet.Field.Kind names it.
 const fileKind = "geta.File"
 
 // fileSchema is a file's schema, as OpenAPI 3.1 writes a binary part.

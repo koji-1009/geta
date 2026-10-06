@@ -8,6 +8,7 @@ import (
 
 	"github.com/koji-1009/geta"
 	"github.com/koji-1009/geta/getatest"
+	"github.com/koji-1009/geta/internal/vet"
 )
 
 // A map's values take the keywords a single value takes, each after
@@ -193,7 +194,7 @@ func TestValueKeywordMistakesAreRefused(t *testing.T) {
 		"map[string]struct": "additionalProperties.minLength=1",
 		"[]map[string]int":  "items.additionalProperties.minLength=1",
 	} {
-		if err := geta.CheckSchemaTag(tag, kind); err == nil {
+		if err := vet.CheckSchemaTag(tag, kind); err == nil {
 			t.Errorf("CheckSchemaTag(%q, %q) accepted", tag, kind)
 		}
 	}
@@ -205,15 +206,15 @@ func TestValueKeywordMistakesAreRefused(t *testing.T) {
 		"map[string]geta.Date":       "additionalProperties.enum=2026-01-01",
 		"map":                        "additionalProperties.minLength=1", // a value of no kind getavet names: geta.New judges it
 	} {
-		if err := geta.CheckSchemaTag(tag, kind); err != nil {
+		if err := vet.CheckSchemaTag(tag, kind); err != nil {
 			t.Errorf("CheckSchemaTag(%q, %q): %v", tag, kind, err)
 		}
 	}
-	if err := geta.CheckRequestSchemaTag("additionalProperties.pattern=^a$,additionalProperties.maxLength=5000", "map[string]string"); err == nil ||
+	if err := vet.CheckRequestSchemaTag("additionalProperties.pattern=^a$,additionalProperties.maxLength=5000", "map[string]string"); err == nil ||
 		!strings.Contains(err.Error(), "additionalProperties: maxLength 5000 with a pattern") {
 		t.Error(err)
 	}
-	if err := geta.CheckSchemaTag("additionalProperties.enum=2026-02-30", "map[string]geta.Date"); err == nil ||
+	if err := vet.CheckSchemaTag("additionalProperties.enum=2026-02-30", "map[string]geta.Date"); err == nil ||
 		!strings.Contains(err.Error(), `additionalProperties: enum member "2026-02-30" is not a valid date`) {
 		t.Error(err)
 	}
@@ -479,7 +480,7 @@ func TestKeyKeywordMistakesAreRefused(t *testing.T) {
 		"map":               "propertyNames.minimum=1", // a key is a string whatever the values
 		"[]map[string]int":  "items.propertyNames.uniqueItems=true",
 	} {
-		if err := geta.CheckSchemaTag(tag, kind); err == nil {
+		if err := vet.CheckSchemaTag(tag, kind); err == nil {
 			t.Errorf("CheckSchemaTag(%q, %q) accepted", tag, kind)
 		}
 	}
@@ -490,15 +491,15 @@ func TestKeyKeywordMistakesAreRefused(t *testing.T) {
 		"?map[string]int":            "propertyNames.minLength=1",
 		"map":                        "propertyNames.maxLength=9",
 	} {
-		if err := geta.CheckSchemaTag(tag, kind); err != nil {
+		if err := vet.CheckSchemaTag(tag, kind); err != nil {
 			t.Errorf("CheckSchemaTag(%q, %q): %v", tag, kind, err)
 		}
 	}
-	if err := geta.CheckRequestSchemaTag("propertyNames.pattern=^a$,propertyNames.maxLength=5000", "map[string]string"); err == nil ||
+	if err := vet.CheckRequestSchemaTag("propertyNames.pattern=^a$,propertyNames.maxLength=5000", "map[string]string"); err == nil ||
 		!strings.Contains(err.Error(), "propertyNames: maxLength 5000 with a pattern") {
 		t.Error(err)
 	}
-	if err := geta.CheckSchemaTag("propertyNames.pattern=^a$,propertyNames.maxLength=5000", "map[string]string"); err != nil {
+	if err := vet.CheckSchemaTag("propertyNames.pattern=^a$,propertyNames.maxLength=5000", "map[string]string"); err != nil {
 		t.Error(err)
 	}
 }

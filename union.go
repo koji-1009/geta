@@ -346,7 +346,7 @@ func (r *registry) unionCodec(t reflect.Type) (*codec, error) {
 	if !ok {
 		return nil, fmt.Errorf("interface type %s has no JSON form; declare it with geta.WithUnion", t)
 	}
-	if err := CheckSchemaName(t.String()); err != nil {
+	if err := checkSchemaName(t.String()); err != nil {
 		return nil, err
 	}
 	c := &codec{t: t, kind: kOneOf, name: componentName(t), disc: u.disc}

@@ -784,7 +784,7 @@ func (s *schema) nestedHold(check func(*schema) error) error {
 
 // withinCeiling rejects, alongside a pattern, a maxLength, minLength, enum
 // member, default, or example longer than patternCeiling, since geta refuses
-// such strings. getavet applies it too (CheckRequestSchemaTag).
+// such strings. getavet applies it too (checkRequestTag).
 func (s *schema) withinCeiling() error {
 	if s.re == nil {
 		return s.nestedHold((*schema).withinCeiling)

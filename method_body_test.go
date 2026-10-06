@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/koji-1009/geta"
+	"github.com/koji-1009/geta/internal/vet"
 )
 
 type methodBodyItem struct {
@@ -80,11 +81,11 @@ func TestABodyOnGetOrDeleteIsRefused(t *testing.T) {
 	if _, err := geta.New(one("/x", geta.Route{Get: methodBodyOp[queryIn](), Delete: methodBodyOp[queryIn]()})); err != nil {
 		t.Fatal(err)
 	}
-	if err := geta.CheckMethodBody(http.MethodHead); err == nil {
+	if err := vet.CheckMethodBody(http.MethodHead); err == nil {
 		t.Fatal("CheckMethodBody accepted HEAD")
 	}
 	for _, m := range []string{http.MethodPost, http.MethodPut, http.MethodPatch, geta.MethodQuery} {
-		if err := geta.CheckMethodBody(m); err != nil {
+		if err := vet.CheckMethodBody(m); err != nil {
 			t.Fatal(m, err)
 		}
 	}

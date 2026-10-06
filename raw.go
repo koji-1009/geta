@@ -32,7 +32,7 @@ type rawPlan struct {
 }
 
 func newRawPlan(f reflect.StructField, mt string, index []int) *rawPlan {
-	essence, _, _ := mime.ParseMediaType(mt) // CheckInputField has parsed it
+	essence, _, _ := mime.ParseMediaType(mt) // checkInputField has parsed it
 	return &rawPlan{index: index, mediaType: mt, essence: essence,
 		optional: f.Type.Kind() == reflect.Pointer, reader: f.Type == readerType, desc: f.Tag.Get("doc")}
 }

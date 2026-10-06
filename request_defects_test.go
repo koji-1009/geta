@@ -16,6 +16,7 @@ import (
 
 	"github.com/koji-1009/geta"
 	"github.com/koji-1009/geta/getatest"
+	"github.com/koji-1009/geta/internal/vet"
 )
 
 // problemOf reads the problem a recorder holds.
@@ -449,7 +450,7 @@ func TestEnumMembersTheFormatOrTypeRefusesAreRefused(t *testing.T) {
 		{"format=ipv4,enum=10.0.0.1", "string", ""},
 		{"enum=anything", "text", ""}, // the type is the program's: geta.New judges it
 	} {
-		err := geta.CheckSchemaTag(c.tag, c.kind)
+		err := vet.CheckSchemaTag(c.tag, c.kind)
 		if c.want == "" && err != nil || c.want != "" && (err == nil || !strings.Contains(err.Error(), c.want)) {
 			t.Errorf("%s on %s: %v", c.tag, c.kind, err)
 		}

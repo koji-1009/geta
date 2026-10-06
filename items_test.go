@@ -9,6 +9,7 @@ import (
 
 	"github.com/koji-1009/geta"
 	"github.com/koji-1009/geta/getatest"
+	"github.com/koji-1009/geta/internal/vet"
 )
 
 // A slice's elements take the keywords a single value takes, each after
@@ -210,7 +211,7 @@ func TestElementKeywordMistakesAreRefused(t *testing.T) {
 		"[]string": "items.default=a",
 		"[]struct": "items.minLength=1",
 	} {
-		if err := geta.CheckSchemaTag(tag, kind); err == nil {
+		if err := vet.CheckSchemaTag(tag, kind); err == nil {
 			t.Errorf("CheckSchemaTag(%q, %q) accepted", tag, kind)
 		}
 	}
@@ -221,19 +222,19 @@ func TestElementKeywordMistakesAreRefused(t *testing.T) {
 		"[]geta.Date": "items.enum=2026-01-01",
 		"slice":       "items.minLength=1", // an element of no kind getavet names: geta.New judges it
 	} {
-		if err := geta.CheckSchemaTag(tag, kind); err != nil {
+		if err := vet.CheckSchemaTag(tag, kind); err != nil {
 			t.Errorf("CheckSchemaTag(%q, %q): %v", tag, kind, err)
 		}
 	}
-	if err := geta.CheckRequestSchemaTag("items.pattern=^a$,items.maxLength=5000", "[]string"); err == nil ||
+	if err := vet.CheckRequestSchemaTag("items.pattern=^a$,items.maxLength=5000", "[]string"); err == nil ||
 		!strings.Contains(err.Error(), "items: maxLength 5000 with a pattern") {
 		t.Error(err)
 	}
-	if err := geta.CheckSchemaTag("items.enum=2026-02-30", "[]geta.Date"); err == nil || !strings.Contains(err.Error(), "items: ") {
+	if err := vet.CheckSchemaTag("items.enum=2026-02-30", "[]geta.Date"); err == nil || !strings.Contains(err.Error(), "items: ") {
 		t.Error(err)
 	}
 	// A slice of a kind CheckSchemaTag does not know is no kind either.
-	if err := geta.CheckSchemaTag("", "[]nope"); err == nil || err.Error() != `geta.CheckSchemaTag: unknown kind "nope"` {
+	if err := vet.CheckSchemaTag("", "[]nope"); err == nil || err.Error() != `geta: unknown kind "nope"` {
 		t.Error(err)
 	}
 }

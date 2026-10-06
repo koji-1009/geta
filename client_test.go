@@ -201,7 +201,7 @@ type clientHeadersOnly struct {
 }
 
 // getaclient reads an envelope's embedded fields by the rule geta writes
-// them by (geta.EnvelopeEmbedded): headers, cookies, and the body declared
+// them by (vet.EnvelopeEmbedded): headers, cookies, and the body declared
 // in an embedded struct, at any depth, and an envelope whose tags are all
 // in an embedded struct.
 func TestClientReadsEnvelopeEmbeddedFields(t *testing.T) {

@@ -383,7 +383,7 @@ func (a *App) compile(reg *registry, path string, params []string, m methodOp, c
 	}
 	c.in = in
 	if in.body != nil || in.form != nil || in.raw != nil {
-		if err := CheckMethodBody(m.method); err != nil {
+		if err := checkMethodBody(m.method); err != nil {
 			return nil, fmt.Errorf("%s: %w", where, err)
 		}
 	}
@@ -446,7 +446,7 @@ func (a *App) compile(reg *registry, path string, params []string, m methodOp, c
 	if err := checkOrder(chain, m.method+" "+path); err != nil {
 		return nil, err
 	}
-	if err := CheckDocTimeout(op.doc.Timeout); err != nil {
+	if err := checkDocTimeout(op.doc.Timeout); err != nil {
 		return nil, fmt.Errorf("%s: %w", where, err)
 	}
 	switch t := op.doc.Timeout; {
@@ -602,7 +602,7 @@ func checkStatus(status int, out *outPlan, outType reflect.Type) error {
 		}
 		return nil
 	}
-	// The same rule CheckSuccessStatus applies for getavet.
+	// The same rule checkSuccessStatus applies for getavet.
 	output := ""
 	if outType != nil {
 		output = outType.String()

@@ -18,6 +18,7 @@ import (
 	jsonv2 "encoding/json/v2"
 
 	"github.com/koji-1009/geta"
+	"github.com/koji-1009/geta/internal/vet"
 )
 
 // Rules of the document that no other test asserts.
@@ -426,29 +427,29 @@ func TestAppIntrospection(t *testing.T) {
 	}
 }
 
-// geta exports the rules getavet shares with geta.New, with these
-// signatures; each refuses a declaration geta.New refuses.
-func TestTheSharedRulesAreExported(t *testing.T) {
-	field := func(v any, name string) geta.VetField {
+// geta sets the rules getavet shares with geta.New in internal/vet, with
+// these signatures; each refuses a declaration geta.New refuses.
+func TestTheSharedRulesAreSet(t *testing.T) {
+	field := func(v any, name string) vet.Field {
 		f, _ := reflect.TypeOf(v).FieldByName(name)
-		return geta.VetFieldOf(f)
+		return vet.FieldOf(f)
 	}
 	var (
-		schemaTag        func(string, string) error                                 = geta.CheckSchemaTag
-		requestSchemaTag func(string, string) error                                 = geta.CheckRequestSchemaTag
-		inputType        func(string, bool) error                                   = geta.CheckInputType
-		inputField       func(geta.VetField, map[string]string) (bool, error)       = geta.CheckInputField
-		deepObjectField  func(geta.VetField, map[string]string) (bool, error)       = geta.CheckDeepObjectField
-		formField        func(geta.VetField, bool, map[string]string) (bool, error) = geta.CheckFormField
-		envelopeField    func(geta.VetField, map[string]bool) error                 = geta.CheckEnvelopeField
-		envelopeStatus   func(int, string) error                                    = geta.CheckEnvelopeStatus
-		memberField      func(geta.VetField, map[string]bool) (string, bool, error) = geta.CheckMemberField
-		structMembers    func(string, int, int) error                               = geta.CheckStructMembers
-		jsonType         func(geta.VetType) error                                   = geta.CheckJSONType
-		schemaName       func(string) error                                         = geta.CheckSchemaName
-		problemType      func(string, bool) error                                   = geta.CheckProblemType
-		problemField     func(geta.VetField) error                                  = geta.CheckProblemField
-		problemMember    func(string, string) error                                 = geta.CheckProblemMember
+		schemaTag        func(string, string) error                             = vet.CheckSchemaTag
+		requestSchemaTag func(string, string) error                             = vet.CheckRequestSchemaTag
+		inputType        func(string, bool) error                               = vet.CheckInputType
+		inputField       func(vet.Field, map[string]string) (bool, error)       = vet.CheckInputField
+		deepObjectField  func(vet.Field, map[string]string) (bool, error)       = vet.CheckDeepObjectField
+		formField        func(vet.Field, bool, map[string]string) (bool, error) = vet.CheckFormField
+		envelopeField    func(vet.Field, map[string]bool) error                 = vet.CheckEnvelopeField
+		envelopeStatus   func(int, string) error                                = vet.CheckEnvelopeStatus
+		memberField      func(vet.Field, map[string]bool) (string, bool, error) = vet.CheckMemberField
+		structMembers    func(string, int, int) error                           = vet.CheckStructMembers
+		jsonType         func(vet.Type) error                                   = vet.CheckJSONType
+		schemaName       func(string) error                                     = vet.CheckSchemaName
+		problemType      func(string, bool) error                               = vet.CheckProblemType
+		problemField     func(vet.Field) error                                  = vet.CheckProblemField
+		problemMember    func(string, string) error                             = vet.CheckProblemMember
 	)
 	_, inputErr := inputField(field(struct {
 		X string `query:"a" header:"b"`
@@ -471,7 +472,7 @@ func TestTheSharedRulesAreExported(t *testing.T) {
 		"CheckEnvelopeStatus": envelopeStatus(http.StatusAccepted, "200|201"),
 		"CheckMemberField":    memberErr,
 		"CheckStructMembers":  structMembers("lib.Hidden", 1, 0),
-		"CheckJSONType":       jsonType(geta.VetType{Type: "chan int", Kind: "chan"}),
+		"CheckJSONType":       jsonType(vet.Type{Type: "chan int", Kind: "chan"}),
 		"CheckSchemaName":     schemaName("lib.利用者"),
 		"CheckProblemType":    problemType("int", false),
 		"CheckProblemField": problemField(field(struct {

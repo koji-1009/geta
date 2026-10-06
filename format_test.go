@@ -20,6 +20,7 @@ import (
 	"github.com/koji-1009/geta"
 	"github.com/koji-1009/geta/getaclient"
 	"github.com/koji-1009/geta/getatest"
+	"github.com/koji-1009/geta/internal/vet"
 )
 
 // formatCase lists texts a format type reads and texts it refuses, from
@@ -793,7 +794,7 @@ func TestFormatTagsAreChecked(t *testing.T) {
 	// application type's to carry (geta.FormatType), not a schema tag's.
 	for _, f := range []string{"regex", "idn-email", "custom", "int64", "binary",
 		"email", "hostname", "uri", "uri-reference", "iri", "iri-reference", "uri-template"} {
-		if geta.CheckSchemaTag("format="+f, "string") == nil {
+		if vet.CheckSchemaTag("format="+f, "string") == nil {
 			t.Errorf("format %s passed", f)
 		}
 	}

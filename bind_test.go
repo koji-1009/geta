@@ -14,6 +14,7 @@ import (
 
 	"github.com/koji-1009/geta"
 	"github.com/koji-1009/geta/getatest"
+	"github.com/koji-1009/geta/internal/vet"
 )
 
 // echo answers with whatever it was given, formatted.
@@ -368,7 +369,7 @@ func TestRejectsInvalidInputCookieName(t *testing.T) {
 // input's header name is checked as an output's is.
 func TestRejectsInvalidInputHeaderName(t *testing.T) {
 	for _, name := range []string{"X Name", "X:Name", "Ä-Name", "X(Name)"} {
-		_, err := geta.CheckInputField(geta.VetField{Name: "S", Exported: true, Type: "string", Kind: "string", Tag: reflect.StructTag(`header:"` + name + `"`)}, map[string]string{})
+		_, err := vet.CheckInputField(vet.Field{Name: "S", Exported: true, Type: "string", Kind: "string", Tag: reflect.StructTag(`header:"` + name + `"`)}, map[string]string{})
 		want := fmt.Sprintf(`S: %q is not a valid header name`, name)
 		if err == nil || err.Error() != want {
 			t.Errorf("%s: CheckInputField: %v", name, err)
