@@ -249,8 +249,9 @@ func (c *Client) Patch(path string, body any) *Response { return c.Do(http.Metho
 func (c *Client) Query(path string, body any) *Response { return c.Do(geta.MethodQuery, path, body) }
 
 // Do sends a request. A string or []byte body is sent as is; any other
-// non-nil body is encoded as JSON. The Content-Type is application/json
-// unless the client sets one.
+// non-nil body is encoded as JSON. The Content-Type is application/json, or
+// application/merge-patch+json on PATCH, as a body:"json" field takes by
+// default, unless the client sets one.
 func (c *Client) Do(method, path string, body any) *Response {
 	c.t.Helper()
 	var r io.Reader
@@ -272,7 +273,11 @@ func (c *Client) Do(method, path string, body any) *Response {
 		c.t.Fatalf("getatest: %v", err)
 	}
 	if r != nil && c.hdr.Get("Content-Type") == "" {
-		req.Header.Set("Content-Type", "application/json")
+		ct := "application/json"
+		if method == http.MethodPatch {
+			ct = "application/merge-patch+json"
+		}
+		req.Header.Set("Content-Type", ct)
 	}
 	return c.Send(req)
 }

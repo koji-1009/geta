@@ -431,15 +431,11 @@ func (c *compiledOp) document(lim *Limits, split map[string]bool) map[string]any
 	if b := c.in.body; b != nil {
 		m["requestBody"] = map[string]any{
 			"required": !b.optional,
-			"content":  map[string]any{"application/json": map[string]any{"schema": b.use.render(lim, split)}},
+			"content":  map[string]any{b.mediaType(): map[string]any{"schema": b.use.render(lim, split)}},
 		}
-		// A media type key cannot name the structured-syntax suffix range, so
-		// the description states it.
-		desc := "Also taken as any application/*+json media type, read as application/json"
 		if b.desc != "" {
-			desc = b.desc + "\n\n" + desc
+			m["requestBody"].(map[string]any)["description"] = b.desc
 		}
-		m["requestBody"].(map[string]any)["description"] = desc
 	}
 	if f := c.in.form; f != nil {
 		m["requestBody"] = map[string]any{
@@ -729,7 +725,7 @@ func (c *compiledOp) responses() map[string]any {
 func (c *compiledOp) bodyMediaType() string {
 	switch {
 	case c.in.body != nil:
-		return bodyMediaTypes["json"]
+		return c.in.body.mediaType()
 	case c.in.form != nil:
 		return c.in.form.mediaType()
 	case c.in.raw != nil:

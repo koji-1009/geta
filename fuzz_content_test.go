@@ -110,18 +110,13 @@ func refAcceptEncoding(lines []string) (gzipQ, identityQ float64, clean bool) {
 }
 
 // refMediaType reports whether the Content-Type ct names the media type
-// want, one of application/json (which application/*+json is too),
-// text/csv, and application/x-www-form-urlencoded: it parses as a media type
-// (RFC 9110 §8.3.1), whose type and subtype, in any case, are want's.
+// want, one of application/json, application/merge-patch+json, text/csv,
+// and application/x-www-form-urlencoded: it parses as a media type (RFC 9110
+// §8.3.1), whose type and subtype, in any case, are want's. Another JSON
+// media type is another format.
 func refMediaType(ct, want string) bool {
 	mt, _, err := mime.ParseMediaType(ct)
-	if err != nil {
-		return false
-	}
-	if want == "application/json" && strings.HasPrefix(mt, "application/") && strings.HasSuffix(mt, "+json") {
-		return true
-	}
-	return mt == want
+	return err == nil && mt == want
 }
 
 // refClip is a 415's quote of a header value (RFC 9457 detail): the longest
@@ -182,6 +177,9 @@ func FuzzContentHeaders(f *testing.F) {
 	long := bytes.Repeat([]byte("a,b\n"), 400)
 	f.Add(uint8(0), "application/json", "", "gzip", []byte(`{"a":"x"}`), uint8(0))
 	f.Add(uint8(0), "application/merge-patch+json; charset=utf-8", "", "", []byte(`{"a":"x"}`), uint8(0b0100))
+	f.Add(uint8(0), "application/json", "", "", []byte(`{"a":"x"}`), uint8(0b0100))
+	f.Add(uint8(0), "application/merge-patch+json", "", "", []byte(`{"a":"x"}`), uint8(0))
+	f.Add(uint8(0), "application/vnd.x+json", "", "", []byte(`{"a":"x"}`), uint8(0))
 	f.Add(uint8(0), "Application/JSON", "identity", "", []byte(`{}`), uint8(0b0001))
 	f.Add(uint8(0), "application/json", "gzip", "", []byte(`{}`), uint8(0))
 	f.Add(uint8(0), "text/plain", "gzip", "", []byte(`x`), uint8(0))
@@ -258,6 +256,9 @@ func FuzzContentHeaders(f *testing.F) {
 
 		// The reference.
 		taken := map[string]string{"/j": "application/json", "/r": "text/csv", "/f": "application/x-www-form-urlencoded"}[path]
+		if path == "/j" && method == http.MethodPatch {
+			taken = "application/merge-patch+json" // a patch document (RFC 5789 §2, RFC 7396)
+		}
 		var want []int
 		var accept, acceptEncoding string
 		switch {

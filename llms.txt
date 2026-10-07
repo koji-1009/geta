@@ -154,11 +154,12 @@ func TestItems(t *testing.T) {
 }
 ```
 
-What geta answers on its own, with no code: 400 listing every violation, unknown members included (`errors`: `{"in":"body","path":"$.name","message":"…"}`; a parameter's path is its name, `limit`), 404 and 405 (with `Allow`), 415 for a body that is not `application/json`, 428 and 412 for `RequireConditional`, 500 for an error no failure row matches, all as `application/problem+json`. `a.OpenAPI()` is the document as JSON bytes; geta does not serve it, so mount `a` and a handler for it on an `http.ServeMux` of your own if it should be served.
+What geta answers on its own, with no code: 400 listing every violation, unknown members included (`errors`: `{"in":"body","path":"$.name","message":"…"}`; a parameter's path is its name, `limit`), 404 and 405 (with `Allow`), 415 for a body that is not `application/json` (on PATCH, `application/merge-patch+json`), 428 and 412 for `RequireConditional`, 500 for an error no failure row matches, all as `application/problem+json`. `a.OpenAPI()` is the document as JSON bytes; geta does not serve it, so mount `a` and a handler for it on an `http.ServeMux` of your own if it should be served.
 
 ## Rules that are easy to get wrong
 
 - A JSON member is required unless it is a pointer tagged `json:"name,omitzero"`; `omitempty` and every other json option are refused. Slice elements are never pointers (`[]T`, not `[]*T`). `null` is accepted only in `geta.Nullable[T]`. `any` and `map[string]any` have no JSON form.
+- A `body:"json"` takes `application/json`, and on PATCH `application/merge-patch+json` (RFC 7396: absent keeps, null clears, which `omitzero` and `geta.Nullable` read). To take another JSON media type, name it beside the tag: `body:"json" mediatype:"application/vnd.api+json"`.
 - Schema keywords: `minLength maxLength pattern format enum minimum maximum exclusiveMinimum exclusiveMaximum multipleOf minItems maxItems uniqueItems`; `items.` applies one to slice elements; `default=` makes a field optional. Lengths count characters. A `pattern` refuses `.`, `\s`, `\S` (write a set: `[^\n]`, `[ \t]`).
 - `format=` names only `date date-time time duration ipv4 ipv6 uuid` (and json-pointer, relative-json-pointer, password), each checked (`2026-02-30` is 400); there is no `email`: use a `pattern` or your own text type ([Format types](docs/guide/formats.md)). The same formats exist as types (`geta.Date`, `geta.DateTime`, `geta.Duration`, `geta.IPv4`, …).
 - Handlers return the lower layer's errors unchanged; `Doc.Failures` maps them (`geta.On(sentinel, status, detail)`, `geta.OnAs[*MyErr](status, detail)`). An error no row matches is a logged 500; `err.Error()` never reaches the client.

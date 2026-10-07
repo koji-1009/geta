@@ -41,7 +41,7 @@ func TestUnsupportedMediaTypeIs415(t *testing.T) {
 	unsupported(c.With("Content-Type", "text/plain").Post("/x", body),
 		`Content-Type "text/plain" is not application/json`, "application/json", "")
 	unsupported(c.With("Content-Type", "text/plain").Patch("/x", body),
-		`Content-Type "text/plain" is not application/json`, "application/json", "application/json")
+		`Content-Type "text/plain" is not application/merge-patch+json`, "application/merge-patch+json", "application/merge-patch+json")
 	unsupported(c.With("Content-Type", "application/x-www-form-urlencoded").Post("/x", "name=a&price=1"),
 		`Content-Type "application/x-www-form-urlencoded" is not application/json`, "application/json", "")
 	req, _ := http.NewRequestWithContext(t.Context(), http.MethodPost, c.URL()+"/x", strings.NewReader(body))
@@ -60,9 +60,9 @@ func TestUnsupportedMediaTypeIs415(t *testing.T) {
 	// The document lists the 415 and its headers wherever a body is read.
 	d := doc(t, c.App())
 	if g := compact(t, at(t, d, "paths", "/x", "patch", "responses", "415", "headers")); g !=
-		`{"Accept":{"description":"The media type the operation takes, sent with geta's own 415 for content of another media type (RFC 9110 section 15.5.16)","schema":{"enum":["application/json"],"type":"string"}},`+
+		`{"Accept":{"description":"The media type the operation takes, sent with geta's own 415 for content of another media type (RFC 9110 section 15.5.16)","schema":{"enum":["application/merge-patch+json"],"type":"string"}},`+
 			`"Accept-Encoding":{"description":"identity: geta decodes no content coding; sent with geta's own 415 for content in one, and only with that 415 (RFC 9110 section 12.5.3)","schema":{"enum":["identity"],"type":"string"}},`+
-			`"Accept-Patch":{"description":"The media type the operation takes, sent with geta's own 415 for content of another media type (RFC 5789 section 2.2)","schema":{"enum":["application/json"],"type":"string"}}}` {
+			`"Accept-Patch":{"description":"The media type the operation takes, sent with geta's own 415 for content of another media type (RFC 5789 section 2.2)","schema":{"enum":["application/merge-patch+json"],"type":"string"}}}` {
 		t.Fatal(g)
 	}
 	if g := compact(t, at(t, d, "paths", "/x", "post", "responses", "415", "headers")); strings.Contains(g, "Accept-Patch") {

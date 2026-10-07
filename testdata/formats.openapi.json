@@ -414,7 +414,6 @@
               }
             }
           },
-          "description": "Also taken as any application/*+json media type, read as application/json",
           "required": false
         },
         "responses": {
