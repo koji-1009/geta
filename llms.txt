@@ -155,7 +155,7 @@ func TestItems(t *testing.T) {
 }
 ```
 
-What geta answers on its own, with no code: 400 listing every violation, unknown members included (`errors`: `{"in":"body","path":"$.name","message":"…"}`; a parameter's path is its name, `limit`), 404 and 405 (with `Allow`), 415 for a body that is not `application/json` (on PATCH, `application/merge-patch+json`), 428 and 412 for `RequireConditional`, 500 for an error no failure row matches, all as `application/problem+json`. The OpenAPI document is an artifact, not a route: `getatest.Golden` writes it to a file and fails the test when it changes, and `a.OpenAPI()` returns its bytes. geta serves no route of its own for it.
+What geta answers on its own, with no code: 400 listing every violation (an array or object past its bound is reported by its count alone), unknown members included (`errors`: `{"in":"body","path":"$.name","message":"…"}`; a parameter's path is its name, `limit`), 404 and 405 (with `Allow`), 415 for a body that is not `application/json` (on PATCH, `application/merge-patch+json`), 428 and 412 for `RequireConditional`, 500 for an error no failure row matches, all as `application/problem+json`. The OpenAPI document is an artifact, not a route: `getatest.Golden` writes it to a file and fails the test when it changes, and `a.OpenAPI()` returns its bytes. geta serves no route of its own for it.
 
 ## Rules that are easy to get wrong
 
