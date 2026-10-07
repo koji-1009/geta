@@ -10,7 +10,7 @@
 
 ## getavet
 
-- `go run github.com/koji-1009/geta/getavet/cmd/getavet ./...`, or `go vet -vettool=<getavet binary> ./...`.
+- getavet is a module of its own: `go get -tool github.com/koji-1009/geta/getavet/cmd/getavet` once, then `go tool getavet ./...`, or `go vet -vettool=<getavet binary> ./...`. A plain `go run github.com/koji-1009/geta/getavet/cmd/getavet` fails in a module that does not require it.
 - Reports before anything runs, in `geta.New`'s text:
   - path parameters the URL lacks or does not bind (URL from a directory holding `route.go` under a `zz_routes.go`; a helper package in the tree has none, and a cgo route is read by its source's directory);
   - schema-tag mistakes: malformed, wrong type, unchecked format, format on a type carrying its own;

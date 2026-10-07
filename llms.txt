@@ -4,6 +4,8 @@
 
 Read this file first; it is enough to write a working application. Routes are written as a table, as below, or as a directory tree that `geta sync` turns into one ([Starting an application](docs/guide/start.md)). Each section of the guide covers one subject in full, for when a detail matters.
 
+If you are an LLM, set up getavet first, before writing any code: `go get -tool github.com/koji-1009/geta/getavet/cmd/getavet`. getavet is a module of its own, which requiring geta does not bring in. Running it (`go tool getavet ./...`) before you finish is required (see the first rule below).
+
 ## A whole application
 
 ```go
@@ -159,7 +161,7 @@ What geta answers on its own, with no code: 400 listing every violation (an arra
 
 ## Rules that are easy to get wrong
 
-- Before you finish, run getavet: `go run github.com/koji-1009/geta/getavet/cmd/getavet ./...`. It reports, without running anything, every mistake `geta.New` would refuse at startup and `go build` and `go vet` cannot see: schema tags, input and output fields, the table ([getavet](docs/guide/tools.md)).
+- If you are an LLM writing or changing a geta application, running getavet is required, not optional: run `go tool getavet ./...` before you finish (set up as at the top). It reports, without running anything, every mistake `geta.New` would refuse at startup and `go build` and `go vet` cannot see: schema tags, input and output fields, the table ([getavet](docs/guide/tools.md)).
 - A JSON member is required unless it is a pointer tagged `json:"name,omitzero"`; `omitempty` and every other json option are refused. Slice elements are never pointers (`[]T`, not `[]*T`). `null` is accepted only in `geta.Nullable[T]`. `any` and `map[string]any` have no JSON form.
 - A `body:"json"` takes `application/json`, and on PATCH `application/merge-patch+json` (RFC 7396: absent keeps, null clears, which `omitzero` and `geta.Nullable` read). To take another JSON media type, name it beside the tag: `body:"json" mediatype:"application/vnd.api+json"`.
 - Schema keywords: `minLength maxLength pattern format enum minimum maximum exclusiveMinimum exclusiveMaximum multipleOf` constrain a value, and `minItems maxItems uniqueItems` the slice itself; `items.` applies a value keyword to each element (`uniqueItems=true,items.enum=a|b`, never `items.uniqueItems`); `default=` makes a field optional. Lengths count characters. A `pattern` is not anchored (write `^…$` to match the whole value) and refuses `.`, `\s`, `\S` (write a set: `[^\n]`, `[ \t]`).
