@@ -29,6 +29,7 @@ func Route(env *app.Env) geta.Route {
 
 - [`llms.txt`](llms.txt) is the complete guide. It covers getting started, the route tree, routes, bodies, formats, errors, scopes and middleware, security, streams and upgrades, serving, the OpenAPI document, testing, and the database. It is meant to be read whole, by a person or a coding agent.
 - [`docs/claims.md`](docs/claims.md) lists each behaviour geta states and the test that holds it.
+- [`docs/performance.md`](docs/performance.md) compares geta with the same operations in net/http alone: about 1.1–1.2× the time of a handler that does the same checks by hand, with no more allocations.
 - [`examples/`](examples) holds running applications (see [Examples](#examples)).
 
 ## Install
