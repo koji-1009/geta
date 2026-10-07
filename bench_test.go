@@ -2,14 +2,17 @@ package geta_test
 
 import (
 	"context"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
+	"mime"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
 	"strings"
 	"sync"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/koji-1009/geta"
 )
@@ -98,6 +101,147 @@ func BenchmarkPost(b *testing.B) {
 	}
 }
 
+// The same two operations in net/http alone, with the same JSON package:
+// plain trusts the request, and checked does by hand what benchApp's types
+// and tags ask of geta (the path value's length, the media type, the body
+// limit, unknown, missing, and out-of-range members, a problem for each
+// refusal, and nosniff), as an application without geta would.
+
+func benchNetHTTP(b *testing.B, checked bool) http.Handler {
+	b.Helper()
+	var mu sync.RWMutex
+	users := map[string]benchUser{"seed": {ID: "seed", Name: "Ada", Age: 36, Tags: []string{"x", "y"}}}
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /users/{id}", func(w http.ResponseWriter, r *http.Request) {
+		id := r.PathValue("id")
+		if checked && utf8.RuneCountInString(id) > 64 {
+			benchProblem(w, http.StatusBadRequest, "id is longer than 64 bytes")
+			return
+		}
+		mu.RLock()
+		u, ok := users[id]
+		mu.RUnlock()
+		if !ok {
+			benchProblem(w, http.StatusNotFound, "not found")
+			return
+		}
+		out, err := json.Marshal(u)
+		if err != nil {
+			benchProblem(w, http.StatusInternalServerError, "")
+			return
+		}
+		h := w.Header()
+		h.Set("Content-Type", "application/json")
+		h.Set("Content-Length", strconv.Itoa(len(out)))
+		if checked {
+			h.Set("X-Content-Type-Options", "nosniff")
+		}
+		w.WriteHeader(http.StatusOK)
+		w.Write(out)
+	})
+	mux.HandleFunc("POST /users", func(w http.ResponseWriter, r *http.Request) {
+		var u benchUser
+		if checked {
+			if mt, _, err := mime.ParseMediaType(r.Header.Get("Content-Type")); err != nil || mt != "application/json" && !(strings.HasPrefix(mt, "application/") && strings.HasSuffix(mt, "+json")) {
+				w.Header().Set("Accept", "application/json")
+				benchProblem(w, http.StatusUnsupportedMediaType, "Content-Type is not application/json")
+				return
+			}
+			var in struct {
+				ID   *string   `json:"id"`
+				Name *string   `json:"name"`
+				Age  *int      `json:"age"`
+				Tags *[]string `json:"tags"`
+			}
+			if err := json.UnmarshalRead(http.MaxBytesReader(w, r.Body, 1<<20), &in, json.RejectUnknownMembers(true)); err != nil {
+				benchProblem(w, http.StatusBadRequest, "the body is not a user")
+				return
+			}
+			// Every violation is listed, as geta lists them.
+			var bad []string
+			if in.ID == nil || utf8.RuneCountInString(*in.ID) < 1 || utf8.RuneCountInString(*in.ID) > 64 {
+				bad = append(bad, "id")
+			}
+			if in.Name == nil || utf8.RuneCountInString(*in.Name) < 1 || utf8.RuneCountInString(*in.Name) > 100 {
+				bad = append(bad, "name")
+			}
+			if in.Age == nil || *in.Age < 0 || *in.Age > 150 {
+				bad = append(bad, "age")
+			}
+			if in.Tags == nil || len(*in.Tags) > 16 {
+				bad = append(bad, "tags")
+			}
+			if len(bad) > 0 {
+				benchProblem(w, http.StatusBadRequest, strings.Join(bad, ", ")+" out of bounds")
+				return
+			}
+			u = benchUser{ID: *in.ID, Name: *in.Name, Age: *in.Age, Tags: *in.Tags}
+		} else if err := json.UnmarshalRead(r.Body, &u); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		mu.Lock()
+		users[u.ID] = u
+		mu.Unlock()
+		w.Header().Set("Location", "/users/"+u.ID)
+		w.WriteHeader(http.StatusCreated)
+	})
+	return mux
+}
+
+// benchProblem writes an RFC 9457 problem, as the checked handlers would.
+func benchProblem(w http.ResponseWriter, status int, detail string) {
+	out, _ := json.Marshal(struct {
+		Type   string `json:"type"`
+		Title  string `json:"title"`
+		Status int    `json:"status"`
+		Detail string `json:"detail,omitzero"`
+	}{"about:blank", http.StatusText(status), status, detail})
+	h := w.Header()
+	h.Set("Content-Type", geta.ProblemContentType)
+	h.Set("X-Content-Type-Options", "nosniff")
+	w.WriteHeader(status)
+	w.Write(out)
+}
+
+func BenchmarkGetNetHTTP(b *testing.B) {
+	for _, checked := range []bool{false, true} {
+		b.Run(map[bool]string{false: "plain", true: "checked"}[checked], func(b *testing.B) {
+			h := benchNetHTTP(b, checked)
+			b.ReportAllocs()
+			for b.Loop() {
+				req := httptest.NewRequest(http.MethodGet, "/users/seed", nil)
+				rec := httptest.NewRecorder()
+				h.ServeHTTP(rec, req)
+				if rec.Code != http.StatusOK {
+					b.Fatal(rec.Code, rec.Body)
+				}
+			}
+		})
+	}
+}
+
+func BenchmarkPostNetHTTP(b *testing.B) {
+	for _, checked := range []bool{false, true} {
+		b.Run(map[bool]string{false: "plain", true: "checked"}[checked], func(b *testing.B) {
+			h := benchNetHTTP(b, checked)
+			b.ReportAllocs()
+			i := 0
+			for b.Loop() {
+				i++
+				body := `{"id":"b` + strconv.Itoa(i) + `","name":"Ada","age":36,"tags":["x","y"]}`
+				req := httptest.NewRequest(http.MethodPost, "/users", strings.NewReader(body))
+				req.Header.Set("Content-Type", "application/json")
+				rec := httptest.NewRecorder()
+				h.ServeHTTP(rec, req)
+				if rec.Code != http.StatusCreated {
+					b.Fatal(rec.Code, rec.Body)
+				}
+			}
+		})
+	}
+}
+
 // A body with sealed types: a required one, one in a slice, and an optional
 // one nested in a variant.
 
@@ -180,8 +324,7 @@ func BenchmarkPostSealedLate(b *testing.B) {
 }
 
 // A nested body: an order of 20 line items, each with a product and its
-// options (about 2.9 KB, 147 leaves), as in the comparison with other
-// frameworks.
+// options (about 2.9 KB, 147 leaves).
 
 type benchCustomer struct {
 	Name  string `json:"name" schema:"minLength=1,maxLength=100"`
