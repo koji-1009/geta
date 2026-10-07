@@ -8,7 +8,7 @@ What can be decided before the program runs is a type or a value that `geta.New`
 - Methods are struct fields. An operation is `geta.Op(status, handler, doc)`, and the compiler checks the handler's shape on that line.
 - The input and output types are the contract. Binding, validation, encoding, and the OpenAPI document all come from them.
 - Errors are ordinary values. A failure table in each operation's `Doc` maps them to statuses, so the documented failures and the failures on the wire are the same set.
-- geta is strict. It reads a request as written and refuses what does not meet the contract, never coercing it: an integer written `1.0` is a 400, and a cookie value net/http does not read never reaches the handler. Where that is stricter than what the document's own dialect allows, `llms.txt` says so.
+- geta is strict. It reads a request as written and refuses what does not meet the contract, never coercing it: an integer written `1.0` is a 400, and a cookie value net/http does not read never reaches the handler. Where that is stricter than what the document's own dialect allows, the guide says so.
 - `geta.New` is the one assembly step. Production and `getatest` both run it.
 
 geta needs Go 1.27 or later. The core and every package under it use only the standard library. geta ships no database layer, driver, or JWT verifier. An application uses `database/sql` with its own driver and writes a small adapter that classifies the driver's errors as its store's own errors, which its failure tables map; [`examples/register-sql`](examples/register-sql) has adapters for SQLite and PostgreSQL and a conformance suite that checks them. [`examples/booking`](examples/booking) verifies bearer JWTs with its own package on `golang-jwt/jwt/v5`.
@@ -27,7 +27,8 @@ func Route(env *app.Env) geta.Route {
 
 ## Documentation
 
-- [`llms.txt`](llms.txt) is the complete guide. It covers getting started, the route tree, routes, bodies, formats, errors, scopes and middleware, security, streams and upgrades, serving, the OpenAPI document, testing, and the database. It is meant to be read whole, by a person or a coding agent.
+- [`llms.txt`](llms.txt) is where to start, for a person or a coding agent: a whole application, the rules that are easy to get wrong, and an index of the guide.
+- [`docs/guide/`](docs/guide) is the complete guide, one subject per file: getting started, the route tree, routes, bodies, formats, errors, scopes and middleware, security, streams and upgrades, serving, the OpenAPI document, testing, and the database.
 - [`docs/claims.md`](docs/claims.md) lists each behaviour geta states and the test that holds it.
 - [`docs/performance.md`](docs/performance.md) compares geta with the same operations in net/http alone: about 1.1–1.2× the time of a handler that does the same checks by hand, with no more allocations.
 - [`examples/`](examples) holds running applications (see [Examples](#examples)).
@@ -114,7 +115,7 @@ go test ./...
 go run .
 ```
 
-`llms.txt` has the whole application, file by file, under "Getting started".
+[`docs/guide/start.md`](docs/guide/start.md) has the whole application, file by file.
 
 The tree is optional. `geta.New` also takes a table written by hand:
 
@@ -122,7 +123,7 @@ The tree is optional. `geta.New` also takes a table written by hand:
 geta.Table{Root: scope, Routes: []geta.Entry{{Path: "/users/{id}", Route: r, Scopes: []geta.Scope{s}}}}
 ```
 
-`Scopes` lists the directory scopes, outermost first; the root scope goes in `Root`. Types, the document, validation, the path-parameter checks in `geta.New`, and `getatest.New(t, table)` all work the same. You lose `geta sync`, `geta check`, and getavet's path-parameter report, which reads an operation's URL from its directory. Your own test that calls `getatest.New` replaces the generated `zz_routes_test.go`. See "Without the routes tree" in `llms.txt`.
+`Scopes` lists the directory scopes, outermost first; the root scope goes in `Root`. Types, the document, validation, the path-parameter checks in `geta.New`, and `getatest.New(t, table)` all work the same. You lose `geta sync`, `geta check`, and getavet's path-parameter report, which reads an operation's URL from its directory. Your own test that calls `getatest.New` replaces the generated `zz_routes_test.go`. See "Without the routes tree" in [`docs/guide/tree.md`](docs/guide/tree.md); `llms.txt` has a whole application written this way.
 
 ## Layout
 
