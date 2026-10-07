@@ -18,10 +18,14 @@ func TestETagLeavesAStreamsDocumentAlone(t *testing.T) {
 	h := func(ctx context.Context, _ *empty) (*geta.Stream[change], error) { return &geta.Stream[change]{}, nil }
 	m := doc(t, accepts(t, withRoot(one("/s", geta.Route{Get: geta.Op(http.StatusOK, h, geta.Doc{})}), geta.ETag())))
 	op := at(t, m, "paths", "/s", "get").(map[string]any)
-	for _, s := range []string{"304", "400"} {
-		if _, has := op["responses"].(map[string]any)[s]; has {
-			t.Errorf("a stream documents a %s", s)
-		}
+	// What it answers is what it answers without geta.ETag: the 304 is
+	// geta's own, to If-None-Match: *.
+	bare := doc(t, accepts(t, one("/s", geta.Route{Get: geta.Op(http.StatusOK, h, geta.Doc{})})))
+	if got, want := compact(t, op["responses"]), compact(t, at(t, bare, "paths", "/s", "get", "responses")); got != want {
+		t.Errorf("a stream documents %s, want %s", got, want)
+	}
+	if _, has := op["responses"].(map[string]any)["400"]; has {
+		t.Error("a stream documents a 400")
 	}
 	if _, has := op["parameters"]; has {
 		t.Errorf("a stream documents If-None-Match")

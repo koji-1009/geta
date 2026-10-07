@@ -223,6 +223,56 @@ func (c *Conditional) check(exists bool, etag string, modified time.Time) error 
 	return nil
 }
 
+// unvalidated evaluates the preconditions of a request to an operation whose
+// input does not embed [Conditional], and returns the refusal, or nil to go
+// on. Such an operation declares no validator, so geta evaluates them itself,
+// before the request content is processed (RFC 9110 §13.2.1), against a
+// current representation with no entity tag and no modification date:
+//
+//   - If-Match other than "*" fails, 412: no listed tag matches a
+//     representation that has none (§13.1.1). "*" holds; a handler that
+//     finds no target answers its own 404, which takes precedence.
+//   - If-None-Match "*" fails: 304 on a GET or HEAD, 412 otherwise
+//     (§13.1.2). Any other value holds. A GET or HEAD is answered 304 only
+//     where a 200 would be (§15.4.5): on a GET whose successes hold none, it
+//     is not evaluated, nor on one geta.ETag tags, which reads it once the
+//     handler has answered (notModified).
+//   - If-Modified-Since and If-Unmodified-Since are ignored: there is no
+//     modification date (§13.1.3, §13.1.4).
+//
+// A value that is not a list of entity tags is evaluated as the RFC says of
+// any other value: If-Match fails and If-None-Match holds.
+func (c *compiledOp) unvalidated(r *http.Request) *PreconditionError {
+	safe := r.Method == http.MethodGet || r.Method == http.MethodHead
+	if v := r.Header.Values("If-Match"); len(v) > 0 && !starred(v) {
+		return &PreconditionError{status: http.StatusPreconditionFailed, field: "If-Match",
+			detail: "failed: the operation declares no entity tag"}
+	}
+	if v := r.Header.Values("If-None-Match"); len(v) > 0 && starred(v) {
+		switch {
+		case !safe:
+			return &PreconditionError{status: http.StatusPreconditionFailed, field: "If-None-Match",
+				detail: "failed: it matches the current representation"}
+		case c.notModified():
+			return &PreconditionError{status: http.StatusNotModified, field: "If-None-Match", detail: "matches the current representation"}
+		}
+	}
+	return nil
+}
+
+// notModified reports whether geta answers 304 itself to If-None-Match: * on
+// an operation whose input does not embed Conditional: a GET that answers
+// 200 and that geta.ETag does not tag.
+func (c *compiledOp) notModified() bool {
+	return c.method == http.MethodGet && !c.options && slices.Contains(c.successes(), http.StatusOK) && !c.etagged()
+}
+
+// starred reports whether a precondition field's lines are "*" alone.
+func starred(lines []string) bool {
+	_, star, _ := conditionTags(*conditionField(lines))
+	return star
+}
+
 // conditionField joins a precondition field's lines into one list
 // (RFC 9110 §5.3), dropping empty lines, or returns nil when there are none.
 //

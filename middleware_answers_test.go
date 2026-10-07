@@ -76,7 +76,9 @@ func TestMiddlewareAnswers304OnlyWhereItCanBe(t *testing.T) {
 		},
 	})
 	m := doc(t, a)
-	if got := compact(t, at(t, m, "paths", "/x", "get", "responses", "304")); got != `{"description":"The cached representation is current","headers":{"ETag":{"description":"The current entity tag","required":false,"schema":{"type":"string"}}}}` {
+	// geta's own 304, to If-None-Match: * where no validator is declared, is
+	// listed after it.
+	if got := compact(t, at(t, m, "paths", "/x", "get", "responses", "304")); got != `{"description":"The cached representation is current; If-None-Match: *; the operation declares no validator (its input does not embed geta.Conditional)","headers":{"ETag":{"description":"The current entity tag","required":false,"schema":{"type":"string"}}}}` {
 		t.Error("GET 304:", got)
 	}
 	for _, where := range [][]string{{"/x", "post"}, {"/made", "get"}, {"/x", "options"}} {

@@ -155,7 +155,7 @@ func TestItems(t *testing.T) {
 }
 ```
 
-What geta answers on its own, with no code: 400 listing every violation (an array or object past its bound is reported by its count alone), unknown members included (`errors`: `{"in":"body","path":"$.name","message":"…"}`; a parameter's path is its name, `limit`), 404 and 405 (with `Allow`), 415 for a body that is not `application/json` (on PATCH, `application/merge-patch+json`), 428 and 412 for `RequireConditional`, 500 for an error no failure row matches, all as `application/problem+json`. The OpenAPI document is an artifact, not a route: `getatest.Golden` writes it to a file and fails the test when it changes, and `a.OpenAPI()` returns its bytes. geta serves no route of its own for it.
+What geta answers on its own, with no code: 400 listing every violation (an array or object past its bound is reported by its count alone), unknown members included (`errors`: `{"in":"body","path":"$.name","message":"…"}`; a parameter's path is its name, `limit`), 404 and 405 (with `Allow`), 415 for a body that is not `application/json` (on PATCH, `application/merge-patch+json`), 428 and 412 for `RequireConditional`, 412 (and 304 on a GET) to `If-Match` or `If-None-Match: *` sent to an operation without `Conditional`, 500 for an error no failure row matches, all as `application/problem+json`. The OpenAPI document is an artifact, not a route: `getatest.Golden` writes it to a file and fails the test when it changes, and `a.OpenAPI()` returns its bytes. geta serves no route of its own for it.
 
 ## Rules that are easy to get wrong
 
@@ -166,7 +166,7 @@ What geta answers on its own, with no code: 400 listing every violation (an arra
 - `format=` names only `date date-time time duration ipv4 ipv6 uuid` (and json-pointer, relative-json-pointer, password), each checked (`2026-02-30` is 400); there is no `email`: use a `pattern` or your own text type ([Format types](docs/guide/formats.md)). The same formats exist as types (`geta.Date`, `geta.DateTime`, `geta.Duration`, `geta.IPv4`, …).
 - Handlers return the lower layer's errors unchanged; `Doc.Failures` maps them (`geta.On(sentinel, status, detail)`, `geta.OnAs[*MyErr](status, detail)`). An error no row matches is a logged 500; `err.Error()` never reaches the client.
 - A 201 with `Location`, a redirect, an `ETag`, or several success statuses need an output envelope (fields tagged `header:"…"`, `body:"json"`, `status:"200|201"`).
-- Embed `geta.Conditional` (or `geta.RequireConditional`, which answers 428 when no precondition is sent) to bind If-Match and the other precondition headers; call `in.Check(etag, modified)` before acting and return its error as is (a 304 or 412).
+- Embed `geta.Conditional` (or `geta.RequireConditional`, which answers 428 when no precondition is sent) to bind If-Match and the other precondition headers; call `in.Check(etag, modified)` before acting and return its error as is (a 304 or 412). Without `Conditional`, geta answers 412 to any `If-Match` but `*`, before the handler runs. A body is validated before the handler, so before `Check`; declare it `geta.Deferred[T]` and call `in.Body.Value()` after `Check` to answer 404 and 412 before a body's 400 (RFC 9110 §13.2.1).
 - Named struct types are components named after the type, so `users.Path` and `items.Path` in two route packages fail `geta.New`; give route-local types unique names.
 
 Not in geta: DI containers, string route registration, HTTP error types, static files, sessions, templates, rate limiting, doc UI, security headers (set them in a root middleware of your own; geta sets only `X-Content-Type-Options: nosniff`). A cookie-session app's CSRF, proxy client address, and idempotency keys: see `examples/bookmarks`.
@@ -182,7 +182,7 @@ Not in geta: DI containers, string route registration, HTTP error types, static 
 - [Format types](docs/guide/formats.md): date, date-time, time, duration, ipv4, ipv6, uuid, and formats your application decides
 - [Sealed types](docs/guide/sealed.md): oneOf with a discriminator
 - [Output envelopes](docs/guide/outputs.md): headers, cookies, several statuses, redirects
-- [Conditional requests](docs/guide/conditional.md): ETag, If-Match, 304, 412, 428
+- [Conditional requests](docs/guide/conditional.md): ETag, If-Match, 304, 412, 428, operations without `Conditional`, `geta.Deferred` bodies
 - [Errors](docs/guide/errors.md): failure rows, problems, problems that carry the error's data
 - [Scopes and middleware](docs/guide/middleware.md): order, timeouts, CORS, compression, ETag, where your own rate limiter goes
 - [Security](docs/guide/security.md): the gate, schemes, cookie sessions, JWT

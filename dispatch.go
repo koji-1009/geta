@@ -336,7 +336,12 @@ func (c *compiledOp) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if c.in.reads() {
 		r = boundBody(w, r)
 	}
-	be, tmp := c.in.bind(w, r, in.Elem(), c.limits)
+	var pre *PreconditionError
+	if c.in.cond == nil {
+		// No validators are declared: geta evaluates the preconditions.
+		pre = c.unvalidated(r)
+	}
+	be, tmp := c.in.bind(w, r, in.Elem(), c.limits, pre)
 	if be != nil {
 		closeUnread(w, r)
 		if be.err != nil {
@@ -405,6 +410,17 @@ func (c *compiledOp) fail(w http.ResponseWriter, r *http.Request, err error) {
 	if re, ok := errors.AsType[*bodyReadError](err); ok {
 		closeUnread(w, r)
 		readFailure(re.err, c.limits).write(w, r)
+		return
+	}
+	// A Deferred body Value refused is answered as one bound before the
+	// handler.
+	if de, ok := errors.AsType[*bodyError](err); ok {
+		closeUnread(w, r)
+		if de.be.err != nil {
+			c.writeDefect(w, r, "geta: the request could not be taken in", de.be.err)
+			return
+		}
+		de.be.write(w, r)
 		return
 	}
 	// A PreconditionError is answered only by an operation whose input embeds

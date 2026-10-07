@@ -37,6 +37,8 @@ type Field struct {
 	Kind string
 	// Nullable reports that the type after one pointer is a geta.Nullable.
 	Nullable bool
+	// Deferred reports that the type after one pointer is a geta.Deferred.
+	Deferred bool
 }
 
 // Type describes a type for CheckJSONType. geta.New builds it by

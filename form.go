@@ -247,8 +247,9 @@ type formValues struct {
 // bind reads the body and fills dst. Content in a content coding or of
 // another media type is a 415, judged as for a JSON body. tmp lists the
 // temporary files for the caller to remove after the handler returns; on
-// failure, bind has removed them.
-func (p *formPlan) bind(w http.ResponseWriter, r *http.Request, dst reflect.Value, limits Limits) (be *bindError, tmp []string) {
+// failure, bind has removed them. A failed precondition pre, when not nil,
+// is returned before the rest is read, as for a JSON body.
+func (p *formPlan) bind(w http.ResponseWriter, r *http.Request, dst reflect.Value, limits Limits, pre *PreconditionError) (be *bindError, tmp []string) {
 	ct := r.Header.Get("Content-Type")
 	mt, params, ctErr := mime.ParseMediaType(ct)
 	judge := func() *bindError {
@@ -285,6 +286,9 @@ func (p *formPlan) bind(w http.ResponseWriter, r *http.Request, dst reflect.Valu
 		if be := judge(); be != nil {
 			return be, nil
 		}
+	}
+	if pre != nil {
+		return pre.refusal(), nil
 	}
 	if p.enc == "form" {
 		data, err := io.ReadAll(br)

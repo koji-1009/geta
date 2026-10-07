@@ -235,13 +235,14 @@ func vetField(f reflect.StructField) vet.Field {
 	}
 	methods := v2Reads(t)
 	_, null := nullableOf(t)
+	_, deferred := deferredOf(t)
 	return vet.Field{Name: f.Name, Exported: f.IsExported(), Embedded: f.Anonymous, Tag: f.Tag,
 		Type: f.Type.String(), Pointer: f.Type.Kind() == reflect.Pointer, Struct: f.Type.Kind() == reflect.Struct,
 		Object:    t.Kind() == reflect.Struct,
 		Interface: f.Type.Kind() == reflect.Interface, Cookie: f.Type == cookieType,
 		Text: t.Implements(textMarshaler) || reflect.PointerTo(t).Implements(textMarshaler) ||
 			reflect.PointerTo(t).Implements(textUnmarshaler),
-		Methods: methods, Nullable: null}
+		Methods: methods, Nullable: null, Deferred: deferred}
 }
 
 // v2Reads reports whether t or *t has a method encoding/json/v2 uses
@@ -325,6 +326,14 @@ func checkInputField(f vet.Field, seen map[string]string) (walk bool, err error)
 	loc, name, err := inputLocation(f)
 	if err != nil {
 		return false, err
+	}
+	if f.Deferred && (loc != "" || f.Embedded) {
+		switch {
+		case loc != "body" || name != "json":
+			return false, fmt.Errorf("%s: a geta.Deferred is a body:\"json\" field", f.Name)
+		case f.Pointer:
+			return false, fmt.Errorf("%s: the body is a pointer to a geta.Deferred; for an optional body, the Deferred holds a pointer", f.Name)
+		}
 	}
 	if loc == "" {
 		switch {

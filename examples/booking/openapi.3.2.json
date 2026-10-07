@@ -1493,6 +1493,17 @@
             "description": "booking not found (type /problems/booking-not-found)",
             "summary": "Not Found"
           },
+          "412": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetaProblem"
+                }
+              }
+            },
+            "description": "A precondition failed: If-Match other than *; the operation declares no validator (its input does not embed geta.Conditional)",
+            "summary": "Precondition Failed"
+          },
           "415": {
             "content": {
               "application/problem+json": {
@@ -1748,6 +1759,17 @@
             },
             "description": "If-None-Match is neither \"*\" nor a list of one or more entity tags",
             "summary": "Bad Request"
+          },
+          "412": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetaProblem"
+                }
+              }
+            },
+            "description": "A precondition failed: If-Match other than *; the operation declares no validator (its input does not embed geta.Conditional)",
+            "summary": "Precondition Failed"
           },
           "415": {
             "content": {
@@ -2009,6 +2031,17 @@
               }
             },
             "summary": "Unauthorized"
+          },
+          "412": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetaProblem"
+                }
+              }
+            },
+            "description": "A precondition failed: If-Match other than *; the operation declares no validator (its input does not embed geta.Conditional)",
+            "summary": "Precondition Failed"
           },
           "415": {
             "content": {
@@ -2353,6 +2386,17 @@
             },
             "summary": "Unauthorized"
           },
+          "412": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetaProblem"
+                }
+              }
+            },
+            "description": "A precondition failed: If-Match other than *; the operation declares no validator (its input does not embed geta.Conditional)",
+            "summary": "Precondition Failed"
+          },
           "415": {
             "content": {
               "application/problem+json": {
@@ -2633,6 +2677,17 @@
             "description": "The request body did not arrive before the deadline",
             "summary": "Request Timeout"
           },
+          "412": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetaProblem"
+                }
+              }
+            },
+            "description": "A precondition failed: If-Match other than *, or If-None-Match: *; the operation declares no validator (its input does not embed geta.Conditional)",
+            "summary": "Precondition Failed"
+          },
           "413": {
             "content": {
               "application/problem+json": {
@@ -2850,6 +2905,17 @@
             },
             "description": "room not found (type /problems/room-not-found)",
             "summary": "Not Found"
+          },
+          "412": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetaProblem"
+                }
+              }
+            },
+            "description": "A precondition failed: If-Match other than *; the operation declares no validator (its input does not embed geta.Conditional)",
+            "summary": "Precondition Failed"
           },
           "415": {
             "content": {
@@ -3155,6 +3221,17 @@
             },
             "description": "room not found (type /problems/room-not-found)",
             "summary": "Not Found"
+          },
+          "412": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetaProblem"
+                }
+              }
+            },
+            "description": "A precondition failed: If-Match other than *; the operation declares no validator (its input does not embed geta.Conditional)",
+            "summary": "Precondition Failed"
           },
           "415": {
             "content": {
@@ -3487,6 +3564,17 @@
             "description": "the room is booked then (type /problems/overlap)",
             "summary": "Conflict"
           },
+          "412": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetaProblem"
+                }
+              }
+            },
+            "description": "A precondition failed: If-Match other than *, or If-None-Match: *; the operation declares no validator (its input does not embed geta.Conditional)",
+            "summary": "Precondition Failed"
+          },
           "413": {
             "content": {
               "application/problem+json": {
@@ -3706,6 +3794,17 @@
             },
             "description": "room not found (type /problems/room-not-found)",
             "summary": "Not Found"
+          },
+          "412": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetaProblem"
+                }
+              }
+            },
+            "description": "A precondition failed: If-Match other than *; the operation declares no validator (its input does not embed geta.Conditional)",
+            "summary": "Precondition Failed"
           },
           "415": {
             "content": {
