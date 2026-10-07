@@ -281,6 +281,9 @@ func (c *compiledOp) corsHeaders() {
 			add(&allow, p.name)
 		}
 	}
+	if c.etagged() {
+		add(&allow, "If-None-Match") // geta.ETag reads it
+	}
 	for _, s := range c.security {
 		switch s.Type {
 		case "http", "oauth2", "openIdConnect":
@@ -298,6 +301,13 @@ func (c *compiledOp) corsHeaders() {
 		if name := acceptFor(c.method); name != "" {
 			add(&expose, name) // Accept-Patch, Accept-Query
 		}
+		// and its 415 for content in a coding names identity.
+		add(&expose, "Accept-Encoding")
+	}
+	if c.in.cond != nil {
+		// Conditional's 304 carries the entity tag (Last-Modified is
+		// safelisted).
+		add(&expose, "ETag")
 	}
 	if headers, ok := c.success(c.op.status)["headers"].(map[string]any); ok {
 		for _, name := range slices.Sorted(maps.Keys(headers)) {

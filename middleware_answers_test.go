@@ -43,7 +43,7 @@ func TestMiddlewareAnswersAnotherSuccessWithoutContent(t *testing.T) {
 		"308": `{"description":"The request did not arrive over https; The resource moved","headers":{"Location":{"description":"The https URL","required":false,"schema":{"type":"string"}}}}`,
 		"201": `{"description":"Queued for creation"}`,
 		"204": `{"description":"Nothing to say"}`,
-		"418": `{"content":{"application/problem+json":{"schema":{"$ref":"#/components/schemas/Problem"}}},"description":"A teapot"}`,
+		"418": `{"content":{"application/problem+json":{"schema":{"$ref":"#/components/schemas/GetaProblem"}}},"description":"A teapot"}`,
 	} {
 		if got := compact(t, at(t, responses, status)); got != want {
 			t.Errorf("%s: %s, want %s", status, got, want)

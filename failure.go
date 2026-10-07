@@ -46,8 +46,8 @@ type describer struct {
 //
 // The document states P's members and headers with the row. [New] refuses a
 // P or body that is not a struct, a member named type, title, status,
-// instance, or errors, a detail that is not a string, a cookie, status, or
-// raw body field, and a nil describe. err.Error() never reaches the
+// instance, errors, or omitted, a detail that is not a string, a cookie,
+// status, or raw body field, and a nil describe. err.Error() never reaches the
 // response; only what describe returns does.
 func OnAsProblem[T error, P any](status int, detail string, describe func(T) P) Failure {
 	f := OnAs[T](status, detail)

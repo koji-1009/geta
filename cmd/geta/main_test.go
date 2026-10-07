@@ -266,10 +266,21 @@ func TestSyncAndCheckExitCodes(t *testing.T) {
 	}
 }
 
+// An empty directory argument, most likely an unset variable, is a usage
+// error: it would be the working directory.
+func TestAnEmptyDirectoryIsAUsageError(t *testing.T) {
+	for _, args := range [][]string{{"sync", ""}, {"sync", "-check", ""}, {"check", ""}} {
+		code, errOut := geta(args...)
+		if code != 2 || !strings.Contains(errOut, "an empty directory argument") {
+			t.Errorf("%q: %d %s", args, code, errOut)
+		}
+	}
+}
+
 // A table or assembly test that cannot be read or written (here a directory
-// where the file goes) is exit 1 for sync and check, on stderr naming the
-// command and the file, and sync -check still names it as not what sync
-// writes.
+// where the file goes) is exit 1 for sync, sync -check, and check, on stderr
+// naming the command, the file, and why: sync -check reports the read error,
+// not the file as out of date.
 func TestUnwritableTableExits1(t *testing.T) {
 	for _, f := range []string{"zz_routes.go", "zz_routes_test.go"} {
 		root := module(t, "health")
@@ -290,7 +301,7 @@ func TestUnwritableTableExits1(t *testing.T) {
 			}
 		}
 		code, errOut := geta("sync", "-check", dir)
-		if code != 1 || errOut != "geta sync -check: "+filepath.Join(dir, f)+" is out of date; run geta sync\n" {
+		if code != 1 || !strings.HasPrefix(errOut, "geta sync: read "+filepath.Join(dir, f)+": ") || strings.Contains(errOut, "out of date") {
 			t.Errorf("sync -check with %s a directory: exit %d %q", f, code, errOut)
 		}
 	}

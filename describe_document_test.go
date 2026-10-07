@@ -48,14 +48,14 @@ func TestDescriptionsAreNoComponentsOfTheirOwn(t *testing.T) {
 		geta.OnAsProblem(http.StatusConflict, "conflict", func(e *conflictError) conflict { return conflict{} }),
 	}
 	tbl := one("/f", geta.Route{Get: geta.Op(http.StatusOK, okHandler, geta.Doc{Failures: rows})})
-	if got := strings.Join(schemaNames(t, accepts(t, tbl)), ","); got != "Problem,ok,quotaDetail" {
-		t.Errorf("components %s; want Problem,ok,quotaDetail: the descriptions conflict and quotaInfo are written in place", got)
+	if got := strings.Join(schemaNames(t, accepts(t, tbl)), ","); got != "GetaProblem,ok,quotaDetail" {
+		t.Errorf("components %s; want GetaProblem,ok,quotaDetail: the descriptions conflict and quotaInfo are written in place", got)
 	}
 	// A description that a response also writes is that response's
 	// component.
 	tbl.Routes = append(tbl.Routes, geta.Entry{Path: "/c", Route: get(func(context.Context, *empty) (*conflict, error) { return nil, nil })})
-	if got := strings.Join(schemaNames(t, accepts(t, tbl)), ","); got != "Problem,conflict,ok,quotaDetail" {
-		t.Errorf("components %s; want Problem,conflict,ok,quotaDetail", got)
+	if got := strings.Join(schemaNames(t, accepts(t, tbl)), ","); got != "GetaProblem,conflict,ok,quotaDetail" {
+		t.Errorf("components %s; want GetaProblem,conflict,ok,quotaDetail", got)
 	}
 }
 
@@ -82,7 +82,7 @@ func TestEveryComponentIsReferredTo(t *testing.T) {
 // unreferenced fails the test for each component of m nothing refers to.
 func unreferenced(t *testing.T, name string, m map[string]any) {
 	t.Helper()
-	refd := map[string]bool{"Problem": true}
+	refd := map[string]bool{"GetaProblem": true}
 	var walk func(v any)
 	walk = func(v any) {
 		switch v := v.(type) {

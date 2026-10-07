@@ -380,12 +380,11 @@ func (d *decoder) checkAt(c *codec, s *schema, v any, at vpath) {
 		case "string":
 			d.text(s, v.(string), p, "string", "")
 		case "integer", "number":
+			// The type reads the number, so a float64 need not hold it: past
+			// float64's range, f is an infinity, which the keywords compare
+			// as they would the number itself.
 			lit := string(v.(number))
-			f, err := strconv.ParseFloat(lit, 64)
-			if err != nil {
-				d.failAt(p, "%s is out of range", d.value(lit))
-				return
-			}
+			f, _ := strconv.ParseFloat(lit, 64)
 			d.num(s, f, lit, p)
 		case "array":
 			d.array(s, v.([]any), p)

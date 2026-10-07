@@ -282,7 +282,7 @@ func TestDeclaredOwnJSONTypesAreChecked(t *testing.T) {
 		t.Fatal(res.Status, res.Text())
 	}
 	same(t, violations(t, c.Post("/o", `{"n":1e400,"i":11,"l":[1,2,3]}`)),
-		"body $.n: 1e400 is out of range", "body $.i: 11 is greater than maximum 10", "body $.l: array length 3 exceeds maxItems 2")
+		"body $.n: 1e400 is greater than maximum 10", "body $.i: 11 is greater than maximum 10", "body $.l: array length 3 exceeds maxItems 2")
 	ci := getatest.New(t, one("/o", post(func(context.Context, *numIn) (*ok, error) { return &ok{true}, nil })),
 		geta.WithSchema[rqOwnNum]("integer", "minimum=0"), geta.WithSchema[rqOwnList]("array", "minItems=1"))
 	same(t, violations(t, ci.Post("/o", `{"n":1.5,"i":-1,"l":[]}`)),

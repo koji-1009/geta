@@ -333,7 +333,7 @@ func TestOptionsRunsTheRootScopeOnly(t *testing.T) {
 func TestOptionsIsDocumented(t *testing.T) {
 	m := doc(t, accepts(t, optionsTable()))
 	opt := at(t, m, "paths", "/users/{id}", "options")
-	if at(t, opt, "operationId") != "optionsUsersId" {
+	if at(t, opt, "operationId") != "optionsUsersById" {
 		t.Fatal(opt)
 	}
 	if got := compact(t, at(t, opt, "parameters")); got != `[{"in":"path","name":"id","required":true,"schema":{"minLength":1,"type":"string"}}]` {

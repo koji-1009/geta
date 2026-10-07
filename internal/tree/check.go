@@ -8,12 +8,16 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strconv"
 )
 
-var servedPath = regexp.MustCompile(`\{Path: "([^"]*)"`)
+// servedPath matches an entry's path, a Go string literal as Render writes
+// it (%q), escapes included.
+var servedPath = regexp.MustCompile(`\{Path: ("(?:[^"\\]|\\.)*")`)
 
 // Sync writes the table and its assembly test and returns the names of the
-// files that changed. With check, it writes nothing.
+// files that changed. With check, it writes nothing. A file that exists but
+// cannot be read is an error, not a change.
 func (t *Tree) Sync(check bool) (changed []string, err error) {
 	for _, f := range []struct {
 		name string
@@ -21,6 +25,9 @@ func (t *Tree) Sync(check bool) (changed []string, err error) {
 	}{{TableFile, t.Render()}, {TestFile, t.RenderTest()}} {
 		file := filepath.Join(t.Dir, f.name)
 		have, err := os.ReadFile(file)
+		if err != nil && !os.IsNotExist(err) {
+			return changed, err
+		}
 		if err == nil && bytes.Equal(have, f.want) {
 			continue
 		}
@@ -28,15 +35,38 @@ func (t *Tree) Sync(check bool) (changed []string, err error) {
 		if check {
 			continue
 		}
-		if err := os.WriteFile(file, f.want, 0o644); err != nil {
+		if err := writeFile(file, f.want); err != nil {
 			return changed, err
 		}
 	}
 	return changed, nil
 }
 
+// writeFile replaces file with data whole or not at all: it writes a
+// temporary file beside it, which ./... ignores, and renames it over file.
+func writeFile(file string, data []byte) error {
+	tmp, err := os.CreateTemp(filepath.Dir(file), "."+filepath.Base(file)+"-*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmp.Name()) // after a rename, there is nothing to remove
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if err := os.Chmod(tmp.Name(), 0o644); err != nil {
+		return err
+	}
+	return os.Rename(tmp.Name(), file)
+}
+
 // Check names what is wrong between the tree and the table on disk, one
-// problem per line. It reports nothing when a sync would change nothing.
+// problem per line. It reports nothing when a sync would change nothing and
+// no scope.go guards nothing: a scope no route is under is reported even
+// right after a sync, which leaves it out of the table.
 func (t *Tree) Check() ([]string, error) {
 	want := t.Render()
 	file := filepath.Join(t.Dir, TableFile)
@@ -50,7 +80,11 @@ func (t *Tree) Check() ([]string, error) {
 	var problems []string
 	served := map[string]bool{}
 	for _, m := range servedPath.FindAllSubmatch(have, -1) {
-		served[string(m[1])] = true
+		// The pattern matches only a quoted literal, which Unquote reads;
+		// a literal it cannot read serves no path sync would write.
+		if p, err := strconv.Unquote(string(m[1])); err == nil {
+			served[p] = true
+		}
 	}
 	denoted := map[string]bool{}
 	for _, r := range t.Routes {

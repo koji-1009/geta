@@ -126,7 +126,7 @@ func TestDocAndAnnotationsAreDocumented(t *testing.T) {
 			t.Errorf("%s:\n got %s\nwant %s", name, params[name], want)
 		}
 	}
-	if got := at(t, op, "requestBody", "description"); got != "The item to file" {
+	if got := at(t, op, "requestBody", "description"); got != "The item to file\n\nAlso taken as any application/*+json media type, read as application/json" {
 		t.Fatal(got)
 	}
 	props := at(t, m, "components", "schemas", "metaItem-Input", "properties").(map[string]any)

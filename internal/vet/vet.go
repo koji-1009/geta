@@ -90,6 +90,8 @@ var (
 	CheckDocTimeout       func(t time.Duration) error
 	CheckMethodBody       func(method string) error
 	CheckSuccessStatus    func(status int, output, tag string, location *Field) error
+	CheckBodylessStatus   func(status int, tag string, hasBody bool) error
+	CheckSpecialStatus    func(status, answers int) error
 	CheckMemberField      func(f Field, seen map[string]bool) (member string, walk bool, err error)
 	CheckStructMembers    func(typ string, fields, members int) error
 	DeclaresDefault       func(tag string) bool

@@ -9,9 +9,13 @@
 // options.go defining func Options(env Env) []geta.Option, the assembly test
 // passes Options(env) to geta.New, as main does.
 //
+// sync writes each file whole or not at all. Neither command follows a
+// symbolic link, which ./... does not follow either; one to a directory
+// holding route.go or scope.go, the root included, is an error.
+//
 // The exit status is 0 when there is nothing to report, 1 after reporting
-// findings or on an unreadable file or tree, and 2 on a usage error. Flags
-// must precede arguments.
+// findings or on an unreadable file or tree, and 2 on a usage error, an
+// empty directory argument included. Flags must precede arguments.
 package main
 
 import (
@@ -50,6 +54,12 @@ func parse(fs *flag.FlagSet, use string, args []string, most int, stderr io.Writ
 	}
 	if n := fs.NArg(); n > most {
 		fmt.Fprintf(stderr, "geta %s: %d arguments %q; usage: %s\n", fs.Name(), n, fs.Args(), use)
+		return false
+	}
+	// An empty directory would be the working directory, which no one names
+	// so; it is most likely an unset variable.
+	if fs.NArg() == 1 && fs.Arg(0) == "" {
+		fmt.Fprintf(stderr, "geta %s: an empty directory argument; usage: %s\n", fs.Name(), use)
 		return false
 	}
 	return true

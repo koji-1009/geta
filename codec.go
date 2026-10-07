@@ -270,6 +270,17 @@ var declarableTypes = []string{"string", "integer", "number", "boolean", "array"
 // declare records a WithSchema declaration.
 func (r *registry) declare(d declaredSchema) error {
 	where := "geta.WithSchema[" + qualified(d.t) + "]"
+	if d.t.Kind() == reflect.Interface {
+		return fmt.Errorf("%s: %s is an interface; declare it with geta.WithUnion", where, d.t)
+	}
+	// geta reads a pointer through to its element, and a Nullable as its
+	// value or null, so a declaration of either would never apply.
+	if d.t.Kind() == reflect.Pointer {
+		return fmt.Errorf("%s: %s is a pointer, which geta reads through; declare geta.WithSchema[%s]", where, d.t, qualified(d.t.Elem()))
+	}
+	if et, ok := nullableOf(d.t); ok {
+		return fmt.Errorf("%s: a geta.Nullable's schema is its value's, or null; declare geta.WithSchema[%s]", where, qualified(et))
+	}
 	if !ownJSON(d.t) {
 		return fmt.Errorf("%s: %s does not write its own JSON", where, d.t)
 	}
@@ -347,6 +358,11 @@ func (r *registry) codecFor(t reflect.Type) (*codec, error) {
 		r.codecs[t] = c
 		return c, nil
 	}
+	// An interface is a sealed type or nothing, whatever methods it lists:
+	// JSON methods in its method set do not let v2 read into it.
+	if t.Kind() == reflect.Interface {
+		return r.unionCodec(t)
+	}
 	// A type with its own JSON methods (not time.Time) has schema {}: a
 	// request value is valid when its UnmarshalJSON takes it. WithSchema may
 	// narrow the schema.
@@ -361,9 +377,6 @@ func (r *registry) codecFor(t reflect.Type) (*codec, error) {
 		c := &codec{t: t, kind: kJSON, schema: s}
 		r.codecs[t] = c
 		return c, nil
-	}
-	if t.Kind() == reflect.Interface {
-		return r.unionCodec(t)
 	}
 	// checkJSONType is shared with getavet.
 	vt := vetType(t)
@@ -400,7 +413,9 @@ func (r *registry) codecFor(t reflect.Type) (*codec, error) {
 	case reflect.Float64:
 		c.kind, c.schema = kFloat, &schema{Type: "number", Format: "double"}
 	case reflect.Slice:
-		if t.Elem().Kind() == reflect.Uint8 {
+		// v2 writes a slice of byte or uint8 as base64, but of a named byte
+		// type as an array of its elements (go.dev/issue/24746).
+		if t.Elem().Kind() == reflect.Uint8 && t.Elem().PkgPath() == "" {
 			c.kind, c.schema = kBytes, &schema{Type: "string", ContentEncoding: "base64"}
 			break
 		}
@@ -425,6 +440,11 @@ func (r *registry) codecFor(t reflect.Type) (*codec, error) {
 			return nil, err
 		}
 		c.key = kc
+		// A key is read as a member name, never through the declaration.
+		if _, declared := r.declared[t.Key()]; declared && kc.kind == kJSON {
+			delete(r.codecs, t)
+			return nil, fmt.Errorf("%s: geta.WithSchema[%s] does not apply to a map key; constrain the keys with propertyNames.", t, qualified(t.Key()))
+		}
 		el, err := r.codecFor(t.Elem())
 		if err != nil {
 			delete(r.codecs, t)
@@ -484,7 +504,7 @@ func intSchema(t reflect.Type) *schema {
 		s.Minimum, s.Maximum = &lo, &hi
 	default: // uint, uint64
 		lo := 0.0
-		s.Minimum = &lo
+		s.Minimum, s.uintMax = &lo, true
 	}
 	return s
 }

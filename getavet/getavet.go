@@ -7,8 +7,9 @@
 //
 //   - an input that binds a path parameter its URL does not have, and a URL
 //     parameter the input does not bind. The URL is the package directory's,
-//     by the rule geta sync uses; outside a route tree, path parameters are
-//     not checked.
+//     by the rule geta sync uses; outside a route tree, in a directory of
+//     the tree without route.go, and in a _test.go file, path parameters
+//     are not checked.
 //   - a schema tag that is malformed, does not apply to its field's type,
 //     names an unknown format or a format on a type that carries its own,
 //     declares bounds no value meets, or has a default, example, or enum
@@ -33,8 +34,10 @@
 //     type Tree map[string]Tree.
 //   - a body on an operation a geta.Route literal builds in place under Get
 //     or Delete (vet.CheckMethodBody).
-//   - a constant success status geta does not accept or the output's status
-//     field does not declare, and a negative constant geta.Doc Timeout.
+//   - a constant success status geta does not accept, the output's status
+//     field does not declare, that takes no body (204, 205) for an output
+//     with one, or that a stream (200) or an upgrade (101) does not answer,
+//     and a negative constant geta.Doc Timeout.
 //
 // A maxLength, minLength, or enum member past the pattern-validation ceiling
 // beside a pattern is reported only where a request reads the value
@@ -51,7 +54,13 @@
 //     geta.DefaultLimits;
 //   - two types taking one schema name across the program;
 //   - the format a geta.FormatType returns at run time;
-//   - an operation built elsewhere and placed in a geta.Route by name.
+//   - an operation built elsewhere and placed in a geta.Route by name;
+//   - a geta.Op or geta.OnAsProblem whose types are or hold a type
+//     parameter (func list[T any]() with Page[T]): only an instantiation
+//     decides them, which getavet does not follow.
+//
+// Where a declaration has several mistakes, getavet may name one geta.New
+// names only once the first is fixed.
 //
 // Usage:
 //
@@ -104,11 +113,14 @@ func run(pass *analysis.Pass) (any, error) {
 		}
 		call := n.(*ast.CallExpr)
 		if p, ok := problemType(pass, call); ok {
-			v.problem(call, p)
+			if !holdsTypeParam(p) {
+				v.problem(call, p)
+			}
 			return
 		}
 		in, out, ok := operationTypes(pass, call)
-		if !ok {
+		// What holds a type parameter is left to geta.New (the package doc).
+		if !ok || holdsTypeParam(in) || out != nil && holdsTypeParam(out) {
 			return
 		}
 		paths := v.input(call, in, map[string]string{}, new(typeutil.Map))
@@ -116,7 +128,8 @@ func run(pass *analysis.Pass) (any, error) {
 			v.output(call, out)
 		}
 		v.status(call, out)
-		if !inTree {
+		// An operation built in a test is in no table.
+		if !inTree || strings.HasSuffix(pass.Fset.Position(call.Pos()).Filename, "_test.go") {
 			return
 		}
 		params := urlParams(url)
@@ -184,7 +197,7 @@ func (v *vetter) route(lit *ast.CompositeLit) {
 			continue
 		}
 		in, _, isOp := operationTypes(v.pass, call)
-		if !isOp || !hasBody(in) {
+		if !isOp || holdsTypeParam(in) || !hasBody(in) {
 			continue
 		}
 		if err := vet.CheckMethodBody(routeMethods[name]); err != nil {
@@ -233,8 +246,8 @@ func (v *vetter) docTimeout(lit *ast.CompositeLit) {
 	}
 }
 
-// hasBody reports whether an input type has a body field, in itself or a
-// struct it embeds untagged, as geta.New finds one.
+// hasBody reports whether an input type or an envelope has a body field, in
+// itself or a struct it embeds untagged, as geta.New finds one.
 func hasBody(t types.Type) bool {
 	st, ok := t.Underlying().(*types.Struct)
 	if !ok {
@@ -250,6 +263,56 @@ func hasBody(t types.Type) bool {
 		}
 	}
 	return false
+}
+
+// holdsTypeParam reports whether t is or holds a type parameter, which only
+// an instantiation decides.
+func holdsTypeParam(t types.Type) bool {
+	seen := map[types.Type]bool{}
+	var holds func(t types.Type) bool
+	holds = func(t types.Type) bool {
+		switch t := types.Unalias(t).(type) {
+		case *types.TypeParam:
+			return true
+		case *types.Named:
+			if seen[t] {
+				return false
+			}
+			seen[t] = true
+			for i := range t.TypeArgs().Len() {
+				if holds(t.TypeArgs().At(i)) {
+					return true
+				}
+			}
+			return holds(t.Underlying())
+		case *types.Pointer:
+			return holds(t.Elem())
+		case *types.Slice:
+			return holds(t.Elem())
+		case *types.Array:
+			return holds(t.Elem())
+		case *types.Chan:
+			return holds(t.Elem())
+		case *types.Map:
+			return holds(t.Key()) || holds(t.Elem())
+		case *types.Struct:
+			for i := range t.NumFields() {
+				if holds(t.Field(i).Type()) {
+					return true
+				}
+			}
+		case *types.Signature:
+			for _, vars := range []*types.Tuple{t.Params(), t.Results()} {
+				for i := range vars.Len() {
+					if holds(vars.At(i).Type()) {
+						return true
+					}
+				}
+			}
+		}
+		return false
+	}
+	return holds(t)
 }
 
 // problemType recognises a call of geta.OnAsProblem and returns its type
@@ -543,15 +606,32 @@ func formKind(t types.Type) string {
 	return fieldKind(t)
 }
 
+// special returns "Stream" or "Upgrade" for an output that is geta's own
+// stream or upgrade, and "" for any other output, nil included.
+func special(out types.Type) string {
+	named, ok := types.Unalias(out).(*types.Named)
+	if !ok || named.Obj().Pkg() == nil || named.Obj().Pkg().Path() != getaPath {
+		return ""
+	}
+	if name := named.Obj().Name(); name == "Stream" || name == "Upgrade" {
+		return name
+	}
+	return ""
+}
+
 // output checks an output: a JSON body's type, an envelope's fields and
 // their types, or a stream's event type.
 func (v *vetter) output(call *ast.CallExpr, out types.Type) {
 	done := new(typeutil.Map)
-	if named, ok := out.(*types.Named); ok && named.Obj().Pkg() != nil && named.Obj().Pkg().Path() == getaPath {
-		if named.Obj().Name() == "Stream" && named.TypeArgs().Len() == 1 {
+	// Of geta's own types, only a stream and an upgrade are special outputs.
+	switch special(out) {
+	case "Stream":
+		if named := types.Unalias(out).(*types.Named); named.TypeArgs().Len() == 1 {
 			v.jsonType(call, call.Pos(), "", named.TypeArgs().At(0), done, false)
 		}
-		return // *geta.Upgrade has no body
+		return
+	case "Upgrade":
+		return // no body
 	}
 	st, ok := out.Underlying().(*types.Struct)
 	if !ok || !isEnvelope(st) {
@@ -590,8 +670,9 @@ func (v *vetter) output(call *ast.CallExpr, out types.Type) {
 }
 
 // status checks a constant success status of a geta.Op or geta.OpNoBody
-// call by vet.CheckSuccessStatus and vet.CheckEnvelopeStatus. out is nil
-// for OpNoBody. A stream's or an upgrade's status is left to geta.New.
+// call by vet.CheckSuccessStatus, vet.CheckEnvelopeStatus, and
+// vet.CheckBodylessStatus, or a stream's or an upgrade's by
+// vet.CheckSpecialStatus. out is nil for OpNoBody.
 func (v *vetter) status(call *ast.CallExpr, out types.Type) {
 	// A type-checked call has at least one argument; a multi-value call
 	// argument is no constant.
@@ -603,10 +684,12 @@ func (v *vetter) status(call *ast.CallExpr, out types.Type) {
 	if !exact {
 		return
 	}
-	if out != nil {
-		if named, isNamed := out.(*types.Named); isNamed && named.Obj().Pkg() != nil && named.Obj().Pkg().Path() == getaPath {
-			return // a *geta.Stream's or a *geta.Upgrade's
+	// A stream answers 200, and an upgrade 101.
+	if answers := map[string]int{"Stream": http.StatusOK, "Upgrade": http.StatusSwitchingProtocols}[special(out)]; answers != 0 {
+		if err := vet.CheckSpecialStatus(int(n), answers); err != nil {
+			v.report(call, call.Pos(), err.Error())
 		}
+		return
 	}
 	output, tag, found := "", "", false
 	var location *vet.Field
@@ -621,10 +704,20 @@ func (v *vetter) status(call *ast.CallExpr, out types.Type) {
 		v.report(call, call.Pos(), err.Error())
 		return
 	}
-	if !found {
-		return
+	if found {
+		if err := vet.CheckEnvelopeStatus(int(n), tag); err != nil {
+			v.report(call, call.Pos(), err.Error())
+			return
+		}
 	}
-	if err := vet.CheckEnvelopeStatus(int(n), tag); err != nil {
+	// A JSON output is a body; an envelope has one if a field is tagged body.
+	body := out != nil
+	if body {
+		if st, isStruct := out.Underlying().(*types.Struct); isStruct && isEnvelope(st) {
+			body = hasBody(out)
+		}
+	}
+	if err := vet.CheckBodylessStatus(int(n), tag, body); err != nil {
 		v.report(call, call.Pos(), err.Error())
 	}
 }
@@ -1019,7 +1112,7 @@ func (v *vetter) jsonType(call *ast.CallExpr, at token.Pos, name string, t types
 	}
 	switch u := t.Underlying().(type) {
 	case *types.Slice:
-		if b, ok := u.Elem().Underlying().(*types.Basic); !ok || b.Kind() != types.Uint8 {
+		if !byteSlice(u) {
 			elem(u.Elem())
 		}
 	case *types.Map:
@@ -1180,6 +1273,14 @@ func elemKind(el types.Type) string {
 	return k
 }
 
+// byteSlice reports whether v2 writes a slice of s's type as base64: its
+// element is byte or uint8, not a named byte type, which v2 writes as an
+// array of numbers.
+func byteSlice(s *types.Slice) bool {
+	b, ok := types.Unalias(s.Elem()).(*types.Basic)
+	return ok && b.Kind() == types.Uint8
+}
+
 func deref(t types.Type) types.Type {
 	if p, ok := t.Underlying().(*types.Pointer); ok {
 		return p.Elem()
@@ -1228,7 +1329,7 @@ func kindOf(t types.Type) string {
 			return types.Typ[u.Kind()].Name()
 		}
 	case *types.Slice:
-		if b, ok := u.Elem().Underlying().(*types.Basic); ok && b.Kind() == types.Uint8 {
+		if byteSlice(u) {
 			return "[]byte"
 		}
 		return "slice"
@@ -1332,16 +1433,31 @@ func streamMethod(t types.Type, name, arg string) bool {
 		types.Identical(sig.Results().At(0).Type(), errorType)
 }
 
-// routeURL is the URL of the package's directory when it lies below a
-// directory holding the table geta sync writes, within the package's own
-// module: geta sync leaves a nested module out of the tree.
+// routeURL is the URL of the package's directory when it is a route, as geta
+// sync finds one: a directory holding route.go below a directory holding
+// the table geta sync writes, within the package's own module (geta sync
+// leaves a nested module out of the tree). A helper package in the tree is
+// no route.
 func routeURL(pass *analysis.Pass) (string, bool) {
 	// go/packages drivers pass a directory holding only an x_test package
 	// with no files.
 	if len(pass.Files) == 0 {
 		return "", false
 	}
-	dir := filepath.Dir(pass.Fset.File(pass.Files[0].Pos()).Name())
+	// A cgo package's files are generated elsewhere: _cgo_gotypes.go stays
+	// there, and the others' //line directives name their sources, which
+	// Position reads.
+	dir := ""
+	for _, f := range pass.Files {
+		d := filepath.Dir(pass.Fset.Position(f.Package).Filename)
+		if _, err := os.Stat(filepath.Join(d, "route.go")); err == nil {
+			dir = d
+			break
+		}
+	}
+	if dir == "" {
+		return "", false
+	}
 	for root := dir; ; root = filepath.Dir(root) {
 		if _, err := os.Stat(filepath.Join(root, tree.TableFile)); err == nil {
 			// root is an ancestor of dir, so Rel cannot fail.

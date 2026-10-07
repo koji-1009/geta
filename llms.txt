@@ -1,6 +1,6 @@
 # geta — agent guide
 
-geta is a Go web framework whose skeleton is fixed before the program runs. Routes are directories; operations are typed values; input and output types are the contract, and the OpenAPI document derives from them. geta needs Go 1.27 or later. The core module (`github.com/koji-1009/geta`) uses only the standard library.
+geta is a Go web framework whose skeleton is fixed before the program runs. Routes are directories; operations are typed values; input and output types are the contract, and the OpenAPI document derives from them. geta is strict: it reads a request as written and refuses what does not meet the contract, never coercing it, in places more strictly than the document's dialect (JSON Schema) would; each such place says so ("stricter than JSON Schema"). geta needs Go 1.27 or later. The core module (`github.com/koji-1009/geta`) uses only the standard library.
 
 This is the complete guide to writing a geta application. docs/claims.md lists the test that holds each behaviour.
 
@@ -190,7 +190,7 @@ routes/
 - After you add, move, or remove a `route.go` or `scope.go`, run `go run github.com/koji-1009/geta/cmd/geta sync routes` from the directory that holds `routes/` (or pass its path). `geta check routes` names what is out of sync.
 - `go test ./...` runs every `geta.New` check (path tags, schema tags, failure rows, order, security) through `zz_routes_test.go`. It needs only `testEnv` in a `_test.go` file of the root package. Without it, the build fails with `undefined: testEnv`.
 - Assembly options (`geta.WithUnion`, `WithSchema`, `WithLimits`, `WithInfo`, `WithOpenAPI`) go in `func Options(env Env) []geta.Option` in the root's `options.go`, which `geta sync` finds by name. The generated test then calls `getatest.New(t, Table(env), Options(env)...)`. main and your tests call `geta.New(routes.Table(env), routes.Options(env)...)`, and append an option such as `geta.WithOpenAPI(geta.OpenAPI32)` for a variant. `geta check` and `geta sync -check` name an `options.go` that was added or removed since the last sync. Without `options.go`, the test assembles the table alone.
-- Never name a directory `_x`, `.x`, or `testdata`. `./...` skips such a directory, so `go vet` and `go test` never reach it. `geta sync` and `geta check` refuse a `route.go` or `scope.go` in or below one, naming the file. Such a directory that holds neither file is skipped. The rule applies from the routes root up to the module root (a module root with such a name is still matched by `./...` run inside it). A subdirectory with its own `go.mod` is another module, outside the tree.
+- Never name a directory `_x`, `.x`, `testdata`, or `vendor`. `./...` skips such a directory, so `go vet` and `go test` never reach it. `geta sync` and `geta check` refuse a `route.go` or `scope.go` in or below one, naming the file. Such a directory that holds neither file is skipped. The rule applies from the routes root up to the module root (a module root with such a name is still matched by `./...` run inside it). A subdirectory with its own `go.mod` is another module, outside the tree.
 
 ### Matching
 
@@ -211,7 +211,7 @@ routes/
 - OPTIONS is geta's, never a route's. On a served path it answers 204 with `Allow` listing every method of every matching template, HEAD beside GET, and OPTIONS. The `Allow` of a 405 includes OPTIONS. On an unserved path it answers 404.
 - OPTIONS runs only the root scope. Root `Secure` gates check their defaults, as for an unmatched URL, so a public GET does not make OPTIONS public. `geta.CORS` answers preflights first. No `Doc.BeforeGate` runs.
 - `OPTIONS *` answers 204 with every method any path serves, plus OPTIONS (with no routes, `Allow: OPTIONS`). Root `Secure` gates check their defaults for `OPTIONS *` and `GET *` (401 without credentials). `geta.Run` and `geta.Serve` set `http.Server.DisableGeneralOptionsHandler` so that the request reaches the App. On your own server, set it yourself, or net/http answers 200 without `Allow`.
-- The document has an `options` operation for each path, with a derived operationId (`optionsUsersId`). A `Doc.OperationID` that takes that name fails `geta.New`. Its 204 states the `Allow` values (`const`, or `enum` where templates overlap), the path parameters, and the root scope's security and statuses, with a 504 only where a root middleware answers one. `App.Documented` and `App.Types` know it.
+- The document has an `options` operation for each path, with a derived operationId (`optionsUsersById`, as "The document" derives one); paths that would share one (`/a/b` and `/aB`) fail `geta.New`. A `Doc.OperationID` that takes that name fails `geta.New`. Its 204 states the `Allow` values (`const`, or `enum` where templates overlap), the path parameters, and the root scope's security and statuses, with a 504 only where a root middleware answers one. `App.Documented` and `App.Types` know it.
 
 ## Without the routes tree
 
@@ -342,10 +342,11 @@ func (h Handler) Delete(ctx context.Context, in *DeleteIn) error {
 - A json tag on an unexported field fails (use `json:"-"`, or export the field). The members of an untagged embedded struct are promoted. An untagged embedded pointer, non-struct, or type with JSON or text methods fails; a json name makes it one member. A named embedded pointer is optional and needs `omitzero`.
 - The kind follows v2's method precedence: `MarshalJSONTo`, then `MarshalJSON`, then `AppendText`, then `MarshalText`.
 - A type with its own JSON methods (`decimal.Decimal`, `*big.Int`) needs no declaration, and its schema is `{}`. A request value is valid exactly when its `UnmarshalJSON` accepts it; otherwise it gets 400 at that path. Null is read as v2 reads it. An optional (pointer) member stays nil, and no method runs. A value's `UnmarshalJSON` gets the null (types v2 reads as structs stay zero). Output that is not JSON gets 500.
-- A narrower schema, documented and checked, is declared in `geta.New` with `geta.WithSchema[decimal.Decimal]("string", "pattern=^-?[0-9]+(\\.[0-9]+)?$")`. Declared JSON types refuse null, even behind a pointer. A wrong declaration fails `geta.New`. Schema keywords on a type with its own JSON methods need a `WithSchema` declaration.
+- A narrower schema, documented and checked, is declared in `geta.New` with `geta.WithSchema[decimal.Decimal]("string", "pattern=^-?[0-9]+(\\.[0-9]+)?$")`. Declared JSON types refuse null, even behind a pointer. A type declared `integer` or `number` reads the number itself, so it need not fit a float64 (a 400-digit integer, or `1e400` for a `number`, is taken unless a keyword refuses it, compared exactly; an `integer` takes only an integer literal, so not `1e400`). A wrong declaration fails `geta.New`. Schema keywords on a type with its own JSON methods need a `WithSchema` declaration.
 - On output, a nil slice is written as `[]`, a nil map as `{}`, and a nil pointer field is omitted. Map keys are sorted. Strings are HTML-safe: `<`, `>`, and `&` are escaped, in output of types with their own JSON methods and in every problem body too.
 - JSON success bodies carry `X-Content-Type-Options: nosniff`, as problems do.
-- A `[]byte` member is a string with `contentEncoding: base64`.
+- A `[]byte` member is a string with `contentEncoding: base64`. A slice of a named byte type (`type B byte`; `[]B`) is an array of integers 0 to 255, as encoding/json/v2 writes it.
+- `WithSchema` refuses a pointer type (declare its element) and a `geta.Nullable` (declare its value). `geta.New` refuses a declared type used as a map key, which is read as a member name, never through the declaration: constrain keys with `propertyNames.`.
 
 ### Null: `geta.Nullable[T]`
 
@@ -359,7 +360,7 @@ func (h Handler) Delete(ctx context.Context, in *DeleteIn) error {
 ### Components
 
 - Named struct types become components named after the type, without the package path (`Page[lib.User]` becomes `Page_User`). The same name twice anywhere in the app fails `geta.New`, so give route-local types names that are unique in the document.
-- A name outside `^[a-zA-Z0-9._-]+$` (a non-ASCII letter, or a generic argument that is not a named type, such as `Page[struct{...}]`) fails `geta.New` and getavet.
+- A name outside `^[a-zA-Z0-9._-]+$` (a non-ASCII letter, or a generic argument that is not a named type, such as `Page[struct{...}]`) fails `geta.New` and getavet, and so does `GetaProblem`, the name of geta's problem schema.
 - Only referenced components are listed.
 - A named type that a request reads and a response writes with different schemas becomes two components: `User` for the response, and `User-Input` for the request, which refers to the inner types' request schemas, sealed mappings included. When the schemas are equal, there is one component.
 
@@ -368,9 +369,10 @@ func (h Handler) Delete(ctx context.Context, in *DeleteIn) error {
 - The keywords are `schema:"minLength=1,maxLength=100,pattern=^[a-z]+$,format=date,enum=a|b,minimum=0,maximum=10,exclusiveMinimum=0,exclusiveMaximum=10,multipleOf=2,minItems=1,maxItems=5,uniqueItems=true"`.
 - A map or a `WithSchema` object (not a struct) takes `minProperties=1,maxProperties=10`. The violation reads `object has 0 members, fewer than minProperties 1`. A declared `maxProperties` replaces the `MaxItems` backstop.
 - An embedded struct takes no `schema` tag; constrain its fields instead.
+- A `pattern` runs as Go's RE2 and is published for JSON Schema's dialect, ECMA-262 with the `u` flag. Stricter than JSON Schema: `geta.New` and getavet refuse what the two read otherwise, never rewriting it: `.`, `\s`, and `\S`, whose line terminators and white space differ (write the set: `[^\n]`, `[ \t]`), a group opened by `(?` other than `(?:` and `(?<name>` (flags such as `(?i)`, `(?P<name>`), a group name beginning with a digit (`(?<1a>`), `\A`, `\z`, `\Q`, `\E`, an octal escape such as `\012` (a back reference in ECMA-262), `\x{…}`, `\pL` without braces, `\p{Greek}` or any name but a general category (`L` or `Letter`) or `Any`, an escape ECMA-262 does not take (`\a`, `\@`, `\-` outside a class), a POSIX class `[[:alpha:]]`, a `]` first in a class, a class escape as a range's end (`[\w-a]`), a repeated assertion (`^*`, `$?`, `\b+`), and a `{`, `}`, or `]` standing for itself (escape it; RE2 reads a count with a leading zero, `{02}`, as no count). A `-` after a range stands for itself in both (`[a-z-\d]`). Write `^…$` for `\A…\z` and `[Aa]` for `(?i)a`.
 - `geta.New` refuses a keyword on the wrong type, an unknown keyword, a bad pattern, impossible bounds, json tag options, types without a JSON form, and two bodies. It refuses numeric keywords that no value meets: an empty interval (exclusive bounds counted), an interval with no integer in it, one with no value in the Go integer type's range or float32's finite range, and one with no multiple of `multipleOf`. It also refuses a bound that a float64 cannot hold as written (`minimum=9007199254740993`), naming the number it would become.
-- Numbers are checked exactly as written, as a JSON Schema validator checks them. This covers float32 fields, integers past 2^53, exact `multipleOf`, and `uniqueItems` by numeric value.
-- Bounds looser than a fixed-size integer's or float32's range are documented as that range.
+- Numbers are checked exactly as written, as a JSON Schema validator checks them. This covers float32 fields, integers past 2^53, exact `multipleOf`, and `uniqueItems` by numeric value. Stricter than JSON Schema: a Go integer field takes only an integer literal, as encoding/json/v2 reads it, so `1.0` and `1e2` are 400 ("expected integer, got number") though JSON Schema counts them integers (and asks only that senders not write them so), and an unsigned field refuses `-0`. A `WithSchema` type declared `integer` reads the literal itself.
+- Bounds looser than a fixed-size integer's or float32's range are documented as that range. `uint` and `uint64` are documented with `exclusiveMaximum` 18446744073709551616 (2^64, all its digits) unless a tighter bound is declared.
 - `enum` takes strings, integers, and numbers. Number members are JSON numbers (`enum=1|2|3`, `enum=0.5|1.5`), documented as given. Request numbers match by exact value (`1.50` is `1.5`, and `9007199254740992` is not `9007199254740993`). `geta.New` fails a member that is not a JSON number of the type (`1.0`, `01`, or `+1` on an integer), is past the Go type's range, is held by a float as another number, is outside the field's bounds or `multipleOf`, or is a string that the field's `format` or the text type's `UnmarshalText` refuses (`enum=foo` on `geta.Date`).
 - Violations come in one 400 that lists them, parameters first and then the body, 50 at most, within 16 KiB. A 413 or 415 for the body is answered alone, without parameter violations.
 - The list is bounded in bytes too, since a request chooses its paths and quoted values. A path longer than 256 bytes keeps its end, from a rune boundary, after `…` (`…kkk.v07`); a duplicate key's path is its violation's path (message `duplicate object key`). A message quotes at most 128 bytes of a request's value (a string, key, tag, or number), cut at a rune boundary and followed by `…`, and at most 512 bytes of an error's text that may hold the request's values (the type's own `UnmarshalJSON`, a malformed form or multipart body), so each violation is bounded. The listed violations' `errors` array stops before 16 KiB of JSON, though the first, so bounded, is always listed. The problem's `omitted` member counts the violations found but not listed, past 50 or past 16 KiB; it is absent when none were. A problem under both bounds, with no value past 128 bytes, is unchanged. `Conforms` cuts neither paths nor values of a response, and its error ends with `and N more not listed` past 50. A 415's detail quotes the request's `Content-Type` (`Content-Type "…" is not application/json`) or its codings (`Content-Encoding "…" is not supported`) the same way: at most 128 bytes, no rune split (a byte of invalid UTF-8 counts as one), then `…`. No other detail geta writes quotes a request's header, query, or path.
@@ -482,7 +484,7 @@ type Export struct {
 
 ## Content-Type and Content-Encoding of a request body
 
-- Accepted: `body:"json"` takes `application/json` and any `application/*+json`; `body:"form"` takes `application/x-www-form-urlencoded`; `body:"multipart"` takes `multipart/form-data`; a raw body its one media type.
+- Accepted: `body:"json"` takes `application/json` and any `application/*+json` (the request body's description says so, after the body field's `doc` tag; a content key cannot name that range); `body:"form"` takes `application/x-www-form-urlencoded`; `body:"multipart"` takes `multipart/form-data`; a raw body its one media type.
 - Other or no Content-Type: 415, `Accept` naming the accepted type (plus `Accept-Patch` on PATCH, `Accept-Query` on QUERY), no `Accept-Encoding`.
 - Any `Content-Encoding` but `identity` (one or several lines; elements trimmed of spaces and tabs only): 415, `Accept-Encoding: identity`, no `Accept`. geta decodes no request coding. To accept one, a root middleware decodes it, replaces `r.Body`, and deletes `Content-Encoding`; `MaxBodyBytes` then bounds decoded bytes.
 - Content to an operation reading no body (any method: POST without body field, GET, HEAD, DELETE, geta's OPTIONS): 415 "the operation takes no request content", alone, no `Accept`/`Accept-Encoding`, before the handler.
@@ -524,7 +526,7 @@ float, double          float32, float64           the float's range
 - `time.Time`: RFC 3339 grammar, `t`/`z` in either case; offset past 23:59 or comma before the fraction is a 400. No leap second: its schema adds a pattern refusing one (documented, enforced); a leap second is a 400 ("is a leap second, which a time.Time does not hold"); a leap-second enum member fails `geta.New`.
 - `geta.DateTime` takes every date-time. `dt.Time()` reads second 60 as second 0 of the next minute; `dt.LeapSecond()` tells them apart.
 - `time.Duration` fails `geta.New` wherever read or written; use `geta.Duration`.
-- A `string` tagged `format=` (any format above) is held to it as the type is; `format=date-time` also takes a leap second.
+- A `string` tagged `format=` (any format above) is held to it as the type is; `format=date-time` also takes a leap second. Stricter than JSON Schema, whose 2020-12 dialect takes `format` as an annotation unless a validator is told to assert it.
 - `format=` names only these. On a type carrying its own format (format type or `geta.FormatType`) it fails: "the type has its own format".
 
 ### Formats your application decides: `geta.FormatType`
@@ -577,7 +579,7 @@ var Shapes = geta.Sealed[Shape]("kind", geta.Case[Circle]("circle"), geta.Case[S
 - Requests are checked against the variant `kind` selects (discriminator in any member position). Missing, non-string, or unknown `kind`: 400 naming it.
 - Output 500 (never written): a non-variant value; a variant whose `kind` is not its tag; a required `Shape` nil (also through or as a pointer variant). Optional: `Shape` tagged `json:"name,omitzero"`.
 - Refused at assembly: non-interface; unnamed discriminator; no variants; empty or repeated tag; repeated variant; variant not a named struct or not implementing the interface; discriminator member missing, optional, or non-string; type declared twice; `default` on the discriminator; a schema tag on it refusing the variant's own tag.
-- An interface reached without `WithUnion` fails `geta.New`.
+- An interface reached without `WithUnion` fails `geta.New`, even one listing JSON methods (`interface{ MarshalJSON() ([]byte, error) }`), which v2 cannot read into. `WithSchema` refuses an interface.
 - Clients decode with `Shapes.JSONOptions()`; getatest and `Typed()` do it for you.
 - Worked case: `examples/booking` `model.Change` (`rename`, `reschedule`, `cancel`), body of `POST /bookings/{booking}/changes` and member of each history entry.
 
@@ -643,7 +645,7 @@ func (h Handler) Put(ctx context.Context, in *PutIn) (*Tagged, error) {
 ```
 
 - Order (RFC 9110 §13.2.2): If-Match (strong; no match 412), else If-Unmodified-Since (412); then If-None-Match (weak; match 304 on GET/HEAD, else 412), else on GET/HEAD If-Modified-Since (304).
-- A 304 carries the ETag (or Last-Modified) a 200 would.
+- A 304 carries the ETag (or Last-Modified) a 200 would. The document states both on the 304, optional.
 - 400: malformed tag list; list without a tag (empty field, one or several lines, commas alone). `*` alone but for spaces and tabs (beside a no-break space: 400). Several lines are one list.
 - Non-HTTP-date: ignored. Only RFC 9110 §5.6.7 forms are read (IMF-fixdate, RFC 850, asctime; two-digit hour, minute, second; no fraction; names in their own case). 23:59:60 reads as 23:59:59.
 - The four fields are not string parameters: bound whatever their bytes and length. An obs-text (non-UTF-8) entity tag matches as any other; non-UTF-8 date ignored; long list read whole; no documented `maxLength`.
@@ -663,14 +665,14 @@ func (h Handler) Put(ctx context.Context, in *PutIn) (*Tagged, error) {
 - Every 500 (unmatched error, panic, verifier defect) carries `instance: "urn:uuid:..."`, also in its log line.
 - Logged 500 whatever the rows (catch-all `OnAs[error]` included): nil output with nil error; `Conditional.Check` given an etag not one entity tag; `*geta.PreconditionError` from an operation not answering it.
 - `context.DeadlineExceeded`: 504, documented on every operation (geta's `options` operation only where a root middleware answers one); likewise a derived context's `context.Canceled` after the request deadline passed. `context.Canceled` with the client gone writes nothing. Judged before rows: a row for `context.DeadlineExceeded` (wrapped or not) fails `geta.New`. `context.Canceled` with the request alive (handler cancelled its own context) reaches the rows.
-- Bodies: RFC 9457 `application/problem+json` (`geta.Problem`): `type`, `title`, `status`, `detail`, `instance`, and for a 400 of violations `errors` (each `in`, `path`, `message`) and `omitted` (the count not listed, at least 1, absent at 0). Middleware answering itself uses `geta.WriteProblem(w, status, detail)`; non-UTF-8 detail bytes become U+FFFD.
+- Bodies: RFC 9457 `application/problem+json` (`geta.Problem`, the document's `GetaProblem` component): `type`, `title`, `status`, `detail`, `instance`, and for a 400 of violations `errors` (each `in`, `path`, `message`) and `omitted` (the count not listed, at least 1, absent at 0). Middleware answering itself uses `geta.WriteProblem(w, status, detail)`; non-UTF-8 detail bytes become U+FFFD.
 
 ### Problems that carry the error's data: `geta.OnAsProblem`
 
 - `geta.OnAsProblem(status, detail, func(e *store.QuotaError) Quota {...})`: the function lives in the route; the error type stays HTTP-free.
-- The returned P is written as an output. A plain struct's JSON members, or an envelope's `body:"json"` struct's, are RFC 9457 extension members beside `type`/`title`/`status`. Member `detail` (string; nil `*string` keeps the row's) is the problem's detail. Envelope `header` fields (``RetryAfter int `header:"Retry-After"` ``) are response headers. Nothing of `err.Error()` is sent.
-- Documented on that status: `allOf` Problem plus an open object of the members, in place (P is a component only if a request or response refers to it); `anyOf` with Problem where other causes share the status; a header required only where every cause sets it. CORS exposes the headers.
-- Refused by `geta.New` and getavet: non-struct P or body; members `type`, `title`, `status`, `instance`, `errors`, `omitted`; non-string `detail`; cookie, status, or raw body field; two schemas for one header on a status; no function.
+- The returned P is written as an output. A plain struct's JSON members, or an envelope's `body:"json"` struct's, are RFC 9457 extension members beside `type`/`title`/`status`. Member `detail` (string; nil `*string` keeps the row's) is the problem's detail. A `*string` detail's `schema` tag must take the row's detail, which it keeps; `geta.New` refuses the row otherwise. Envelope `header` fields (``RetryAfter int `header:"Retry-After"` ``) are response headers. Nothing of `err.Error()` is sent.
+- Documented on that status: `allOf` GetaProblem plus an open object of the members, in place (P is a component only if a request or response refers to it); `anyOf` with GetaProblem where other causes share the status; a header required only where every cause sets it. CORS exposes the headers.
+- Refused by `geta.New` and getavet: non-struct P or body; members `type`, `title`, `status`, `instance`, `errors`, `omitted`; non-string `detail`; cookie, status, or raw body field; no function. Refused by `geta.New` alone: two schemas for one header on a status, and a row's detail its description's `*string` detail schema refuses.
 - Unwritable description (header no header carries, required sealed member nil, member not encoding): logged 500, none of its headers.
 - Read back: `getaclient.ProblemAs[Quota](err)` (and `Error.Header`), getatest `res.ProblemAs[Quota]()`. `res.Problem()` ignores extension members.
 
@@ -761,7 +763,7 @@ func Scope(env Env) geta.Scope {
 - Uncoded: streams, 204, 206 (its `Content-Range` counts uncoded bytes), 304, already-encoded bodies. All but streams vary on `Accept-Encoding` (204, 304, empty included); streams carry no `Vary`. HEAD gets GET's header.
 - `geta.New` refuses: no coding; coding without `NewWriter`; indistinguishable names (not a token, `identity`, `*`, `x-gzip` (name it gzip), ending in `-identity`, duplicate, one ending in `-` plus another's name, e.g. `x-br` beside `br`). Your own coding named `gzip` replacing `GzipCoding()` is the gzip sent.
 - Each coded form gets its own strong tag (`"v1"` → `"v1-gzip"`, `"v1-zstd"`, `"v1-br"`), read back as `"v1"` in `If-Match`/`If-None-Match` before anything inside sees the request: `Conditional.Check` and `geta.ETag` compare your own tag; a client holding a coded form gets its 304 and writes with its tag. Weak tags unchanged. Your tag that would read as a coded form's (ending in `-` plus a coding name) gets `-identity` appended. Uncoded, small, streamed, or empty responses carry the identity tag; empty ones also vary on `Accept-Encoding`.
-- `geta.ETag()` tags GET and HEAD 200s only (keeps a handler's own tag), answers 304, documented on GET operations. Reads `If-None-Match` as `Check`: entity-tag list (comma in quotes stays), all lines one list; anything else 400, documented beside the 304.
+- `geta.ETag()` tags GET and HEAD 200s only (keeps a handler's own tag), answers 304, documented on GET operations. Reads `If-None-Match` as `Check`: entity-tag list (comma in quotes stays), all lines one list; anything else 400, documented beside the 304. The document states its ETag, optional, on the GET's 200 and 304, and `If-None-Match` as an optional header parameter (CORS allows it). A stream passes through untouched, so its document states none of these.
 - zstd from your own dependencies (geta imports none):
 
 ```go
@@ -877,7 +879,7 @@ policy := geta.Policy{
 - a declared scheme without verifier (a root gate's default too, routes or not);
 - a protected operation without `geta.Secure` in its chain;
 - two different definitions of one name (identical members, flows included, are one);
-- `Type` not `http`/`apiKey`/`oauth2`/`openIdConnect`/`mutualTLS`; no `Name` or `Type`;
+- `Type` not `http`/`apiKey`/`oauth2`/`openIdConnect`/`mutualTLS`; no `Name` or `Type`; a `Name` outside `^[a-zA-Z0-9._-]+$`, which keys the document's `securitySchemes` (`"api key"`);
 - `http` `Scheme` not a token;
 - `apiKey` `In` not `header`/`query`/`cookie`, or a `Param` it cannot carry (header/cookie name not a token; query name with `&`, `=`, `;`, `#`, `+`, `%`, whitespace);
 - `oauth2` without `Flows` or a flow lacking its grant's URLs; `openIdConnect` without `OpenIDConnectURL`;
@@ -935,7 +937,7 @@ func (h Handler) Get(ctx context.Context, _ *struct{}) (*geta.Stream[Event], err
 ### Upgrades
 
 - `*geta.Upgrade` with status 101 switches protocols after the gate; unauthenticated upgrades are refused first.
-- Not asking to switch to `Protocol`: 426, after middleware and handler. Asking: `Connection` lists `upgrade`, `Upgrade` lists the protocol (any `/version`); elements trimmed of spaces and tabs only, ASCII case-insensitive (no-break space, long s, Kelvin sign ask nothing).
+- Not asking to switch to `Protocol`: 426, after middleware and handler, carrying `Upgrade: Protocol` and `Connection: Upgrade` (stated in the document, optional, since a row may answer 426 too). Asking: `Connection` lists `upgrade`, `Upgrade` lists the protocol (any `/version`); elements trimmed of spaces and tabs only, ASCII case-insensitive (no-break space, long s, Kelvin sign ask nothing).
 - Set exactly one of `Accept`, `Serve`. 500 defect, even without a switch request: both; neither; `Header` with `Accept`; `Protocol` not a token (`websocket`; no version of its own).
 - `Accept: func(w http.ResponseWriter, r *http.Request)`: a library validates the handshake, writes the 101 (or its refusal, sent as written), and hijacks. Inside, call `websocket.Accept(w, r, nil)` (coder/websocket) or `Upgrader.Upgrade(w, r, nil)` (gorilla/websocket) and use the connection there for its life. `w` is an `http.Hijacker`, unwrapping through every geta middleware's writer. Never frame WebSocket yourself. Declare `Sec-WebSocket-Key` and `-Version` header parameters so a malformed handshake gets geta's 400 (library refusals are undocumented). Non-switch requests get 426 before the library runs. `Accept` writing nothing: 500. Subscribe after accept succeeds. Example: `examples/booking` `/rooms/{room}/live` (coder/websocket).
 - `Serve: func(conn net.Conn, rw *bufio.ReadWriter)`, for protocols without a library: geta writes the 101 with `Header`, hands over the connection, closes it when `Serve` returns. `Upgrade` and `Connection` on the 101 are geta's. 500 defect: `Header` setting either, or the `Deprecation`/`Sunset` the operation's `Doc` sends (any case). Unhijackable connection: 500.
@@ -967,7 +969,8 @@ if err := geta.Run(ctx, &http.Server{Addr: ":8080", Handler: a}); err != nil { l
 - A tag is a name in `Doc.Tags`; no 3.2 tag fields.
 - Every status an operation can answer is listed (Declaring what a middleware answers).
 - Text must be UTF-8. Non-UTF-8 `Doc.Summary`, `Description`, `OperationID`, tag, or failure row detail fails `geta.New`, naming operation and field (`GET /t (file.go:12): Doc.Summary "caf\xe9" is not UTF-8`). Other text (`doc` tag, `WithInfo`) is named by JSON Pointer (`OpenAPI document text at /components/schemas/T/properties/a/description is not UTF-8: ...`).
-- Duplicate operation IDs or schema names fail `geta.New`.
+- Without `Doc.OperationID`, an operation's ID is the lower-case method and each path segment capitalized: a parameter after `By`, a literal keeping its letters, digits, `.`, `-`, and `_` (`GET /users/{id}/posts` is `getUsersByIdPosts`, `GET /a-b` is `getA-b`, `GET /` is `getRoot`). Paths that differ only in other characters or in case (`/a~b` and `/ab`, `/aB` and `/a/b`) derive one ID.
+- Duplicate operation IDs or schema names fail `geta.New`; give one of the operations a `Doc.OperationID`.
 - Given `geta.Observe`'s `Match`, `App.Documented(m, status)` and `App.Conforms(m, status, header, body)` check a response against the document. `App.Types(method, template)` returns an operation's In and Out types. `Conforms` reports a non-JSON success body; it skips responses without their own schema (plain problem, raw body, upgrade, empty body).
 
 ### Other servers and HTTP/3
@@ -1063,23 +1066,24 @@ Unit-test handlers as methods with fake stores; time-dependent behaviour with `t
 
 ## The geta command
 
-- `geta sync [-check] [dir]` writes `zz_routes.go`, `zz_routes_test.go`, purely from the tree. `-check` fails on a forgotten sync.
-- `geta check [dir]` names drift: forgotten directory, stale entries, edits, a scope guarding nothing, added/removed `options.go`.
-- Both refuse bad parameter names, alias collisions (scope packages included), `route.go`/`scope.go` in a go-ignored directory.
+- `geta sync [-check] [dir]` writes `zz_routes.go`, `zz_routes_test.go`, purely from the tree, each whole or not at all (a temporary file renamed over it; written 0644). `-check` fails on a forgotten sync, and reports a file it cannot read as that error, not as out of date.
+- `geta check [dir]` names drift: forgotten directory, stale entries, edits, a scope guarding nothing, added/removed `options.go`. It reads the table's paths as sync writes them, so a directory name with `"` or `\` agrees.
+- Both refuse bad parameter names, alias collisions (scope packages included), `route.go`/`scope.go` in a go-ignored directory, and a symbolic link to a directory holding either (neither the walk nor `./...` follows a link). A link to a directory holding neither is left alone; a root that is a link holding either is refused too.
 - Exit codes: 0 with nothing to report; 1 after reporting or on an unreadable tree or file; 2 on a usage error (any subcommand, nothing read).
-- Usage errors: missing or unknown subcommand, undefined flag, too many arguments (at most one directory; `geta check a b`, `geta check -check`). Flags first: `geta sync -check routes`, not `geta sync routes -check`.
+- Usage errors: missing or unknown subcommand, undefined flag, too many arguments (at most one directory; `geta check a b`, `geta check -check`), an empty directory argument (`geta sync ""`, most likely an unset variable). Flags first: `geta sync -check routes`, not `geta sync routes -check`.
 
 ## getavet
 
 - `go run github.com/koji-1009/geta/getavet/cmd/getavet ./...`, or `go vet -vettool=<getavet binary> ./...`.
 - Reports before anything runs, in `geta.New`'s text:
-  - path parameters the URL lacks or does not bind (URL from the directory under a `zz_routes.go`);
+  - path parameters the URL lacks or does not bind (URL from a directory holding `route.go` under a `zz_routes.go`; a helper package in the tree has none, and a cgo route is read by its source's directory);
   - schema-tag mistakes: malformed, wrong type, unchecked format, format on a type carrying its own;
   - every input-field, envelope-field, JSON-member, and type refusal of `geta.New` decidable from source, incl. a stream's event type and a `geta.OnAsProblem` description (type arguments inferred, given, or the first given);
   - a body on a `Get`/`Delete` operation built in place by a `geta.Route` literal;
-  - a negative constant `Doc.Timeout`; a constant status outside a status field's list.
-- Shared rules: the rules `geta.New` shares with getavet (input, form, deepObject, envelope, member, type, self-holding type, component name, schema-tag, problem, method-body, success-status, and `Doc.Timeout` checks) live in geta's internal package `internal/vet`, which is not part of the API. Silent where `geta.New` is (unexported members).
-- Left to `geta.New` (needs options or the whole chain): positive `Doc.Timeout` without `geta.Timeout`; `WithUnion` sealed types; `WithSchema` declarations; keywords on types with own JSON methods; whether a `Query` operation has the 3.2 document; schema-name collisions; `SchemaFormat` returning ""; a `propertyNames.enum` member the key type's methods refuse; an input embedding `geta.Conditional` under an unexported alias; bounds only your `Limits` make unreachable (getavet reads no `WithLimits`, so reports no lower bound or enum member past a backstop, even `DefaultLimits`).
+  - a negative constant `Doc.Timeout`; a constant status outside a status field's list, a 204 or 205 for an output with a body, or other than a stream's 200 or an upgrade's 101.
+- Path parameters are not judged in a `_test.go` file. Where a declaration has several mistakes, getavet may name one `geta.New` names only once the first is fixed. An alias is what it aliases (`type Cookie = http.Cookie`, `type Feed = geta.Stream[Event]`). Of geta's own types, only `*geta.Stream` and `*geta.Upgrade` outputs are special; `*geta.Problem` is judged as any other output.
+- Shared rules: the rules `geta.New` shares with getavet (input, form, deepObject, envelope, member, type, self-holding type, component name, schema-tag, problem, method-body, success-status, bodyless-status, special-status, and `Doc.Timeout` checks) live in geta's internal package `internal/vet`, which is not part of the API. Silent where `geta.New` is (unexported members).
+- Left to `geta.New` (needs options or the whole chain): a `geta.Op` whose input or output is or holds a type parameter (`Page[T]`), in a generic function, and such a row (judged nowhere by getavet, neither there nor where it is instantiated); positive `Doc.Timeout` without `geta.Timeout`; `WithUnion` sealed types; `WithSchema` declarations; keywords on types with own JSON methods; whether a `Query` operation has the 3.2 document; schema-name collisions; `SchemaFormat` returning ""; a `propertyNames.enum` member the key type's methods refuse; an input embedding `geta.Conditional` under an unexported alias; bounds only your `Limits` make unreachable (getavet reads no `WithLimits`, so reports no lower bound or enum member past a backstop, even `DefaultLimits`).
 - It does report `maxLength`, `minLength`, or an enum member past the 4096 pattern ceiling beside a pattern on an input-read value (the request-schema-tag rule in `internal/vet`).
 
 ## Database
