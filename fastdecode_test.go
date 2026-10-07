@@ -1065,7 +1065,7 @@ func TestSinglePassReadsOpaqueTypesWithTheBodyOptions(t *testing.T) {
 	r := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"o":{"a":1,"bogus":2}}`))
 	r.Header.Set("Content-Type", "application/json")
 	var dst opaqueJSONBody
-	if be := p.body.bind(httptest.NewRecorder(), r, reflect.ValueOf(&dst).Elem(), DefaultLimits); be == nil {
+	if be := p.body.bind(httptest.NewRecorder(), r, reflect.ValueOf(&dst).Elem(), DefaultLimits, nil); be == nil {
 		t.Error("the body plan accepted an unknown member of an opaque type")
 	}
 }

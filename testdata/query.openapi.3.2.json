@@ -124,6 +124,21 @@
             "description": "OK",
             "summary": "OK"
           },
+          "304": {
+            "description": "If-None-Match: *; the operation declares no validator (its input does not embed geta.Conditional)",
+            "summary": "Not Modified"
+          },
+          "412": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetaProblem"
+                }
+              }
+            },
+            "description": "A precondition failed: If-Match other than *; the operation declares no validator (its input does not embed geta.Conditional)",
+            "summary": "Precondition Failed"
+          },
           "415": {
             "content": {
               "application/problem+json": {
@@ -237,6 +252,17 @@
             },
             "description": "The request does not match its contract",
             "summary": "Bad Request"
+          },
+          "412": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetaProblem"
+                }
+              }
+            },
+            "description": "A precondition failed: If-Match other than *, or If-None-Match: *; the operation declares no validator (its input does not embed geta.Conditional)",
+            "summary": "Precondition Failed"
           },
           "413": {
             "content": {
@@ -613,6 +639,17 @@
             },
             "description": "The request does not match its contract",
             "summary": "Bad Request"
+          },
+          "412": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetaProblem"
+                }
+              }
+            },
+            "description": "A precondition failed: If-Match other than *, or If-None-Match: *; the operation declares no validator (its input does not embed geta.Conditional)",
+            "summary": "Precondition Failed"
           },
           "413": {
             "content": {

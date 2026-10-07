@@ -553,6 +553,19 @@ func (c *compiledOp) responses() map[string]any {
 		if c.in.required {
 			add(http.StatusPreconditionRequired, "The request carries no precondition, and this operation requires one")
 		}
+	} else if !c.options {
+		// geta evaluates the preconditions itself (unvalidated): the operation
+		// has no entity tag for If-Match to name, and If-None-Match: * finds a
+		// current representation.
+		const declares = "; the operation declares no validator (its input does not embed geta.Conditional)"
+		if c.method == http.MethodGet {
+			if c.notModified() {
+				add(http.StatusNotModified, "If-None-Match: *"+declares)
+			}
+			add(http.StatusPreconditionFailed, "A precondition failed: If-Match other than *"+declares)
+		} else {
+			add(http.StatusPreconditionFailed, "A precondition failed: If-Match other than *, or If-None-Match: *"+declares)
+		}
 	}
 	if sp, ok := c.out.special.(interface{ answers() []answer }); ok && c.out.kind == outSpecial {
 		for _, an := range sp.answers() {

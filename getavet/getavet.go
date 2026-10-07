@@ -16,8 +16,9 @@
 //     member the schema refuses.
 //   - an input field geta.New refuses (vet.CheckInputField): location and
 //     body tags, raw and form bodies, parameter names and types, deepObject
-//     query parameters and their keys, embedded structs, and defaults on a
-//     pointer, path parameter, or body.
+//     query parameters and their keys, embedded structs, defaults on a
+//     pointer, path parameter, or body, and a geta.Deferred anywhere but a
+//     body:"json" field, whose value type it checks as the body's.
 //   - a form or multipart body field geta.New refuses (vet.CheckFormField):
 //     tags, names, types, geta.File fields and their schema tags.
 //   - an output envelope field geta.New refuses (vet.CheckEnvelopeField):
@@ -508,6 +509,14 @@ func (v *vetter) input(call *ast.CallExpr, in types.Type, seen map[string]string
 		if err != nil {
 			v.report(call, f.Pos(), err.Error())
 		}
+		if vf.Deferred {
+			if err != nil {
+				continue // nothing of it is bound
+			}
+			// A body of its value type, read when the handler asks.
+			e, _ := deferredOf(f.Type())
+			f = types.NewField(f.Pos(), f.Pkg(), f.Name(), e, f.Embedded())
+		}
 		// An embedded struct refused for its own schema tag still has
 		// fields to check.
 		if walk || (loc == "" && vf.Embedded && vf.Struct && !vf.Text) {
@@ -789,13 +798,24 @@ func field(f *types.Var, tag reflect.StructTag) vet.Field {
 	_, isInterface := t.Underlying().(*types.Interface)
 	e := deref(t)
 	_, null := nullableOf(e)
+	_, deferred := deferredOf(e)
 	_, object := e.Underlying().(*types.Struct)
 	return vet.Field{Name: f.Name(), Exported: f.Exported(), Embedded: f.Embedded(), Tag: tag,
 		Type: typeString(t), Pointer: pointer, Struct: isStruct, Object: object, Interface: isInterface, Cookie: isCookie(t),
 		Text:     textMarshaler(e) || textUnmarshaler(e),
 		Methods:  ownJSON(e) || writesText(e) || textUnmarshaler(e),
 		Kind:     fieldKind(t),
-		Nullable: null}
+		Nullable: null, Deferred: deferred}
+}
+
+// deferredOf returns the value type of t, after one pointer, when it is a
+// geta.Deferred.
+func deferredOf(t types.Type) (types.Type, bool) {
+	named, ok := types.Unalias(deref(t)).(*types.Named)
+	if !ok || qualifiedName(named) != getaPath+".Deferred" || named.TypeArgs().Len() != 1 {
+		return nil, false
+	}
+	return named.TypeArgs().At(0), true
 }
 
 // nullableOf returns the value type of t when t is a geta.Nullable.

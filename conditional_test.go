@@ -389,7 +389,9 @@ func TestACatchAllRowDoesNotSwallowAConditionalDefect(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		rec := do(t, a, "GET", "/x", "If-None-Match", "*")
+		// No precondition is sent: geta evaluates one itself where the input
+		// embeds no Conditional.
+		rec := do(t, a, "GET", "/x")
 		var p geta.Problem
 		if err := json.Unmarshal(rec.Body.Bytes(), &p); err != nil || rec.Code != 500 || p.Instance == "" ||
 			!strings.Contains(buf.String(), "level=ERROR") || !strings.Contains(buf.String(), p.Instance) {
@@ -465,9 +467,6 @@ func TestConditionalIsDocumented(t *testing.T) {
 	}
 	if got := compact(t, at(t, m, "paths", "/r", "get", "responses", "304", "headers")); got != `{"ETag":{"description":"The entity tag given to Conditional.Check, when one was","required":false,"schema":{"type":"string"}},"Last-Modified":{"description":"The modification date given to Conditional.Check, an HTTP-date, when no entity tag was","required":false,"schema":{"type":"string"}}}` {
 		t.Error(got)
-	}
-	if plain := accepts(t, one("/x", get(okHandler))).OpenAPI(); strings.Contains(string(plain), "412") {
-		t.Fatal("an operation without a Conditional lists 412")
 	}
 }
 

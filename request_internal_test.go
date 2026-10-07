@@ -43,7 +43,7 @@ func TestTheReferencePathBindsAsTheSinglePass(t *testing.T) {
 			p.body.fast = fast
 			r := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(s))
 			r.Header.Set("Content-Type", "application/json")
-			if be := p.body.bind(httptest.NewRecorder(), r, reflect.ValueOf(&got[i]).Elem().FieldByIndex(p.body.index), DefaultLimits); be != nil {
+			if be := p.body.bind(httptest.NewRecorder(), r, reflect.ValueOf(&got[i]).Elem().FieldByIndex(p.body.index), DefaultLimits, nil); be != nil {
 				errs[i] = "refused"
 				for _, v := range be.errs {
 					errs[i] += " " + v.Path + ": " + v.Message
@@ -66,7 +66,7 @@ func TestTheReferencePathBindsAsTheSinglePass(t *testing.T) {
 	r := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(
 		`{"leaf":{"s":"abc","ds":[{}],"dk":{"x":{}},"dnl":{},"dp":{},"dnn":[null,{}]},"list":[{"s":"a"}]}`))
 	r.Header.Set("Content-Type", "application/json")
-	if be := p.body.bind(httptest.NewRecorder(), r, reflect.ValueOf(&dst).Elem().FieldByIndex(p.body.index), DefaultLimits); be != nil {
+	if be := p.body.bind(httptest.NewRecorder(), r, reflect.ValueOf(&dst).Elem().FieldByIndex(p.body.index), DefaultLimits, nil); be != nil {
 		t.Fatal(be.errs)
 	}
 	l := dst.Body.Leaf

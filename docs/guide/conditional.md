@@ -40,3 +40,52 @@ func (h Handler) Put(ctx context.Context, in *PutIn) (*Tagged, error) {
 - Every status `Check` answers is documented.
 - Worked case: `examples/register` `/users/{id}`: GET and PUT answer `user.Tagged` with the user's `ETag`; stale `If-Match` is a 412 writing nothing.
 
+## Operations without `Conditional`
+
+An input that does not embed `Conditional` declares no validator, so geta evaluates the preconditions itself (RFC 9110 §13.1 "MUST evaluate … prior to performing the method"), against a current representation with no entity tag and no modification date, before the handler runs:
+
+- `If-Match` other than `*` (any list, any value that is no list): 412; no listed tag matches a representation with none (§13.1.1). `DELETE` with `If-Match: "x"` is a 412 deleting nothing.
+- `If-Match: *`: holds; the handler runs. A missing target is the handler's 404, which takes precedence (§13.2.1).
+- `If-None-Match: *`: 412 on any method but GET and HEAD (§13.1.2); 304 on a GET that answers 200 (§15.4.5: a 304 stands for a 200), with no body and no validator. Not evaluated on a GET answering no 200, nor on one `geta.ETag` tags: the middleware reads it after the handler.
+- `If-None-Match` list: holds (no tag to match).
+- `If-Modified-Since`, `If-Unmodified-Since`: ignored; no modification date (§13.1.3, §13.1.4 "MUST ignore … if the resource does not have a modification date available").
+- OPTIONS: ignored (§13.2.1).
+- Several lines are one list: `*` twice is a list, not `*`.
+- Documented on every such operation: 412, and on a GET answering 200 that `geta.ETag` does not tag, 304. The fields are not parameters.
+- Cost: geta cannot look the target up, so a missing target answers 412 (or 304) rather than 404 to `If-Match: "x"` and `If-None-Match: *`, and an operation that creates its target (PUT) runs on `If-Match: *`. Embed `Conditional` (and `CheckAbsent`) for the full order.
+
+## Order against the request content
+
+RFC 9110 §13.2.1: preconditions are evaluated "after it has successfully performed its normal request checks and just before it would process the request content". Decoding and validating a body is processing it; what the headers show is not.
+
+- Before any precondition: the route (404, 405), gates, parameters (400), and what a body's headers and first byte show: another media type or a content coding (415), a declared length past `MaxBodyBytes` (413), a missing required body (400). A request refused for any of them answers so whatever its preconditions.
+- geta's own evaluation (above): after those, before the body is read.
+- `Conditional`: the handler decides, so a body bound before the handler is validated first: a stale `If-Match` with an invalid body is a 400. Declare the body `geta.Deferred[T]` to have the handler's checks answer first:
+
+```go
+type PutIn struct {
+	geta.Conditional
+	Path
+	Body geta.Deferred[model.User] `body:"json"`
+}
+
+func (h Handler) Put(ctx context.Context, in *PutIn) (*Tagged, error) {
+	u, err := h.Users.Update(ctx, in.ID, func(current model.User) (model.User, error) {
+		if err := in.Check(ETag(current), time.Time{}); err != nil {
+			return current, err // 412 (or 428), whatever the body
+		}
+		return in.Body.Value() // 400 for an invalid body, returned as is
+	})
+	if err != nil {
+		return nil, err // the store's not-found row: 404 first
+	}
+	return &Tagged{ETag: ETag(*u), User: *u}, nil
+}
+```
+
+- `Deferred[T]`: a `body:"json"` field only (geta.New refuses it elsewhere, a pointer to one, or one embedded). `T` is the body's type: same schema, validation, and document; `Deferred[*T]` for an optional body (`Value` returns nil when none is sent).
+- `Value` reads and validates on its first call and returns the same after. Its error, returned as is or wrapped, is answered as a body bound before the handler (400 listing every violation, 408, 413), whatever the failure rows.
+- A request whose parameters are refused still lists the body's violations in its 400.
+- A `Deferred` built by hand holds no body: `Value` returns the zero value and nil.
+- form, multipart, and raw `[]byte` bodies are bound before the handler; a raw `io.Reader` body is read by the handler, after its checks.
+

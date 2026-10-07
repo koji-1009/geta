@@ -14,7 +14,7 @@
 - Reports before anything runs, in `geta.New`'s text:
   - path parameters the URL lacks or does not bind (URL from a directory holding `route.go` under a `zz_routes.go`; a helper package in the tree has none, and a cgo route is read by its source's directory);
   - schema-tag mistakes: malformed, wrong type, unchecked format, format on a type carrying its own;
-  - every input-field, envelope-field, JSON-member, and type refusal of `geta.New` decidable from source, incl. a stream's event type and a `geta.OnAsProblem` description (type arguments inferred, given, or the first given);
+  - every input-field, envelope-field, JSON-member, and type refusal of `geta.New` decidable from source, incl. a stream's event type, a `geta.OnAsProblem` description (type arguments inferred, given, or the first given), and a `geta.Deferred` anywhere but a `body:"json"` field (whose value type is judged as the body's);
   - a body on a `Get`/`Delete` operation built in place by a `geta.Route` literal;
   - a negative constant `Doc.Timeout`; a constant status outside a status field's list, a 204 or 205 for an output with a body, or other than a stream's 200 or an upgrade's 101.
 - Path parameters are not judged in a `_test.go` file. Where a declaration has several mistakes, getavet may name one `geta.New` names only once the first is fixed. An alias is what it aliases (`type Cookie = http.Cookie`, `type Feed = geta.Stream[Event]`). Of geta's own types, only `*geta.Stream` and `*geta.Upgrade` outputs are special; `*geta.Problem` is judged as any other output.

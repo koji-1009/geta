@@ -78,6 +78,7 @@ func TestDocumentShape(t *testing.T) {
 		"400": "The request does not match its contract",
 		"401": "Unauthenticated",
 		"404": "no such person; Not Found",
+		"412": "A precondition failed: If-Match other than *, or If-None-Match: *; the operation declares no validator (its input does not embed geta.Conditional)",
 		"413": "The request body is larger than 1048576 bytes (Limits.MaxBodyBytes)",
 		"415": "The request has content of a media type the operation does not take, or no Content-Type, or content in a content coding (Content-Encoding)",
 		"500": "A defect in the server, such as an error no failure row matches, output that cannot be encoded, or a panic",
@@ -88,7 +89,7 @@ func TestDocumentShape(t *testing.T) {
 			t.Errorf("%s: %q, want %q", status, got, desc)
 		}
 	}
-	if len(responses) != 9 {
+	if len(responses) != 10 {
 		t.Errorf("responses: %v", responses)
 	}
 	if got := compact(t, at(t, put, "security")); got != `[{"bearer":[]}]` {

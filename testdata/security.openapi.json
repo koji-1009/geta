@@ -144,6 +144,9 @@
             },
             "description": "OK"
           },
+          "304": {
+            "description": "If-None-Match: *; the operation declares no validator (its input does not embed geta.Conditional)"
+          },
           "401": {
             "content": {
               "application/problem+json": {
@@ -172,6 +175,16 @@
               }
             },
             "description": "A required scope is missing"
+          },
+          "412": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetaProblem"
+                }
+              }
+            },
+            "description": "A precondition failed: If-Match other than *; the operation declares no validator (its input does not embed geta.Conditional)"
           },
           "415": {
             "content": {
@@ -314,6 +327,9 @@
             },
             "description": "OK"
           },
+          "304": {
+            "description": "If-None-Match: *; the operation declares no validator (its input does not embed geta.Conditional)"
+          },
           "401": {
             "content": {
               "application/problem+json": {
@@ -342,6 +358,16 @@
               }
             },
             "description": "A required scope is missing"
+          },
+          "412": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetaProblem"
+                }
+              }
+            },
+            "description": "A precondition failed: If-Match other than *; the operation declares no validator (its input does not embed geta.Conditional)"
           },
           "415": {
             "content": {
@@ -484,6 +510,9 @@
             },
             "description": "OK"
           },
+          "304": {
+            "description": "If-None-Match: *; the operation declares no validator (its input does not embed geta.Conditional)"
+          },
           "401": {
             "content": {
               "application/problem+json": {
@@ -512,6 +541,16 @@
               }
             },
             "description": "A required scope is missing"
+          },
+          "412": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetaProblem"
+                }
+              }
+            },
+            "description": "A precondition failed: If-Match other than *; the operation declares no validator (its input does not embed geta.Conditional)"
           },
           "415": {
             "content": {
@@ -654,6 +693,9 @@
             },
             "description": "OK"
           },
+          "304": {
+            "description": "If-None-Match: *; the operation declares no validator (its input does not embed geta.Conditional)"
+          },
           "401": {
             "content": {
               "application/problem+json": {
@@ -672,6 +714,16 @@
                 }
               }
             }
+          },
+          "412": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetaProblem"
+                }
+              }
+            },
+            "description": "A precondition failed: If-Match other than *; the operation declares no validator (its input does not embed geta.Conditional)"
           },
           "415": {
             "content": {
@@ -814,6 +866,19 @@
             },
             "description": "OK"
           },
+          "304": {
+            "description": "If-None-Match: *; the operation declares no validator (its input does not embed geta.Conditional)"
+          },
+          "412": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetaProblem"
+                }
+              }
+            },
+            "description": "A precondition failed: If-Match other than *; the operation declares no validator (its input does not embed geta.Conditional)"
+          },
           "415": {
             "content": {
               "application/problem+json": {
@@ -938,6 +1003,9 @@
             },
             "description": "OK"
           },
+          "304": {
+            "description": "If-None-Match: *; the operation declares no validator (its input does not embed geta.Conditional)"
+          },
           "401": {
             "content": {
               "application/problem+json": {
@@ -966,6 +1034,16 @@
               }
             },
             "description": "A required scope is missing"
+          },
+          "412": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetaProblem"
+                }
+              }
+            },
+            "description": "A precondition failed: If-Match other than *; the operation declares no validator (its input does not embed geta.Conditional)"
           },
           "415": {
             "content": {

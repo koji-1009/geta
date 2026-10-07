@@ -21,7 +21,10 @@
 // does not check them at run time.
 //
 // An input that embeds [Conditional] answers conditional requests (304, 412,
-// and 428 with [RequireConditional]). Middleware runs in the scopes of a
+// and 428 with [RequireConditional]); without one, geta evaluates If-Match and
+// If-None-Match itself, for an operation that declares no validator (412, and
+// 304 on a GET). A [Deferred] body is read after the handler's own checks.
+// Middleware runs in the scopes of a
 // route's directories and, for a single operation, in its [Doc.Scope].
 //
 // A request body is JSON (body:"json"), a form (body:"form"), or

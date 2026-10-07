@@ -32,14 +32,16 @@ func TestETagSkipsQuery(t *testing.T) {
 	if rec.Code != http.StatusOK || rec.Header().Get("ETag") != "" {
 		t.Fatalf("QUERY /search: %d ETag %q; want no tag", rec.Code, rec.Header().Get("ETag"))
 	}
-	// A matching If-None-Match does not turn a QUERY into a 304 either.
+	// A matching If-None-Match does not turn a QUERY into a 304 either: on a
+	// method other than GET or HEAD, geta's own answer to If-None-Match: * is
+	// 412 (RFC 9110 §13.1.2).
 	req = httptest.NewRequest(geta.MethodQuery, "/search", strings.NewReader(`{"term":"go"}`))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("If-None-Match", "*")
 	rec = httptest.NewRecorder()
 	a.ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("QUERY /search with If-None-Match: %d", rec.Code)
+	if rec.Code != http.StatusPreconditionFailed || rec.Header().Get("ETag") != "" {
+		t.Fatalf("QUERY /search with If-None-Match: %d ETag %q", rec.Code, rec.Header().Get("ETag"))
 	}
 }
 
