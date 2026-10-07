@@ -1,6 +1,6 @@
 # Claims and the tests that hold them
 
-Every behaviour geta states has a test or a command that checks it. [`llms.txt`](../llms.txt) explains each one; this file names the test. CI runs every Go test; the two commands that need Python, marked "run by hand", are not run in CI.
+Every behaviour geta states has a test or a command that checks it. The guide ([`docs/guide/`](guide), indexed by [`llms.txt`](../llms.txt)) explains each one; this file names the test. CI runs every Go test; the two commands that need Python, marked "run by hand", are not run in CI.
 
 ## Checked by the compiler
 
