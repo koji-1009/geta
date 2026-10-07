@@ -10,7 +10,6 @@ import (
 	"testing"
 
 	"github.com/koji-1009/geta"
-	"github.com/koji-1009/geta/getaclient"
 	"github.com/koji-1009/geta/getatest"
 	"github.com/koji-1009/geta/internal/vet"
 )
@@ -134,8 +133,8 @@ func TestAnApplicationTypeCarriesTheFormatEmail(t *testing.T) {
 	}
 }
 
-// getaclient sends the type as the server reads it and reads it back, and
-// getatest finds every response as the document states it.
+// The server reads the type in a query, a header, and a body, and writes it
+// back, and getatest finds every response as the document states it.
 func TestAnApplicationEmailRoundTrips(t *testing.T) {
 	var got *signupIn
 	c := getatest.New(t, signupApp(&got))
@@ -146,13 +145,14 @@ func TestAnApplicationEmailRoundTrips(t *testing.T) {
 	if err := invite.UnmarshalText([]byte("x.@example.com")); err != nil {
 		t.Fatal(err)
 	}
-	in := &signupIn{Invite: &invite, From: &mail, Body: signup{Name: "n", Email: mail, CC: []Email{invite}}}
-	out, err := getaclient.Call[signupIn, signupOut](t.Context(), c.Typed(), http.MethodPost, "/signup", in)
-	if err != nil {
-		t.Fatal(err)
+	res := c.With("X-From", "a..b@docomo.ne.jp").Post("/signup?invite=x.%40example.com",
+		`{"name":"n","email":"a..b@docomo.ne.jp","cc":["x.@example.com"]}`)
+	if res.Status != http.StatusCreated {
+		t.Fatal(res.Status, res.Text())
 	}
-	if *got.Invite != invite || *got.From != mail || got.Body.Email != mail || out.Contact != mail || out.Body.CC[0] != invite {
-		t.Fatalf("sent %+v, server read %+v, client read %+v", in, got, out)
+	out := res.JSON[signup]()
+	if *got.Invite != invite || *got.From != mail || got.Body.Email != mail || res.Header.Get("X-Contact") != "a..b@docomo.ne.jp" || out.CC[0] != invite {
+		t.Fatalf("server read %+v, client read %+v %v", got, out, res.Header)
 	}
 	if r := c.Post("/signup?invite=a%40b", `{"name":"n","email":"a@b.c","cc":[]}`); r.Status != http.StatusBadRequest ||
 		!strings.Contains(r.Text(), `"path":"invite","message":"\"a@b\" is not a valid email"`) {

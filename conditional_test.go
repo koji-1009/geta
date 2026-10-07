@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/koji-1009/geta"
-	"github.com/koji-1009/geta/getaclient"
 	"github.com/koji-1009/geta/getatest"
 )
 
@@ -473,7 +472,7 @@ func TestConditionalIsDocumented(t *testing.T) {
 }
 
 // Every status Check answers is one the document lists: getatest fails a
-// test that provokes any other. The typed client sends the fields.
+// test that provokes any other.
 func TestConditionalStatusesAreDocumentedOnTheWire(t *testing.T) {
 	c := getatest.New(t, conditionalTable())
 	for _, res := range []*getatest.Response{
@@ -487,22 +486,6 @@ func TestConditionalStatusesAreDocumentedOnTheWire(t *testing.T) {
 		if res.Status < 300 {
 			t.Errorf("%d", res.Status)
 		}
-	}
-	tc := c.Typed()
-	err := getaclient.CallNoBody(t.Context(), tc, http.MethodPut, "/r", &condIn{geta.Conditional{IfMatch: new(`"v1"`)}})
-	if e, ok := errors.AsType[*getaclient.Error](err); !ok || e.Status != http.StatusPreconditionFailed {
-		t.Fatal(err)
-	}
-	if err := getaclient.CallNoBody(t.Context(), tc, http.MethodPut, "/r", &condIn{geta.Conditional{IfMatch: new(`"v2"`)}}); err != nil {
-		t.Fatal(err)
-	}
-	err = getaclient.CallNoBody(t.Context(), tc, http.MethodPut, "/req", &requiredIn{})
-	if e, ok := errors.AsType[*getaclient.Error](err); !ok || e.Status != http.StatusPreconditionRequired {
-		t.Fatal(err)
-	}
-	_, err = getaclient.Call[condIn, ok](t.Context(), tc, http.MethodGet, "/r", &condIn{geta.Conditional{IfModifiedSince: new(dateExact)}})
-	if e, ok := errors.AsType[*getaclient.Error](err); !ok || e.Status != http.StatusNotModified {
-		t.Fatal(err)
 	}
 }
 

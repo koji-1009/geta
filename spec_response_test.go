@@ -438,6 +438,10 @@ func TestRedirectsCarryALocation(t *testing.T) {
 	accepts(t, one("/x", geta.Route{Post: geta.Op(http.StatusTemporaryRedirect, func(context.Context, *empty) (*embeddedLocation, error) { return nil, nil }, geta.Doc{})}))
 }
 
+type chooseIn struct {
+	Move bool `query:"move"`
+}
+
 // A redirect whose Location is nil or empty is a defect, a 500 that carries
 // none of the envelope's headers; another status the field declares may
 // leave it nil.

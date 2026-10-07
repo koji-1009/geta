@@ -2,22 +2,17 @@ package main
 
 import (
 	"bytes"
-	"context"
 	"net/http"
 	"net/url"
-	"strings"
 	"testing"
 
-	"github.com/koji-1009/geta"
 	"github.com/koji-1009/geta/examples/register/routes/users/id_/attachments"
-	"github.com/koji-1009/geta/getaclient"
 	"github.com/koji-1009/geta/getatest"
 )
 
 // POST /users/{id}/attachments takes every part named "file" as one
 // []geta.File, in the order sent, beside an ordinary field. None is a 400
-// (a []geta.File takes at least one), more than maxItems is a 400, and the
-// typed client sends the same body from the input type.
+// (a []geta.File takes at least one), and more than maxItems is a 400.
 func TestMultipleFileUpload(t *testing.T) {
 	c := client(t)
 	c.Post("/users", map[string]any{"id": "u1", "name": "U", "role": "member", "tags": []string{}})
@@ -56,16 +51,5 @@ func TestMultipleFileUpload(t *testing.T) {
 	}
 	if res := c.Multipart(http.MethodPost, "/users/none/attachments", nil, file("a", "x")); res.Status != http.StatusNotFound {
 		t.Errorf("a missing user: %d %s", res.Status, res.Body)
-	}
-
-	// The typed client builds the multipart body from the input: each
-	// geta.File of the slice is one part named file.
-	in := &attachments.PostIn{ID: "u1", Body: attachments.Upload{Files: []geta.File{
-		geta.NewFile("x.csv", "text/csv", strings.NewReader("a,b\n")),
-		geta.NewFile("y.csv", "text/csv", strings.NewReader("c,d\n")),
-	}}}
-	out, err := getaclient.Call[attachments.PostIn, attachments.Attachments](context.Background(), c.Typed(), http.MethodPost, "/users/{id}/attachments", in)
-	if err != nil || len(out.Items) != 2 || out.Items[1].Filename != "y.csv" || out.Items[1].Bytes != 4 || out.Note != nil {
-		t.Fatalf("%+v %v", out, err)
 	}
 }

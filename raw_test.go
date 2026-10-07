@@ -10,7 +10,6 @@ import (
 	"testing"
 
 	"github.com/koji-1009/geta"
-	"github.com/koji-1009/geta/getaclient"
 	"github.com/koji-1009/geta/getatest"
 )
 
@@ -281,38 +280,6 @@ func TestRawBodyMistakesAreRefused(t *testing.T) {
 	rejects(t, one("/x", get(func(context.Context, *empty) (*stringOut, error) { return nil, nil })), `a body:"text/plain" field has type string, not []byte or io.Reader`)
 	rejects(t, one("/x", geta.Route{Delete: geta.Op(http.StatusNoContent, func(context.Context, *empty) (*pdfOut, error) { return nil, nil }, geta.Doc{})}),
 		"success status 204 takes no body")
-}
-
-// getaclient sends a raw body from the input's []byte or io.Reader with its
-// media type, and reads an envelope's raw body back as the bytes.
-func TestTypedClientCarriesRawBodies(t *testing.T) {
-	var closed bool
-	c := getatest.New(t, rawTable(&closed, func() io.Reader { return strings.NewReader("%PDF") }))
-	tc := c.Typed()
-	ctx := t.Context()
-	got, err := getaclient.Call[csvIn, counted](ctx, tc, http.MethodPost, "/import", &csvIn{Body: []byte("a,b\n")})
-	if err != nil || got.Bytes != 4 {
-		t.Fatal(got, err)
-	}
-	got, err = getaclient.Call[blobIn, counted](ctx, tc, http.MethodPut, "/blobs/{id}", &blobIn{ID: "a", Body: strings.NewReader("12345")})
-	if err != nil || got.Bytes != 5 {
-		t.Fatal(got, err)
-	}
-	_, err = getaclient.Call[blobIn, counted](ctx, tc, http.MethodPut, "/blobs/{id}", &blobIn{ID: "a", Body: strings.NewReader(strings.Repeat("1", 17))})
-	if e, ok := errors.AsType[*getaclient.Error](err); !ok || e.Status != http.StatusRequestEntityTooLarge {
-		t.Fatal(err)
-	}
-	exp, err := getaclient.Call[empty, csvExport](ctx, tc, http.MethodGet, "/export", nil)
-	if err != nil || string(exp.Body) != "id,name\n1,ann\n" || exp.Disposition != `attachment; filename="users.csv"` {
-		t.Fatal(exp, err)
-	}
-	rep, err := getaclient.Call[empty, pdfOut](ctx, tc, http.MethodGet, "/report", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if b, _ := io.ReadAll(rep.Body); string(b) != "%PDF" {
-		t.Fatal(string(b))
-	}
 }
 
 // posting is /x answering POST with an input of type In.

@@ -11,7 +11,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json/v2"
-	"fmt"
 	"io"
 	"maps"
 	"mime"
@@ -29,7 +28,6 @@ import (
 	"testing"
 
 	"github.com/koji-1009/geta"
-	"github.com/koji-1009/geta/getaclient"
 )
 
 // Client sends requests to one app over httptest's in-memory network.
@@ -432,76 +430,6 @@ func servedAs(req *http.Request, sv serving) string {
 	return " (served as " + sv.method + ")"
 }
 
-// Typed returns a getaclient.Client for this app. Before each call, the
-// method and template must name an operation whose input and output types
-// match the call's, or the test fails. Responses are checked against the
-// document as for [Client.Send].
-func (c *Client) Typed() *getaclient.Client {
-	hc := *c.hc
-	hc.Transport = documenting{c: c, next: c.hc.Transport}
-	return &getaclient.Client{
-		Base:   c.srv.URL,
-		HTTP:   &hc,
-		Header: c.hdr.Clone(),
-		JSON:   c.app.JSONOptions(),
-		Check: func(method, template string, in, out reflect.Type) error {
-			c.t.Helper()
-			wantIn, wantOut, ok := c.app.Types(method, template)
-			var err error
-			switch {
-			case !ok:
-				err = fmt.Errorf("getatest: no operation answers %s %s", method, template)
-			case wantIn != in:
-				err = fmt.Errorf("getatest: %s %s takes %s, not %s", method, template, wantIn, in)
-			case wantOut != out:
-				err = fmt.Errorf("getatest: %s %s returns %s, not %s", method, template, typeName(wantOut), typeName(out))
-			}
-			if err != nil {
-				c.t.Errorf("%v", err)
-			}
-			return err
-		},
-	}
-}
-
-func typeName(t reflect.Type) string {
-	if t == nil {
-		return "no body (OpNoBody)"
-	}
-	return t.String()
-}
-
-// documenting checks each response against the document. next is the
-// in-memory server's transport, never nil.
-type documenting struct {
-	c    *Client
-	next http.RoundTripper
-}
-
-func (d documenting) RoundTrip(req *http.Request) (*http.Response, error) {
-	// A RoundTripper must not modify its request.
-	req = req.Clone(req.Context())
-	id := d.c.log.number(req)
-	res, err := d.next.RoundTrip(req)
-	sv := d.c.log.take(id) // on a failure too, so the record goes
-	if err != nil {
-		return res, err
-	}
-	d.c.documented(req, sv, res.StatusCode)
-	if !checked(res) {
-		d.c.conforms(req, sv, res, nil) // the headers, as Send checks them
-		return res, nil
-	}
-	body, err := io.ReadAll(res.Body)
-	res.Body.Close()
-	if err != nil {
-		return nil, err
-	}
-	d.c.conforms(req, sv, res, body)
-	res.Body = io.NopCloser(bytes.NewReader(body))
-	return res, nil
-}
-
 // Response is a received response, fully read.
 type Response struct {
 	t      testing.TB
@@ -538,18 +466,27 @@ func (r *Response) Problem() geta.Problem {
 }
 
 // ProblemAs decodes the problem into P, the result type of a
-// geta.OnAsProblem row, as getaclient.ProblemAs does, with the app's JSON
-// options. A response that does not decode as P fails the test.
+// geta.OnAsProblem row: P's members from the problem's extension members
+// and, if P is an envelope, its headers from the response. It decodes with
+// the app's JSON options. A response that does not decode as P fails the
+// test.
 func (r *Response) ProblemAs[P any]() P {
 	r.t.Helper()
-	p := r.Problem()
-	got, ok := getaclient.ProblemAs[P](&getaclient.Error{Status: r.Status, Problem: &p, Body: r.Body, Header: r.Header, JSON: r.opts})
-	if !ok {
-		var zero P
-		r.t.Fatalf("getatest: problem does not decode as %T\nbody: %s", zero, r.Body)
-		return zero
+	r.Problem() // a problem, or the test fails
+	var p P
+	v := reflect.ValueOf(&p).Elem()
+	// The problem's own members (type, title, ...) are beside P's.
+	opts := json.JoinOptions(r.opts, json.RejectUnknownMembers(false))
+	var err error
+	if v.Kind() == reflect.Struct && isEnvelope(v.Type()) {
+		err = readEnvelope(&http.Response{StatusCode: r.Status, Header: r.Header}, r.Body, v, opts)
+	} else {
+		err = json.Unmarshal(r.Body, &p, opts)
 	}
-	return *got
+	if err != nil {
+		r.t.Fatalf("getatest: problem does not decode as %T: %v\nbody: %s", p, err, r.Body)
+	}
+	return p
 }
 
 // Text is the body as a string.

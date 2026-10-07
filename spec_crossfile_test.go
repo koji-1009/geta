@@ -9,14 +9,12 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
-	"slices"
 	"strconv"
 	"strings"
 	"sync"
 	"testing"
 
 	"github.com/koji-1009/geta"
-	"github.com/koji-1009/geta/getaclient"
 	"github.com/koji-1009/geta/getatest"
 )
 
@@ -602,70 +600,5 @@ func TestSecuritySchemesWriteEveryMemberSet(t *testing.T) {
 	}
 	if got := compact(t, at(t, m, "components", "securitySchemes", "oidc")); got != `{"openIdConnectUrl":"https://issuer.example/.well-known/openid-configuration","type":"openIdConnect"}` {
 		t.Error(got)
-	}
-}
-
-type absentNested struct {
-	Inner dfltLine  `json:"inner"`
-	Ptr   *dfltLine `json:"ptr,omitzero"`
-}
-
-// getaclient.Absent leaves out a JSON member inside a nested struct and
-// behind a pointer, so geta binds its default.
-func TestAbsentReachesNestedAndPointedMembers(t *testing.T) {
-	h := func(_ context.Context, in *struct {
-		Body absentNested `body:"json"`
-	}) (*absentNested, error) {
-		return &in.Body, nil
-	}
-	c := getatest.New(t, one("/x", geta.Route{Post: geta.Op(http.StatusOK, h, geta.Doc{})}))
-	in := struct {
-		Body absentNested `body:"json"`
-	}{Body: absentNested{Inner: dfltLine{Note: "n"}, Ptr: &dfltLine{Note: "p"}}}
-	out, err := getaclient.Call[struct {
-		Body absentNested `body:"json"`
-	}, absentNested](t.Context(), c.Typed(), http.MethodPost, "/x", &in, getaclient.Absent(&in.Body.Inner.Qty, &in.Body.Ptr.Qty))
-	if err != nil || out.Inner.Qty != 1 || out.Ptr == nil || out.Ptr.Qty != 1 {
-		t.Fatal(out, err)
-	}
-}
-
-// A problem with no detail reads as its status and title alone.
-func TestClientErrorTextWithoutADetail(t *testing.T) {
-	gone := errors.New("gone")
-	c := getatest.New(t, one("/g", geta.Route{Get: geta.Op(http.StatusOK, func(context.Context, *empty) (*ok, error) { return nil, gone },
-		geta.Doc{Failures: []geta.Failure{geta.On(gone, http.StatusGone, "")}})}))
-	_, err := getaclient.Call[empty, ok](t.Context(), c.Typed(), http.MethodGet, "/g", nil)
-	if err == nil || err.Error() != "410 Gone" {
-		t.Fatalf("%v", err)
-	}
-}
-
-// A Typed call whose types are not the operation's fails the test before
-// anything is sent.
-func TestTypedRefusesBeforeSending(t *testing.T) {
-	var mu sync.Mutex
-	sent := 0
-	count := geta.Use(func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			mu.Lock()
-			sent++
-			mu.Unlock()
-			next.ServeHTTP(w, r)
-		})
-	})
-	type other struct {
-		X int `json:"x"`
-	}
-	rec := &recorder{TB: t}
-	c := getatest.New(rec, withRoot(one("/x", get(okHandler)), count)).Typed()
-	if _, err := getaclient.Call[empty, other](t.Context(), c, http.MethodGet, "/x", nil); err == nil {
-		t.Fatal("a wrong output was called")
-	}
-	if _, err := getaclient.Call[other, ok](t.Context(), c, http.MethodGet, "/x", nil); err == nil {
-		t.Fatal("a wrong input was called")
-	}
-	if sent != 0 || len(rec.errs) != 2 || !slices.ContainsFunc(rec.errs, func(e string) bool { return strings.Contains(e, "getatest:") }) {
-		t.Fatalf("%d sent, %q", sent, rec.errs)
 	}
 }

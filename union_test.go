@@ -13,7 +13,6 @@ import (
 	"testing"
 
 	"github.com/koji-1009/geta"
-	"github.com/koji-1009/geta/getaclient"
 	"github.com/koji-1009/geta/getatest"
 )
 
@@ -91,13 +90,6 @@ func TestSealedTypeRoundTrip(t *testing.T) {
 	}
 	if s := compact(t, at(t, m, "components", "schemas", "circle", "properties", "kind")); s != `{"type":"string"}` {
 		t.Fatal(s)
-	}
-
-	// The typed client reads the same variants.
-	out, err := getaclient.Call[drawingIn, drawing](t.Context(), c.Typed(), http.MethodPost, "/d",
-		&drawingIn{Body: drawing{Main: circle{Kind: "circle", Radius: 2}, Others: []shape{}}})
-	if err != nil || out.Main.(circle).Radius != 2 {
-		t.Fatal(out, err)
 	}
 }
 

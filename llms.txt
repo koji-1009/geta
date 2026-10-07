@@ -166,7 +166,6 @@ Rules:
 | --- | --- |
 | `geta` | Routes, operations, JSON, form, multipart, and raw bodies, scopes, middleware (with pluggable content codings in `geta.Compress`), automatic OPTIONS, the security gate, streams, upgrades, assembly (`geta.New`), OpenAPI 3.1 or 3.2, and `geta.Run` |
 | `geta/getatest` | A test client over an in-memory network, and golden OpenAPI files (Testing) |
-| `geta/getaclient` | Calls an app from Go with the handlers' In and Out types (The typed client) |
 | `geta/getaotel` | A separate module. OpenTelemetry on otelhttp (OpenTelemetry) |
 | `geta/getavet` | A separate module. An analyzer that catches mistakes before the program runs (getavet) |
 | `geta/cmd/geta` | `geta sync`, `geta check` (The geta command) |
@@ -234,7 +233,7 @@ app, err := geta.New(table)
 
 - `Path` starts with `/` and has no empty segment. Each segment is a literal or a whole `{name}`, where the name is a Go identifier used once. `geta.New` checks it as it checks a generated table.
 - `Scopes` holds the directories' scopes, outermost first. The root scope goes only in `Root`.
-- Types, the document, validation, the path-parameter checks, `getatest.New(t, table)` (your test replaces `zz_routes_test.go`), and `getaclient` work the same.
+- Types, the document, validation, the path-parameter checks, and `getatest.New(t, table)` (your test replaces `zz_routes_test.go`) work the same.
 - You lose `geta sync` and `geta check`, so a route missing from `Routes` goes unnoticed. You also lose getavet's path-parameter report, which reads URLs from directories; `geta.New` still refuses a mismatch in a test. The other getavet checks do not depend on the tree.
 
 ## A route (canonical form)
@@ -298,7 +297,7 @@ func (h Handler) Delete(ctx context.Context, in *DeleteIn) error {
 - `geta.Op(status, handler, doc)` takes a `func(context.Context, *In) (*Out, error)`. `geta.OpNoBody(status, handler, doc)` takes a `func(context.Context, *In) error`. The compiler checks the shape on that line.
 - A success status is required. It is a 2xx or 3xx status other than 304, 305, and 306. A 204 needs `OpNoBody` or an output without a body field. A redirect (301, 302, 303, 307, 308) needs an envelope with a `Location` header field. Several success statuses need an output status field. The section "Output envelopes" covers both.
 - `Get` and `Delete` take no body. Any body field (JSON, form, multipart, or raw; required or not; embedded too) fails `geta.New` with an error that points to `Query` or `Post`. Use parameters, or serve the operation as `Query` or `Post`. getavet reports it where a `geta.Route` literal builds the operation in place (`Get: geta.Op(...)`).
-- `Query` serves HTTP QUERY (`geta.MethodQuery`), which is safe and idempotent like GET and carries a JSON, form, or multipart body. It needs OpenAPI 3.2 (`geta.WithOpenAPI(geta.OpenAPI32)` in `options.go`); otherwise `geta.New` refuses it. QUERY is listed in Allow, OPTIONS, `OPTIONS *`, 405 answers, and CORS preflights. A 307 keeps the method and the body. Its 415 adds `Accept-Query`. A matching `If-None-Match` gets 412, and `geta.ETag` does not tag a QUERY response. In getatest, call `c.Query(path, body)`. In getaclient, call `getaclient.Call[In, Out](ctx, c, geta.MethodQuery, "/search", &in)`.
+- `Query` serves HTTP QUERY (`geta.MethodQuery`), which is safe and idempotent like GET and carries a JSON, form, or multipart body. It needs OpenAPI 3.2 (`geta.WithOpenAPI(geta.OpenAPI32)` in `options.go`); otherwise `geta.New` refuses it. QUERY is listed in Allow, OPTIONS, `OPTIONS *`, 405 answers, and CORS preflights. A 307 keeps the method and the body. Its 415 adds `Accept-Query`. A matching `If-None-Match` gets 412, and `geta.ETag` does not tag a QUERY response. In getatest, call `c.Query(path, body)`.
 
 ### Deprecation
 
@@ -307,7 +306,6 @@ func (h Handler) Delete(ctx context.Context, in *DeleteIn) error {
 - The headers go on all of the operation's responses: successes, HEAD, 304, problems, middleware answers, streams, and `Serve`'s 101. They never go on a 404, a 405, a clean-path redirect, or OPTIONS. A root rewrite moves them to the served operation. `geta.CORS` exposes them.
 - Each response documents them as required, with the value as `const` (not required on an upgrade's 101).
 - `geta.New` refuses a date without `Deprecated: true`, a date that is not a whole second or is past the year 9999, a `Sunset` before the `Deprecation`, and an output header, a described row's header, or a middleware `.Header` of the same name on the operation. An `Upgrade.Header` that sets one is a 500 defect.
-- In getaclient, read them with `getaclient.ResponseHeader(&h)` and `getaclient.Deprecation(h)`.
 - To send `Link` with `rel="deprecation"` or `rel="sunset"`, send it yourself from an output or a middleware.
 
 ### Input
@@ -330,7 +328,6 @@ func (h Handler) Delete(ctx context.Context, in *DeleteIn) error {
 - An unknown key (`filter[x]`, `filter[min][y]`) gets 400. Violations are named like `filter[min]`. With no `filter[...]` key, the parameter is absent (nil for a pointer, 400 when required).
 - The struct's schema tag takes only `deprecated=true`. A member without a form tag, or an array member, fails `geta.New`. Struct parameters are allowed only in the query.
 - Another query parameter named as one of its keys (`filter[min]` beside `filter`) fails `geta.New` and getavet.
-- getaclient sends it from the input.
 
 ### JSON bodies and types
 
@@ -355,7 +352,7 @@ func (h Handler) Delete(ctx context.Context, in *DeleteIn) error {
 - Untagged, the member is required and is null or a T. Tagged `json:"name,omitzero"`, it is optional and has three states: absent (the zero value), null, and a value. Read it with `if v, ok := n.Get(); ok { set } else if n.IsNull() { clear }`, and keep the old value when it is absent.
 - Build one with `geta.Null[T]()` or `geta.NotNull(v)`. An absent optional member is omitted, and an absent required member is written as null.
 - geta refuses a pointer to a Nullable, a Nullable of a Nullable, a Nullable parameter, form field, or header, and a default on a Nullable.
-- A Nullable may hold a sealed type (null or a variant; no variant on output gets 500). It may be a slice element, a map value, or a component. getaclient sends each state.
+- A Nullable may hold a sealed type (null or a variant; no variant on output gets 500). It may be a slice element, a map value, or a component.
 
 ### Components
 
@@ -461,7 +458,7 @@ type UploadIn struct {
 - `geta.File` goes only in `body:"multipart"` structs. `File` is required, `*File` is optional, and `[]File` (at least one) or `*[]File` holds several, bounded by `maxItems` or `MaxItems`. Its methods are `f.Filename()`, `f.ContentType()` (as sent, unchecked), `f.Size()`, and `f.Open()`. It is documented as a binary string (`contentMediaType: application/octet-stream`).
 - Files are held in memory up to `Limits.MaxMultipartMemory` (1 MiB) and in temporary files beyond that. They are removed after the handler returns and the output is written, or at once on a refusal. Do not keep a `File` past that.
 - A body past `MaxBodyBytes` gets 413. A multipart body that ends before its close delimiter (also after a delimiter line or inside part headers) gets 400 at `$`.
-- getaclient sends forms and files from the input type (`geta.NewFile(name, contentType, reader)`). In getatest, call `c.Form(method, path, url.Values)` or `c.Multipart(method, path, values, getatest.FilePart{...})`.
+- In getatest, call `c.Form(method, path, url.Values)` or `c.Multipart(method, path, values, getatest.FilePart{...})`.
 
 ## Raw bodies: the bytes of one media type
 
@@ -480,7 +477,7 @@ type Export struct {
 - On output, geta sends the declared Content-Type, `nosniff`, and the envelope headers. A `[]byte` always gets Content-Length. An `io.Reader` gets Content-Length if it ends within `MaxResponseBuffer`, and streams otherwise. Readers that are `io.Closer`s are closed on every path, an undeclared status or a failing header included. A nil reader, a reader that fails before anything is sent, or a failing envelope header gets 500 without the envelope headers. A reader that fails after the response started aborts the connection. Behind Gzip or ETag, text raw bodies are coded, tagged, and revalidated.
 - The request and the response document the media type without a schema (`"text/csv": {}`). The 415's `Accept` names it, and the 413 states the body limit.
 - `geta.New` and getavet refuse a media range, JSON, a form or multipart media type on input, JSON or `text/event-stream` on output (use `*geta.Stream`), a type not written as `mime.FormatMediaType` writes it, a field that is not `[]byte`, `*[]byte` (input only), or `io.Reader`, a pointer output body, a schema tag, and a raw output body on a 204.
-- getaclient sends `[]byte` or `io.Reader` and reads the bytes back. In getatest, call `c.Content(method, path, contentType, body)`.
+- In getatest, call `c.Content(method, path, contentType, body)`.
 
 ## Content-Type and Content-Encoding of a request body
 
@@ -503,7 +500,7 @@ type Export struct {
 
 ## Format types
 
-Each string format geta checks has a Go type, documented with the format; request values are held to it in any location (path, query, header, cookie, member, element, map value, map key). Every geta type but `Password` is a text type: `geta.ParseX(s)` builds, `String()` reads, usable as output header or member. Headers and bodies write it as it writes itself (`AppendText` first); the typed client carries it.
+Each string format geta checks has a Go type, documented with the format; request values are held to it in any location (path, query, header, cookie, member, element, map value, map key). Every geta type but `Password` is a text type: `geta.ParseX(s)` builds, `String()` reads, usable as output header or member. Headers and bodies write it as it writes itself (`AppendText` first).
 
 ```
 date-time              time.Time                  RFC 3339 date-time, no leap second
@@ -554,7 +551,6 @@ func (e *Email) UnmarshalText(b []byte) error {
 - `geta.New` refuses a `SchemaFormat` type lacking text methods (`MarshalText`/`AppendText` and `UnmarshalText`), having own JSON methods, or returning "".
 - It may name a format geta's types carry (`date`); your type then holds requests, not geta's check.
 - As header/cookie parameter or output header, its schema states what that place carries.
-- getaclient and getatest carry it.
 
 ## Sealed types (oneOf)
 
@@ -580,7 +576,7 @@ var Shapes = geta.Sealed[Shape]("kind", geta.Case[Circle]("circle"), geta.Case[S
 - Output 500 (never written): a non-variant value; a variant whose `kind` is not its tag; a required `Shape` nil (also through or as a pointer variant). Optional: `Shape` tagged `json:"name,omitzero"`.
 - Refused at assembly: non-interface; unnamed discriminator; no variants; empty or repeated tag; repeated variant; variant not a named struct or not implementing the interface; discriminator member missing, optional, or non-string; type declared twice; `default` on the discriminator; a schema tag on it refusing the variant's own tag.
 - An interface reached without `WithUnion` fails `geta.New`, even one listing JSON methods (`interface{ MarshalJSON() ([]byte, error) }`), which v2 cannot read into. `WithSchema` refuses an interface.
-- Clients decode with `Shapes.JSONOptions()`; getatest and `Typed()` do it for you.
+- Clients decode with `Shapes.JSONOptions()`; getatest does it for you.
 - Worked case: `examples/booking` `model.Change` (`rename`, `reschedule`, `cancel`), body of `POST /bookings/{booking}/changes` and member of each history entry.
 
 ## Output envelopes
@@ -607,7 +603,7 @@ type Created struct {
 
 - ``Status int `status:"200|201"` `` lists statuses the handler may choose: e.g. `geta.Op(http.StatusOK, h.Put, doc)`, PUT setting `out.Status = http.StatusCreated` on create; `status:"202|204"` on a bodiless DELETE envelope.
 - The operation's status must be listed; zero value sends it. Unlisted value: 500 defect.
-- The document lists every status with the output's schema and headers (pointer header for one only some statuses send). getaclient reads the status back into the field.
+- The document lists every status with the output's schema and headers (pointer header for one only some statuses send).
 - Refused by `geta.New` and getavet: non-int field; status not 2xx/3xx, or 304, 305, 306; status twice; second status field; bodiless status (204, 205) beside a body.
 
 ### Redirects
@@ -653,7 +649,7 @@ func (h Handler) Put(ctx context.Context, in *PutIn) (*Tagged, error) {
 - `geta.RequireConditional` instead of `Conditional`: 428 without a precondition (RFC 6585), documented there.
 - Binding the four headers again in the same input fails `geta.New`.
 - `geta.ETag` reads `If-None-Match` as `Check` does.
-- Every status `Check` answers is documented. The typed client sends the fields: `Conditional{IfMatch: new(tag)}`.
+- Every status `Check` answers is documented.
 - Worked case: `examples/register` `/users/{id}`: GET and PUT answer `user.Tagged` with the user's `ETag`; stale `If-Match` is a 412 writing nothing.
 
 ## Errors
@@ -674,7 +670,7 @@ func (h Handler) Put(ctx context.Context, in *PutIn) (*Tagged, error) {
 - Documented on that status: `allOf` GetaProblem plus an open object of the members, in place (P is a component only if a request or response refers to it); `anyOf` with GetaProblem where other causes share the status; a header required only where every cause sets it. CORS exposes the headers.
 - Refused by `geta.New` and getavet: non-struct P or body; members `type`, `title`, `status`, `instance`, `errors`, `omitted`; non-string `detail`; cookie, status, or raw body field; no function. Refused by `geta.New` alone: two schemas for one header on a status, and a row's detail its description's `*string` detail schema refuses.
 - Unwritable description (header no header carries, required sealed member nil, member not encoding): logged 500, none of its headers.
-- Read back: `getaclient.ProblemAs[Quota](err)` (and `Error.Header`), getatest `res.ProblemAs[Quota]()`. `res.Problem()` ignores extension members.
+- Read back: getatest `res.ProblemAs[Quota]()`. `res.Problem()` ignores extension members.
 
 ## Scopes and middleware
 
@@ -1031,7 +1027,6 @@ The client:
 - `c.HTTP() *http.Client`: the underlying client, skipping client headers and document checks. `c.URL()`: base URL. `c.App()`: the assembled `*geta.App`.
 - `c.DialContext` reaches the app at any address; `c.URL()` is `http://example.com`, a real host. Give it to self-dialing clients: `websocket.Dialer{NetDialContext: c.DialContext}` (gorilla/websocket). These skip client headers and document checks.
 - `getatest.Serve(t, app)` serves an app you assembled.
-- `c.Typed()`: a `getaclient.Client`. Each `getaclient.Call`'s method and template must name an operation with those input/output types, or the test fails.
 - `*getatest.Response`: `Status`, `Header`, `Body`. `res.JSON[T]()` decodes, failing on unknown members. `res.Problem()` fails unless Content-Type is `application/problem+json`. `res.ProblemAs[P]()` reads a described problem. `res.Text()`: body string.
 
 The test fails when the serving operation (after a root rewrite, the one served) answers:
@@ -1046,23 +1041,6 @@ Bodies are checked when Content-Type begins `application/json` or `application/p
 `getatest.Golden(t, app, path)` compares the document with the file. `-update` writes it, creating directories. Otherwise it fails naming the first differing line, or `-update` if the file is missing. The document is deterministic, so a committed openapi.json and git diff show what changed; to compare against a contract written elsewhere, use an OpenAPI diff tool such as oasdiff.
 
 Unit-test handlers as methods with fake stores; time-dependent behaviour with `testing/synctest`.
-
-## The typed client (getaclient)
-
-- `getaclient.Call[In, Out](ctx, c, "GET", "/users/{id}", &in)` calls an operation with the handlers' types; `CallNoBody` without output body. Nothing is generated.
-- The input supplies path, query (deepObject too), header, cookie, the four `Conditional` fields, JSON, form, multipart (files: `geta.NewFile(name, contentType, reader)`), raw `[]byte`/`io.Reader` with its media type. Format types and all `geta.Nullable` states carry over.
-- Path values `.`/`..` are sent as values; empty is an error. Literal segments are escaped.
-- Headers the call sets (input or body) override `Client.Header`.
-- Errors before sending: a cookie value with a control byte, non-ASCII, `"`, `;`, `\`; a header value with surrounding whitespace or a non-tab control character; an empty or comma-holding slice header element.
-- Fields are sent as held, zero values included. To bind a default, name it absent: `getaclient.Call[In, Out](ctx, c, "GET", "/items", &in, getaclient.Absent(&in.Limit, &in.Body.Lines[1].Qty))`. It covers query, header, cookie parameters, deepObject and form fields, JSON members at any depth (structs, pointers, slice elements). A field without default errors before sending. The rest of the JSON body keeps the client's `JSON` options.
-- Success: 2xx, or 3xx except 304 (an `*Error`). A declared 3xx fills the output, `Location` read. No redirect is followed, whatever `Client.HTTP` does. An envelope reading no body takes 3xx as success.
-- A JSON output needs `application/json` or `application/*+json`. `CallNoBody` succeeds on 2xx only. Anything else is a middleware's answer (`http.Redirect` 308, its own 202): an `*Error` with `Status`, `Header` (`Location`), `Body`. An undecodable JSON body is a non-`*Error` error.
-- Failures: `*getaclient.Error` with `Status`, `Body`, `Header`. `Problem` is set only for Content-Type exactly `application/problem+json` (no parameters) and a body decoding as `geta.Problem`. `getaclient.ProblemAs[P](err)` decodes with the client's `JSON` options (`Error.JSON`); sealed types read back. `Error.Error()` reads `status title (type): detail; in path: message` for each listed violation, then `; and N more not listed` when the problem's `omitted` is N > 0.
-- A response body is read up to `Client.MaxResponseBytes` (0: `getaclient.DefaultMaxResponseBytes`, 64 MiB; negative: no limit). A larger success is an error naming the call; a larger failure's `Error.Body` holds its first `MaxResponseBytes` bytes, and `Error.Cut` says why it is not whole (past the limit, or the read failed). A nil `Client.HTTP` is `http.DefaultClient`, with no timeout: bound a call with its context or `HTTP.Timeout`.
-- Output headers read into strings, text types, bools, integers, unsigned integers, floats; envelope embedded fields as geta writes them. A status field gets the status.
-- `getaclient.ResponseHeader(&h)`: the received response's header on success or failure (= `Error.Header`); unchanged without a response; a nil pointer errors before sending. For headers no output field holds (`Deprecation`, `Sunset`, middleware's).
-- `dep, sunset := getaclient.Deprecation(h)`: both as `time.Time`; zero when absent, repeated, or malformed.
-- To watch every call, wrap `Client.HTTP`'s transport.
 
 ## The geta command
 

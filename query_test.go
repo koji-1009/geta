@@ -2,7 +2,6 @@ package geta_test
 
 import (
 	"context"
-	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -10,7 +9,6 @@ import (
 	"time"
 
 	"github.com/koji-1009/geta"
-	"github.com/koji-1009/geta/getaclient"
 	"github.com/koji-1009/geta/getatest"
 )
 
@@ -131,16 +129,6 @@ func TestQueryIsServedWithABody(t *testing.T) {
 	}
 	if res := c.With("If-None-Match", `"v2"`).Query("/search/cond", map[string]any{"term": "go"}); res.Status != http.StatusOK {
 		t.Fatal(res.Status, res.Text())
-	}
-
-	// The typed client sends QUERY with the input's body.
-	out, err := getaclient.Call[querySearchIn, queryHits](t.Context(), c.Typed(), geta.MethodQuery, "/search", &querySearchIn{Body: querySearch{Term: "typed"}})
-	if err != nil || out.Hits[0] != "typed" {
-		t.Fatal(out, err)
-	}
-	_, err = getaclient.Call[querySearchIn, queryHits](t.Context(), c.Typed(), geta.MethodQuery, "/search", &querySearchIn{})
-	if e, ok := errors.AsType[*getaclient.Error](err); !ok || e.Status != http.StatusBadRequest {
-		t.Fatal(err)
 	}
 
 	a := c.App()

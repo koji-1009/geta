@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/koji-1009/geta"
-	"github.com/koji-1009/geta/getaclient"
 	"github.com/koji-1009/geta/getatest"
 )
 
@@ -66,7 +65,7 @@ func upsertTable(seen map[string]bool) geta.Table {
 // An output's status field lets the handler choose among the success
 // statuses it declares: zero answers the operation's own, a declared one is
 // sent, and one it does not declare is a defect, a 500. getatest holds each
-// to the document, and the typed client reads the status back.
+// to the document.
 func TestHandlersChooseAmongDeclaredStatuses(t *testing.T) {
 	c := getatest.New(t, upsertTable(map[string]bool{}), geta.WithLogger(quietLogger()))
 	res := c.Put("/items/a?name=ann", nil)
@@ -85,15 +84,6 @@ func TestHandlersChooseAmongDeclaredStatuses(t *testing.T) {
 	}
 	if res := c.Delete("/items/a?later=true"); res.Status != http.StatusAccepted {
 		t.Fatal(res.Status)
-	}
-	tc := c.Typed()
-	got, err := getaclient.Call[upsertIn, upserted](t.Context(), tc, http.MethodPut, "/items/{id}", &upsertIn{ID: "b", Name: "cy"})
-	if err != nil || got.Status != http.StatusCreated || got.Location == nil || got.Body.Name != "cy" {
-		t.Fatal(got, err)
-	}
-	got, err = getaclient.Call[upsertIn, upserted](t.Context(), tc, http.MethodPut, "/items/{id}", &upsertIn{ID: "b", Name: "di"})
-	if err != nil || got.Status != http.StatusOK || got.Location != nil {
-		t.Fatal(got, err)
 	}
 }
 

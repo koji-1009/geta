@@ -18,22 +18,12 @@ import (
 // [Limits.MaxMultipartMemory], and in a temporary file past that. geta
 // removes the temporary file when the handler returns; a File is valid until
 // then.
-//
-// A client builds one with [NewFile]; getaclient sends it as one part.
 type File struct {
 	filename    string
 	contentType string
 	size        int64
-	data        []byte    // the content, held in memory
-	path        string    // or the temporary file that holds it
-	content     io.Reader // or, for a file a client sends, what it reads
-}
-
-// NewFile returns a file for a client to send in a multipart body as one
-// part named by the field. contentType defaults to application/octet-stream.
-// r is read once, when the request is built.
-func NewFile(filename, contentType string, r io.Reader) File {
-	return File{filename: filename, contentType: contentType, size: -1, content: r}
+	data        []byte // the content, held in memory
+	path        string // or the temporary file that holds it
 }
 
 // Filename returns the part's filename without any directory, as
@@ -44,18 +34,14 @@ func (f File) Filename() string { return f.filename }
 // sent. geta does not check it against the content.
 func (f File) ContentType() string { return f.contentType }
 
-// Size returns the content's length in bytes, or -1 for a file from
-// [NewFile].
+// Size returns the content's length in bytes.
 func (f File) Size() int64 { return f.size }
 
-// Open opens the content. A received file may be opened any number of times
-// until the handler returns. A file from [NewFile] can be read only once.
+// Open opens the content. A file may be opened any number of times until the
+// handler returns.
 func (f File) Open() (io.ReadCloser, error) {
-	switch {
-	case f.path != "":
+	if f.path != "" {
 		return os.Open(f.path)
-	case f.content != nil:
-		return io.NopCloser(f.content), nil
 	}
 	return io.NopCloser(bytes.NewReader(f.data)), nil
 }

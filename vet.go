@@ -16,7 +16,7 @@ import (
 	"github.com/koji-1009/geta/internal/vet"
 )
 
-// The rules getavet and getaclient read through internal/vet.
+// The rules getavet and getatest read through internal/vet.
 func init() {
 	vet.CheckSchemaTag = checkTag
 	vet.CheckRequestSchemaTag = checkRequestTag

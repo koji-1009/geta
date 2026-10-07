@@ -13,7 +13,6 @@ import (
 	"testing"
 
 	"github.com/koji-1009/geta"
-	"github.com/koji-1009/geta/getaclient"
 )
 
 // failsApp serves /g; a request with X-Abort is aborted before any byte of
@@ -139,15 +138,6 @@ func TestTheRecordingWriterFlushes(t *testing.T) {
 	})
 	if len(f.errs) != 0 {
 		t.Fatalf("%q", f.errs)
-	}
-}
-
-// Typed's client reports a response cut off in its body as the call's
-// error.
-func TestTypedReportsACutOffBody(t *testing.T) {
-	c := Serve(t, failsApp(t)).With("X-Cut", "1")
-	if _, err := getaclient.Call[struct{}, greeting](context.Background(), c.Typed(), http.MethodGet, "/g", nil); err == nil {
-		t.Fatal("a cut-off body was taken")
 	}
 }
 
