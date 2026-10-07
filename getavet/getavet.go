@@ -35,6 +35,11 @@
 //     type Tree map[string]Tree.
 //   - a body on an operation a geta.Route literal builds in place under Get
 //     or Delete (vet.CheckMethodBody).
+//   - an operation a geta.Route literal builds in place under Put, Patch,
+//     or Delete whose input embeds neither geta.Conditional nor
+//     geta.RequireConditional, beside a Get built in place whose input embeds
+//     one or whose output has an ETag or Last-Modified header field
+//     (vet.CheckConditionalWrite).
 //   - a constant success status geta does not accept, the output's status
 //     field does not declare, that takes no body (204, 205) for an output
 //     with one, or that a stream (200) or an upgrade (101) does not answer,
@@ -56,6 +61,8 @@
 //   - two types taking one schema name across the program;
 //   - the format a geta.FormatType returns at run time;
 //   - an operation built elsewhere and placed in a geta.Route by name;
+//   - a GET that geta.ETag tags, which the chain decides: the root, a
+//     directory's, or the operation's scope;
 //   - a geta.Op or geta.OnAsProblem whose types are or hold a type
 //     parameter (func list[T any]() with Page[T]): only an instantiation
 //     decides them, which getavet does not follow.
@@ -185,26 +192,106 @@ var routeMethods = map[string]string{
 }
 
 // route checks each operation a geta.Route literal builds in place by
-// vet.CheckMethodBody. An operation placed by name is left to geta.New.
+// vet.CheckMethodBody and, when the literal builds its Get in place too, by
+// vet.CheckConditionalWrite against what the GET's types declare. An
+// operation placed by name is left to geta.New, as is a GET that geta.ETag
+// tags: its chain is not in the literal.
 func (v *vetter) route(lit *ast.CompositeLit) {
 	tv, ok := v.pass.TypesInfo.Types[lit]
 	if !ok || qualifiedName(tv.Type) != getaPath+".Route" {
 		return
 	}
+	type built struct {
+		method string
+		call   *ast.CallExpr
+		in     types.Type
+	}
+	var ops []built
+	var get *vet.Validator
 	for i, elt := range lit.Elts {
 		name, value, isField := element(tv.Type, i, elt)
 		call, isCall := ast.Unparen(value).(*ast.CallExpr)
 		if !isField || !isCall {
 			continue
 		}
-		in, _, isOp := operationTypes(v.pass, call)
-		if !isOp || holdsTypeParam(in) || !hasBody(in) {
+		in, out, isOp := operationTypes(v.pass, call)
+		if !isOp || holdsTypeParam(in) {
+			continue
+		}
+		ops = append(ops, built{routeMethods[name], call, in})
+		if name == "Get" && (out == nil || !holdsTypeParam(out)) {
+			get = &vet.Validator{Input: embedsConditional(in), Header: validatorHeader(out)}
+		}
+		if !hasBody(in) {
 			continue
 		}
 		if err := vet.CheckMethodBody(routeMethods[name]); err != nil {
 			v.report(call, call.Pos(), err.Error())
 		}
 	}
+	if get == nil {
+		return
+	}
+	for _, op := range ops {
+		if err := vet.CheckConditionalWrite(op.method, *get, embedsConditional(op.in)); err != nil {
+			v.report(op.call, op.call.Pos(), err.Error())
+		}
+	}
+}
+
+// embedsConditional reports whether an input embeds geta.Conditional or
+// geta.RequireConditional, in itself or a struct it embeds untagged, as
+// geta.New finds it.
+func embedsConditional(in types.Type) bool {
+	st, ok := in.Underlying().(*types.Struct)
+	if !ok {
+		return false
+	}
+	for i := range st.NumFields() {
+		f, tag := st.Field(i), reflect.StructTag(st.Tag(i))
+		if !f.Embedded() || tag != "" {
+			continue
+		}
+		switch qualifiedName(f.Type()) {
+		case getaPath + ".Conditional", getaPath + ".RequireConditional":
+			return true
+		}
+		if _, isStruct := f.Type().Underlying().(*types.Struct); isStruct && embedsConditional(f.Type()) {
+			return true
+		}
+	}
+	return false
+}
+
+// validatorHeader returns an output's first header field named ETag or
+// Last-Modified, in an envelope or a struct it embeds untagged, as its tag
+// writes the name; "" for none, or for an output that is no envelope.
+func validatorHeader(out types.Type) string {
+	if out == nil || special(out) != "" {
+		return ""
+	}
+	st, ok := out.Underlying().(*types.Struct)
+	if !ok || !isEnvelope(st) {
+		return ""
+	}
+	var walk func(st *types.Struct) string
+	walk = func(st *types.Struct) string {
+		for i := range st.NumFields() {
+			f, tag := st.Field(i), reflect.StructTag(st.Tag(i))
+			if vet.EnvelopeEmbedded(field(f, tag)) {
+				if h := walk(f.Type().Underlying().(*types.Struct)); h != "" {
+					return h
+				}
+				continue
+			}
+			h, isH := tag.Lookup("header")
+			if k := http.CanonicalHeaderKey(h); isH && f.Exported() && (k == "Etag" || k == "Last-Modified") {
+				return h
+			}
+		}
+		return ""
+	}
+	return walk(st)
 }
 
 // element returns the field name and value of element i of a literal of

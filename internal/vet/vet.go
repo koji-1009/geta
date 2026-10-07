@@ -74,6 +74,20 @@ type Type struct {
 	Nullable, ElemNullable bool
 }
 
+// Validator is what a route's GET operation declares of its representation's
+// validators, for CheckConditionalWrite. geta.New finds it by reflection and
+// from the chain, getavet from source.
+type Validator struct {
+	// Input reports that the GET's input embeds geta.Conditional or
+	// geta.RequireConditional.
+	Input bool
+	// Header is the GET's output header field named ETag or Last-Modified,
+	// the first in field order, as its tag writes the name; "" for none.
+	Header string
+	// Chain reports that geta.ETag tags the GET's responses.
+	Chain bool
+}
+
 // The rules. Each is documented where package geta defines it.
 var (
 	CheckSchemaTag        func(tag, kind string) error
@@ -91,6 +105,7 @@ var (
 	CheckEnvelopeStatus   func(status int, tag string) error
 	CheckDocTimeout       func(t time.Duration) error
 	CheckMethodBody       func(method string) error
+	CheckConditionalWrite func(method string, get Validator, conditional bool) error
 	CheckSuccessStatus    func(status int, output, tag string, location *Field) error
 	CheckBodylessStatus   func(status int, tag string, hasBody bool) error
 	CheckSpecialStatus    func(status, answers int) error

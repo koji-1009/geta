@@ -38,7 +38,7 @@ func (h Handler) Put(ctx context.Context, in *PutIn) (*Tagged, error) {
 - Binding the four headers again in the same input fails `geta.New`.
 - `geta.ETag` reads `If-None-Match` as `Check` does.
 - Every status `Check` answers is documented.
-- Worked case: `examples/register` `/users/{id}`: GET and PUT answer `user.Tagged` with the user's `ETag`; stale `If-Match` is a 412 writing nothing.
+- Worked case: `examples/register` `/users/{id}`: GET and PUT answer `user.Tagged` with the user's `ETag`; stale `If-Match` is a 412 writing nothing, on PUT and DELETE alike.
 
 ## Operations without `Conditional`
 
@@ -53,6 +53,22 @@ An input that does not embed `Conditional` declares no validator, so geta evalua
 - Several lines are one list: `*` twice is a list, not `*`.
 - Documented on every such operation: 412, and on a GET answering 200 that `geta.ETag` does not tag, 304. The fields are not parameters.
 - Cost: geta cannot look the target up, so a missing target answers 412 (or 304) rather than 404 to `If-Match: "x"` and `If-None-Match: *`, and an operation that creates its target (PUT) runs on `If-Match: *`. Embed `Conditional` (and `CheckAbsent`) for the full order.
+
+## Writes beside a GET that declares a validator
+
+A route whose GET declares a validator has one, so its writes evaluate the preconditions against it. `geta.New` refuses a PUT, PATCH, or DELETE on that route whose input embeds neither `Conditional` nor `RequireConditional`: evaluated against no validator, `If-Match` with the tag the GET sent would be a 412 (RFC 9110 §13.1.1) and `If-Unmodified-Since` would be ignored (§13.1.4). Embed one and call `Check` with the current validators, inside the store's write as `Put` above does.
+
+```
+DELETE /items/{id} (items.go:31): the route's GET declares a validator (its output's ETag header field), but the input embeds neither geta.Conditional nor geta.RequireConditional, so geta would evaluate its preconditions against none; embed one and call Check with the current validators
+```
+
+- The GET declares a validator when its output has an `ETag` or `Last-Modified` header field (any spelling, embedded structs included), its input embeds `Conditional` or `RequireConditional`, or `geta.ETag` tags it (a GET answering 200 whole, not a stream, with `geta.ETag` in the root, a directory's, or its own scope).
+- Judged: PUT, PATCH, DELETE, which act on the state of the target resource the GET represents (§9.3.4 "the state of the target resource be created or replaced", §14.5 "partial updates", §9.3.5 "remove the association between the target resource and its current functionality").
+- Not judged: POST, whose content is processed "according to the resource's own specific semantics" (§9.3.3), and QUERY, safe as GET is (§9.2.1). Without `Conditional`, they keep geta's own evaluation above: `If-Match` with the GET's tag is a 412.
+- A route whose GET declares no validator, or that has no GET, keeps geta's own evaluation.
+- getavet reports it where one `geta.Route` literal builds both the GET and the write in place and the GET's types declare the validator. `geta.ETag` in the chain, and an operation placed by name, are `geta.New`'s alone.
+- Neither can see a validator the GET's handler or a middleware of your own sets by writing the header itself; there, embed `Conditional` in the writes yourself.
+- `geta.ETag` computes its tag over the GET's body, which a write's handler does not have; to check it, let the GET set its own `ETag` (geta.ETag keeps it) from what the write can compute too.
 
 ## Order against the request content
 

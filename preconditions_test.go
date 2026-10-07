@@ -64,6 +64,14 @@ func hookTable(ran *atomic.Int32) geta.Table {
 	}}
 }
 
+// hookReads is hookTable without its writes, which beside a GET geta.ETag
+// tags would have to embed Conditional.
+func hookReads(ran *atomic.Int32) geta.Table {
+	tbl := hookTable(ran)
+	tbl.Routes[0].Route.Put, tbl.Routes[0].Route.Delete = geta.Operation{}, geta.Operation{}
+	return tbl
+}
+
 // RFC 9110 field by field, on an operation that declares no validator. Every
 // status is one the document lists: getatest fails any other.
 func TestUndeclaredPreconditions(t *testing.T) {
@@ -160,7 +168,7 @@ func TestUndeclaredPreconditionAnswers(t *testing.T) {
 // handler's 404 where it does not.
 func TestUndeclaredNoneMatchBesideTheETagMiddleware(t *testing.T) {
 	var ran atomic.Int32
-	c := getatest.New(t, withRoot(hookTable(&ran), geta.ETag()))
+	c := getatest.New(t, withRoot(hookReads(&ran), geta.ETag()))
 	if res := c.With("If-None-Match", "*").Get("/hooks/a"); res.Status != 304 || res.Header.Get("ETag") == "" {
 		t.Errorf("existing: %d %s", res.Status, res.Header)
 	}
@@ -209,9 +217,238 @@ func TestUndeclaredPreconditionsAreDocumented(t *testing.T) {
 	if got := compact(t, at(t, m, "paths", "/hooks/{id}", "get", "responses", "304")); got != `{"description":"If-None-Match: *`+declares+`"}` {
 		t.Errorf("304: %s", got)
 	}
-	tagged := doc(t, accepts(t, withRoot(hookTable(&ran), geta.ETag())))
+	tagged := doc(t, accepts(t, withRoot(hookReads(&ran), geta.ETag())))
 	if got := at(t, tagged, "paths", "/hooks/{id}", "get", "responses", "304", "description"); got != "The representation has not changed" {
 		t.Errorf("a tagged GET's 304: %q", got)
+	}
+}
+
+// A route whose GET declares a validator: an operation that changes the state
+// the GET selects a representation of (PUT, PATCH, DELETE) must evaluate the
+// preconditions against it, so geta.New refuses one whose input embeds no
+// Conditional, naming the operation and the route. Evaluated against none,
+// If-Match with the tag the GET sent would be a 412 (RFC 9110 §13.1.1), and
+// If-Unmodified-Since would be ignored (§13.1.4).
+
+type itemIn struct {
+	ID string `path:"id"`
+}
+
+type itemWriteIn struct {
+	geta.Conditional
+	itemIn
+}
+
+type itemRequireIn struct {
+	geta.RequireConditional
+	itemIn
+}
+
+// itemDeepIn embeds Conditional through a struct it embeds.
+type itemDeepIn struct{ itemWriteIn }
+
+type itemReadIn struct {
+	geta.Conditional
+	itemIn
+}
+
+type itemRequireReadIn struct {
+	geta.RequireConditional
+	itemIn
+}
+
+type itemBody struct {
+	Name string `json:"name"`
+}
+
+type itemTagged struct {
+	ETag string   `header:"ETag"`
+	Body itemBody `body:"json"`
+}
+
+// itemStamped spells its header as a tag may: names are matched canonically.
+type itemStamped struct {
+	Modified string   `header:"last-modified"`
+	Body     itemBody `body:"json"`
+}
+
+type itemHeaders struct {
+	ETag string `header:"ETag"`
+}
+
+// itemNested carries its ETag in a struct it embeds untagged.
+type itemNested struct {
+	itemHeaders
+	Body itemBody `body:"json"`
+}
+
+// itemGets are the ways a GET declares a validator: through its input, its
+// output, or geta.ETag in its chain, each with what geta.New names.
+var itemGets = []struct {
+	name     string
+	get      geta.Operation
+	root     geta.Scope
+	declares string
+}{
+	{"an ETag header field", geta.Op(http.StatusOK, func(context.Context, *itemIn) (*itemTagged, error) { return &itemTagged{ETag: `"v1"`}, nil }, geta.Doc{}),
+		nil, "its output's ETag header field"},
+	{"a Last-Modified header field", geta.Op(http.StatusOK, func(context.Context, *itemIn) (*itemStamped, error) { return &itemStamped{}, nil }, geta.Doc{}),
+		nil, "its output's last-modified header field"},
+	{"an ETag header field embedded", geta.Op(http.StatusOK, func(context.Context, *itemIn) (*itemNested, error) { return &itemNested{}, nil }, geta.Doc{}),
+		nil, "its output's ETag header field"},
+	{"Conditional", geta.Op(http.StatusOK, func(context.Context, *itemReadIn) (*itemBody, error) { return &itemBody{}, nil }, geta.Doc{}),
+		nil, "its input embeds geta.Conditional"},
+	{"RequireConditional", geta.Op(http.StatusOK, func(context.Context, *itemRequireReadIn) (*itemBody, error) { return &itemBody{}, nil }, geta.Doc{}),
+		nil, "its input embeds geta.Conditional"},
+	{"geta.ETag in the root", geta.Op(http.StatusOK, func(context.Context, *itemIn) (*itemBody, error) { return &itemBody{}, nil }, geta.Doc{}),
+		geta.Scope{geta.ETag()}, "geta.ETag tags it"},
+	{"geta.ETag in the GET's scope", geta.Op(http.StatusOK, func(context.Context, *itemIn) (*itemBody, error) { return &itemBody{}, nil }, geta.Doc{Scope: geta.Scope{geta.ETag()}}),
+		nil, "geta.ETag tags it"},
+}
+
+// itemWrite builds an operation of method with input In.
+func itemWrite[In any](method string) geta.Route {
+	h := func(context.Context, *In) error { return nil }
+	op := geta.OpNoBody(http.StatusNoContent, h, geta.Doc{})
+	switch method {
+	case http.MethodPut:
+		return geta.Route{Put: op}
+	case http.MethodPatch:
+		return geta.Route{Patch: op}
+	}
+	return geta.Route{Delete: op}
+}
+
+var writeMethods = []string{http.MethodPut, http.MethodPatch, http.MethodDelete}
+
+func TestRefusesAWriteWithoutConditionalBesideAValidatedGet(t *testing.T) {
+	for _, g := range itemGets {
+		for _, method := range writeMethods {
+			r := itemWrite[itemIn](method)
+			r.Get = g.get
+			rejects(t, geta.Table{Root: g.root, Routes: []geta.Entry{{Path: "/items/{id}", Route: r}}},
+				method+" /items/{id} (",
+				"the route's GET declares a validator ("+g.declares+"), but the input embeds neither geta.Conditional nor geta.RequireConditional, "+
+					"so geta would evaluate its preconditions against none; embed one and call Check with the current validators")
+		}
+	}
+}
+
+// Every write of the route is named, each once; its POST is not.
+func TestRefusesEveryWriteWithoutConditional(t *testing.T) {
+	h := func(context.Context, *itemIn) error { return nil }
+	_, err := geta.New(one("/items/{id}", geta.Route{
+		Get:    itemGets[0].get,
+		Post:   geta.OpNoBody(http.StatusNoContent, h, geta.Doc{}),
+		Put:    geta.OpNoBody(http.StatusNoContent, h, geta.Doc{}),
+		Patch:  geta.OpNoBody(http.StatusNoContent, h, geta.Doc{}),
+		Delete: geta.OpNoBody(http.StatusNoContent, h, geta.Doc{}),
+	}))
+	if err == nil {
+		t.Fatal("geta.New accepted the table")
+	}
+	for _, method := range writeMethods {
+		if n := strings.Count(err.Error(), method+" /items/{id} ("); n != 1 {
+			t.Errorf("%s named %d times:\n%v", method, n, err)
+		}
+	}
+	if strings.Contains(err.Error(), "POST /items/{id}") {
+		t.Errorf("POST named:\n%v", err)
+	}
+	if n := strings.Count(err.Error(), "the route's GET declares"); n != 3 {
+		t.Errorf("%d refusals, want 3:\n%v", n, err)
+	}
+}
+
+// What still starts: writes embedding Conditional or RequireConditional
+// beside any validated GET; POST, whose semantics are the resource's own
+// (RFC 9110 §9.3.3), and QUERY, safe like GET (§9.2.1), without Conditional;
+// and writes without Conditional on a route whose GET declares no validator
+// or that has no GET, which keep geta's own evaluation.
+func TestStartsWhereTheWritesEvaluateTheGetsValidator(t *testing.T) {
+	for _, g := range itemGets {
+		for _, method := range writeMethods {
+			for name, r := range map[string]geta.Route{
+				"Conditional":         itemWrite[itemWriteIn](method),
+				"RequireConditional":  itemWrite[itemRequireIn](method),
+				"Conditional, deeper": itemWrite[itemDeepIn](method),
+			} {
+				r.Get = g.get
+				if _, err := geta.New(geta.Table{Root: g.root, Routes: []geta.Entry{{Path: "/items/{id}", Route: r}}}); err != nil {
+					t.Errorf("%s beside %s, %s: %v", method, g.name, name, err)
+				}
+			}
+		}
+		plain := geta.OpNoBody(http.StatusNoContent, func(context.Context, *itemIn) error { return nil }, geta.Doc{})
+		tbl := geta.Table{Root: g.root, Routes: []geta.Entry{{Path: "/items/{id}", Route: geta.Route{Get: g.get, Post: plain, Query: plain}}}}
+		if _, err := geta.New(tbl, geta.WithOpenAPI(geta.OpenAPI32)); err != nil {
+			t.Errorf("POST and QUERY beside %s: %v", g.name, err)
+		}
+	}
+	plain := geta.Op(http.StatusOK, func(context.Context, *itemIn) (*itemBody, error) { return &itemBody{}, nil }, geta.Doc{})
+	accepted := geta.Op(http.StatusAccepted, func(context.Context, *itemIn) (*itemBody, error) { return &itemBody{}, nil }, geta.Doc{})
+	stream := geta.Op(http.StatusOK, func(context.Context, *itemIn) (*geta.Stream[change], error) { return &geta.Stream[change]{}, nil }, geta.Doc{})
+	for _, c := range []struct {
+		name string
+		get  geta.Operation
+		root geta.Scope
+	}{
+		{"a GET declaring no validator", plain, nil},
+		{"no GET", geta.Operation{}, nil},
+		// geta.ETag tags only a GET answering 200 whole.
+		{"geta.ETag beside a GET answering 202", accepted, geta.Scope{geta.ETag()}},
+		{"geta.ETag beside a stream", stream, geta.Scope{geta.ETag()}},
+	} {
+		for _, method := range writeMethods {
+			r := itemWrite[itemIn](method)
+			r.Get = c.get
+			if _, err := geta.New(geta.Table{Root: c.root, Routes: []geta.Entry{{Path: "/items/{id}", Route: r}}}); err != nil {
+				t.Errorf("%s, %s: %v", c.name, method, err)
+			}
+		}
+	}
+	// What declares a validator is the GET's alone: geta.ETag on the write,
+	// an ETag the write answers, or another route's tagged GET is none.
+	del := func(context.Context, *itemIn) (*itemTagged, error) { return &itemTagged{}, nil }
+	accepts(t, geta.Table{Routes: []geta.Entry{
+		{Path: "/items/{id}", Route: geta.Route{
+			Get:    plain,
+			Put:    geta.Op(http.StatusOK, del, geta.Doc{}),
+			Delete: geta.OpNoBody(http.StatusNoContent, func(context.Context, *itemIn) error { return nil }, geta.Doc{Scope: geta.Scope{geta.ETag()}}),
+		}},
+		{Path: "/tagged/{id}", Route: geta.Route{Get: itemGets[0].get}},
+	}})
+}
+
+// GET /items/{id} sends the current tag; a DELETE embedding Conditional
+// checks it: the tag the GET sent deletes (204), a stale one is a 412
+// deleting nothing.
+func TestAWriteBesideATaggedGetChecksItsTag(t *testing.T) {
+	version := 1
+	tag := func() string { return fmt.Sprintf(`"v%d"`, version) }
+	deleted := 0
+	a := accepts(t, one("/items/{id}", geta.Route{
+		Get: geta.Op(http.StatusOK, func(context.Context, *itemIn) (*itemTagged, error) {
+			return &itemTagged{ETag: tag(), Body: itemBody{Name: "a"}}, nil
+		}, geta.Doc{}),
+		Delete: geta.OpNoBody(http.StatusNoContent, func(_ context.Context, in *itemWriteIn) error {
+			if err := in.Check(tag(), time.Time{}); err != nil {
+				return err
+			}
+			deleted++
+			version++
+			return nil
+		}, geta.Doc{}),
+	}))
+	sent := do(t, a, "GET", "/items/1").Header().Get("ETag")
+	if sent != `"v1"` {
+		t.Fatalf("GET sent %q", sent)
+	}
+	if r := do(t, a, "DELETE", "/items/1", "If-Match", sent); r.Code != 204 || deleted != 1 {
+		t.Errorf("the tag the GET sent: %d %s, deleted %d", r.Code, r.Body, deleted)
+	}
+	if r := do(t, a, "DELETE", "/items/1", "If-Match", sent); r.Code != 412 || deleted != 1 {
+		t.Errorf("a stale tag: %d %s, deleted %d", r.Code, r.Body, deleted)
 	}
 }
 

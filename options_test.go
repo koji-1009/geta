@@ -16,8 +16,13 @@ import (
 // optionsTable serves one method on /x, three on /users/{id}, and POST alone
 // on /post.
 func optionsTable(root ...geta.Middleware) geta.Table {
-	put := func(ctx context.Context, in *idIn) (*ok, error) { return &ok{true}, nil }
-	del := func(ctx context.Context, in *idIn) error { return nil }
+	// The writes embed Conditional, as they must beside a GET geta.ETag tags.
+	type writeIn struct {
+		geta.Conditional
+		idIn
+	}
+	put := func(ctx context.Context, in *writeIn) (*ok, error) { return &ok{true}, nil }
+	del := func(ctx context.Context, in *writeIn) error { return nil }
 	post := func(ctx context.Context, _ *empty) (*ok, error) { return &ok{true}, nil }
 	return geta.Table{Root: root, Routes: []geta.Entry{
 		{Path: "/x", Route: get(okHandler)},

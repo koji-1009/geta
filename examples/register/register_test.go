@@ -420,4 +420,6 @@ func (fakeStore) Find(context.Context, string) (*model.User, error) { return nil
 func (fakeStore) Replace(context.Context, model.User, func(model.User) error) (*model.User, error) {
 	return nil, store.ErrNotFound
 }
-func (fakeStore) Delete(context.Context, string) error { return store.ErrNotFound }
+func (fakeStore) Delete(context.Context, string, func(model.User) error) error {
+	return store.ErrNotFound
+}

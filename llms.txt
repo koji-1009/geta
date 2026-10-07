@@ -52,6 +52,10 @@ type PutIn struct {
 	ItemPath
 	Body NewItem `body:"json"`
 }
+type DeleteIn struct {
+	geta.Conditional // required: this route's GET sends an ETag
+	ItemPath
+}
 
 // Outputs: a plain struct is the JSON body; a struct with header/body tags is an envelope.
 type List struct {
@@ -120,11 +124,14 @@ func Table() geta.Table {
 				s.items[in.ID] = it
 				return &Tagged{ETag: etag(s.version[in.ID]), Body: it}, nil
 			}, geta.Doc{Failures: notFound}),
-			Delete: geta.OpNoBody(http.StatusNoContent, func(ctx context.Context, in *ItemPath) error {
+			Delete: geta.OpNoBody(http.StatusNoContent, func(ctx context.Context, in *DeleteIn) error {
 				s.mu.Lock()
 				defer s.mu.Unlock()
 				if _, ok := s.items[in.ID]; !ok {
 					return errNotFound
+				}
+				if err := in.Check(etag(s.version[in.ID]), time.Time{}); err != nil {
+					return err
 				}
 				delete(s.items, in.ID)
 				return nil
@@ -168,7 +175,7 @@ What geta answers on its own, with no code: 400 listing every violation (an arra
 - `format=` names only `date date-time time duration ipv4 ipv6 uuid` (and json-pointer, relative-json-pointer, password), each checked (`2026-02-30` is 400); there is no `email`: use a `pattern` or your own text type ([Format types](docs/guide/formats.md)). The same formats exist as types (`geta.Date`, `geta.DateTime`, `geta.Duration`, `geta.IPv4`, …).
 - Handlers return the lower layer's errors unchanged; `Doc.Failures` maps them (`geta.On(sentinel, status, detail)`, `geta.OnAs[*MyErr](status, detail)`). An error no row matches is a logged 500; `err.Error()` never reaches the client.
 - A 201 with `Location`, a redirect, an `ETag`, or several success statuses need an output envelope (fields tagged `header:"…"`, `body:"json"`, `status:"200|201"`).
-- Embed `geta.Conditional` (or `geta.RequireConditional`, which answers 428 when no precondition is sent) to bind If-Match and the other precondition headers; call `in.Check(etag, modified)` before acting and return its error as is (a 304 or 412). Without `Conditional`, geta answers 412 to any `If-Match` but `*`, before the handler runs. A body is validated before the handler, so before `Check`; declare it `geta.Deferred[T]` and call `in.Body.Value()` after `Check` to answer 404 and 412 before a body's 400 (RFC 9110 §13.2.1).
+- Embed `geta.Conditional` (or `geta.RequireConditional`, which answers 428 when no precondition is sent) to bind If-Match and the other precondition headers; call `in.Check(etag, modified)` before acting and return its error as is (a 304 or 412). Without `Conditional`, geta answers 412 to any `If-Match` but `*`, before the handler runs, so where a route's GET declares a validator (an `ETag` or `Last-Modified` output header, `Conditional` in its input, or `geta.ETag`), `geta.New` refuses its PUT, PATCH, and DELETE without `Conditional`. A body is validated before the handler, so before `Check`; declare it `geta.Deferred[T]` and call `in.Body.Value()` after `Check` to answer 404 and 412 before a body's 400 (RFC 9110 §13.2.1).
 - Named struct types are components named after the type, so `users.Path` and `items.Path` in two route packages fail `geta.New`; give route-local types unique names.
 
 Not in geta: DI containers, string route registration, HTTP error types, static files, sessions, templates, rate limiting, doc UI, security headers (set them in a root middleware of your own; geta sets only `X-Content-Type-Options: nosniff`). A cookie-session app's CSRF, proxy client address, and idempotency keys: see `examples/bookmarks`.

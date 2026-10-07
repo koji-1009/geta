@@ -123,6 +123,7 @@ func New(t Table, opts ...Option) (*App, error) {
 			fail(fmt.Errorf("%s: the route serves no method", where))
 			continue
 		}
+		compiled := map[string]*compiledOp{}
 		for _, m := range methods {
 			m.op.op = m.op.op.snapshot()
 			// The operation's own scope runs innermost, for that method only.
@@ -176,6 +177,21 @@ func New(t Table, opts ...Option) (*App, error) {
 			}
 			opIDs[op.opID] = m.method + " " + e.Path
 			a.ops = append(a.ops, op)
+			compiled[m.method] = op
+		}
+		// Where the GET declares a validator, an operation that changes the
+		// state it selects a representation of evaluates the preconditions
+		// against it (checkConditionalWrite).
+		if get := compiled[http.MethodGet]; get != nil {
+			for _, m := range methods {
+				op := compiled[m.method]
+				if op == nil {
+					continue
+				}
+				if err := checkConditionalWrite(m.method, get.validator(), op.in.cond != nil); err != nil {
+					fail(fmt.Errorf("%s %s (%s): %w", m.method, e.Path, op.op.site, err))
+				}
+			}
 		}
 	}
 	if len(errs) > 0 {

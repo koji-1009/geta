@@ -147,13 +147,18 @@ func (m *Memory) Update(ctx context.Context, id string, apply func(current Team,
 	return copyOf(&next), m.tag(id), nil
 }
 
-// Delete removes an empty team.
-func (m *Memory) Delete(ctx context.Context, id string) error {
+// Delete removes an empty team. check is called first, under the store's
+// lock, with the stored team and its tag; an error from it is Delete's, with
+// nothing removed.
+func (m *Memory) Delete(ctx context.Context, id string, check func(current Team, tag string) error) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	t, ok := m.teams[id]
 	if !ok {
 		return ErrTeamNotFound
+	}
+	if err := check(*copyOf(t), m.tag(id)); err != nil {
+		return err
 	}
 	if len(t.Members) > 0 {
 		return ErrTeamNotEmpty

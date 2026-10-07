@@ -8,6 +8,8 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/koji-1009/geta/internal/vet"
 )
 
 // Conditional binds the four precondition header fields of RFC 9110 §13.1,
@@ -258,6 +260,20 @@ func (c *compiledOp) unvalidated(r *http.Request) *PreconditionError {
 		}
 	}
 	return nil
+}
+
+// validator returns what c, a GET, declares of its representation's
+// validators (checkConditionalWrite): an input embedding Conditional, an
+// output header field named ETag or Last-Modified, or geta.ETag tagging it.
+func (c *compiledOp) validator() vet.Validator {
+	v := vet.Validator{Input: c.in.cond != nil, Chain: c.etagged()}
+	for _, h := range c.out.headers {
+		if k := http.CanonicalHeaderKey(h.name); k == "Etag" || k == "Last-Modified" {
+			v.Header = h.name
+			break
+		}
+	}
+	return v
 }
 
 // notModified reports whether geta answers 304 itself to If-None-Match: * on
