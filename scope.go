@@ -53,6 +53,7 @@ type Middleware struct {
 	gate    *Policy       // set by Secure
 	root    string        // why it runs only in the root scope, if it does
 	timeout bool          // set by Timeout
+	etag    bool          // set by ETag
 	length  time.Duration // a Timeout's own length
 	bad     error         // a construction mistake, reported by New
 }
@@ -62,6 +63,7 @@ type answer struct {
 	reason   string
 	getOnly  bool // only a GET with a 200 success can receive it (a 304)
 	bodyOnly bool // only an operation that reads a body can receive it (408)
+	held     bool // only a response the middleware holds whole, not a stream (geta.ETag's)
 }
 
 // mwHeader is a response header a middleware sends with a status it answers.

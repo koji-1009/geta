@@ -485,6 +485,9 @@ func (a *App) compile(reg *registry, path string, params []string, m methodOp, c
 				rowsBad = true
 				continue
 			}
+			if err := pp.checkDetail(f.detail); err != nil {
+				bad("failure row %d (%s): %w", i, f.label, err)
+			}
 			c.rows[i] = pp
 		}
 	}
@@ -650,10 +653,8 @@ func (a *App) optionsOp(path string, root Scope) (*compiledOp, error) {
 
 func checkStatus(status int, out *outPlan, outType reflect.Type) error {
 	if sp, ok := out.special.(interface{ status() int }); ok && out.kind == outSpecial {
-		if status != sp.status() {
-			return fmt.Errorf("success status %d, but this output answers %d", status, sp.status())
-		}
-		return nil
+		// The same rule checkSpecialStatus applies for getavet.
+		return checkSpecialStatus(status, sp.status())
 	}
 	// The same rule checkSuccessStatus applies for getavet.
 	output := ""
@@ -672,12 +673,8 @@ func checkStatus(status int, out *outPlan, outType reflect.Type) error {
 		}
 		statuses = out.statuses
 	}
-	for _, s := range statuses {
-		if out.hasBody() && (s == http.StatusNoContent || s == http.StatusResetContent) {
-			return fmt.Errorf("success status %d takes no body, but the output has one", s)
-		}
-	}
-	return nil
+	// The same rule checkBodylessStatus applies for getavet.
+	return bodylessStatuses(statuses, out.hasBody())
 }
 
 // successes returns the success statuses in order: the operation's own, or
@@ -752,11 +749,15 @@ func checkSecurity(declared []Scheme, chain []Middleware) ([][]Scheme, error) {
 // checkScheme rejects a scheme that is incomplete or that one of gates
 // cannot verify.
 func checkScheme(s Scheme, gates []*Policy) error {
+	// A scheme's own mistake is one, whatever chains repeat the scheme.
+	own := func(err error) error {
+		return &sharedMistake{key: "scheme " + s.describe() + ": " + err.Error(), err: err}
+	}
 	if s.Name == "" || s.Type == "" {
-		return fmt.Errorf("security scheme %s has no Name or Type", s.describe())
+		return own(fmt.Errorf("security scheme %s has no Name or Type", s.describe()))
 	}
 	if err := s.check(); err != nil {
-		return fmt.Errorf("security scheme %q: %w", s.Name, err)
+		return own(fmt.Errorf("security scheme %q: %w", s.Name, err))
 	}
 	for _, g := range gates {
 		if g.Verifiers[s.Name] == nil {
@@ -788,16 +789,30 @@ func addRequirement(reqs [][]Scheme, req []Scheme) [][]Scheme {
 	return append(reqs, req)
 }
 
-// operationID derives an identifier from the method and path:
-// GET /users/{id}/posts is getUsersIdPosts.
+// operationID derives an identifier from the method and path, each segment
+// capitalized: a parameter after "By", a literal keeping its letters,
+// digits, '.', '-', and '_'. GET /users/{id}/posts is getUsersByIdPosts, and
+// GET /a-b/c is getA-bC.
 func operationID(method, path string) string {
 	var b strings.Builder
 	b.WriteString(strings.ToLower(method))
 	if path == "/" {
 		b.WriteString("Root")
 	}
-	for _, r := range strings.FieldsFunc(path, func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) }) {
-		rs := []rune(r)
+	for seg := range strings.SplitSeq(strings.TrimPrefix(path, "/"), "/") {
+		if strings.HasPrefix(seg, "{") {
+			b.WriteString("By")
+			seg = strings.Trim(seg, "{}")
+		}
+		rs := []rune(strings.Map(func(r rune) rune {
+			if unicode.IsLetter(r) || unicode.IsDigit(r) || strings.ContainsRune(".-_", r) {
+				return r
+			}
+			return -1
+		}, seg))
+		if len(rs) == 0 {
+			continue
+		}
 		rs[0] = unicode.ToUpper(rs[0])
 		b.WriteString(string(rs))
 	}

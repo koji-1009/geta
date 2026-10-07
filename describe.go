@@ -81,6 +81,26 @@ func (r *registry) problemPlan(t reflect.Type) (*problemPlan, error) {
 	return pp, nil
 }
 
+// checkDetail refuses a row's detail that the schema of the description's
+// detail member refuses: a nil detail keeps the row's, which the document
+// states under that schema.
+func (pp *problemPlan) checkDetail(detail string) error {
+	if pp.detail < 0 || detail == "" {
+		return nil
+	}
+	fc := pp.body.fields[pp.detail]
+	if !fc.optional {
+		return nil // the description's detail always replaces the row's
+	}
+	d := &decoder{limits: unbounded, written: true}
+	d.check(fc.c, fc.use, paramValue(fc.c, detail), "")
+	if len(d.errs) > 0 {
+		return fmt.Errorf("%s.detail: the row's detail %q, kept when the description's is nil, fails the member's schema: %s",
+			pp.body.t, detail, d.errs[0].Message)
+	}
+	return nil
+}
+
 // write answers failure f for err: the problem's members merged with the
 // description's, and the description's headers. A description that cannot
 // be written is a defect and answers 500.
@@ -137,7 +157,7 @@ func (pp *problemPlan) write(w http.ResponseWriter, r *http.Request, c *compiled
 // schema returns Problem's schema combined (allOf) with an open object of
 // the description's members.
 func (pp *problemPlan) schema() map[string]any {
-	ref := map[string]any{"$ref": componentRef + "Problem"}
+	ref := map[string]any{"$ref": componentRef + problemComponent}
 	if pp.body == nil {
 		return ref
 	}
@@ -234,7 +254,7 @@ func (pp *problemPlan) headers() []headerOut {
 func (fr *failureResponse) content() map[string]any {
 	schemas := fr.schemas
 	if fr.plain {
-		schemas = append([]any{map[string]any{"$ref": componentRef + "Problem"}}, schemas...)
+		schemas = append([]any{map[string]any{"$ref": componentRef + problemComponent}}, schemas...)
 	}
 	s := schemas[0].(map[string]any)
 	if len(schemas) > 1 {

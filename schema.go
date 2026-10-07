@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 )
 
@@ -59,6 +60,11 @@ type schema struct {
 	ExclusiveMinimum, ExclusiveMaximum *float64
 	MultipleOf                         *float64
 	goInt                              reflect.Type // the Go integer type, which bounds the range
+	// uintMax marks uint and uint64, below 2^64: written as exclusiveMaximum
+	// 18446744073709551616 when nothing tighter is, and held by the decoder's
+	// range check. A float64 bound could not be written so, as bounds are
+	// their shortest decimals.
+	uintMax bool
 
 	MinItems, MaxItems *int
 	UniqueItems        bool
@@ -348,6 +354,128 @@ func article(word string) string {
 	return "a"
 }
 
+// quantifier is a bounded repetition, which ECMA-262 (with the u flag that
+// JSON Schema's patterns take) reads as one, as RE2 does. RE2 reads a count
+// with a leading zero ({02}) as no count, and its '{' as itself.
+var quantifier = regexp.MustCompile(`^\{(0|[1-9][0-9]*)(,(0|[1-9][0-9]*)?)?\}`)
+
+// ecmaPattern refuses what the pattern p's two readers read otherwise: geta
+// runs it as Go's RE2, and the document publishes it for ECMA-262 with the u
+// flag (JSON Schema's dialect). What remains means the same to both. Refused
+// are '.', \s, and \S, whose sets differ (write [^\n] or [ \t]); a group
+// opened by "(?" other than "(?:" and "(?<name>", or a name beginning with a
+// digit; \A \z \Q \E; an octal
+// escape (a back reference there); \x{…}; \p without braces or naming no
+// general category; an escape of a letter or a punctuation mark ECMA-262
+// does not take; a POSIX class; a ']' first in a class; a class escape (\d,
+// \w, \p{…}) as a range's end; a repeated assertion (^*, $?, \b+); and a
+// '{', '}', or ']' standing for itself ({02} included).
+func ecmaPattern(p string) error {
+	class := false
+	// In a class: how many atoms it has, whether the last was a class
+	// escape, whether a range's '-' waits for its end, and whether the last
+	// atom ended a range, after which a '-' stands for itself.
+	atoms, classEscape, rangeEnd, ranged := 0, false, false, false
+	// Outside a class: whether the last token was an assertion.
+	assertion := false
+	for i := 0; i < len(p); i++ {
+		c := p[i]
+		repeats := assertion
+		assertion = false
+		if !class && repeats && (c == '*' || c == '+' || c == '?' || c == '{') {
+			return fmt.Errorf("repeats an assertion")
+		}
+		switch {
+		case c == '\\' && i+1 < len(p):
+			i++
+			e := p[i]
+			rest := p[i+1:]
+			if class {
+				esc := strings.IndexByte("dDwWpP", e) >= 0
+				if esc && rangeEnd || esc && i+1 < len(p) && p[i+1] == '-' && !strings.HasPrefix(p[i+2:], "]") {
+					return fmt.Errorf(`uses \%c as a range's end`, e)
+				}
+				atoms, classEscape, rangeEnd, ranged = atoms+1, esc, false, rangeEnd
+			} else if e == 'b' || e == 'B' {
+				assertion = true
+			}
+			switch {
+			case e == 's' || e == 'S':
+				return fmt.Errorf(`uses \%c, whose white space differs (write the set, such as [ \t])`, e)
+			case strings.IndexByte("AzQE", e) >= 0:
+				return fmt.Errorf(`uses \%c`, e)
+			case e >= '0' && e <= '9':
+				return fmt.Errorf(`uses \%c, an octal escape here and a back reference there`, e)
+			case e == 'x' && strings.HasPrefix(rest, "{"):
+				return fmt.Errorf(`uses \x{…}`)
+			case e == 'p' || e == 'P':
+				end := strings.IndexByte(rest, '}')
+				if !strings.HasPrefix(rest, "{") || end < 0 {
+					return fmt.Errorf(`uses \%c without braces`, e)
+				}
+				if name := rest[1:end]; name != "Any" && unicode.Categories[name] == nil && unicode.CategoryAliases[name] == "" {
+					return fmt.Errorf(`uses \%c{%s}, which is not a general category`, e, name)
+				}
+				i += end + 1
+			case e == '-' && !class:
+				return fmt.Errorf(`escapes '-' outside a class`)
+			case 'a' <= e && e <= 'z' || 'A' <= e && e <= 'Z':
+				if strings.IndexByte("dDwWbBtnrfvxpP", e) < 0 {
+					return fmt.Errorf(`uses \%c`, e)
+				}
+			case e < utf8.RuneSelf && strings.IndexByte(`^$\.*+?()[]{}|/-`, e) < 0:
+				return fmt.Errorf(`escapes %q, which needs no escape`, e)
+			}
+		case class:
+			switch {
+			case c == ']':
+				class = false
+			case c == '[' && strings.HasPrefix(p[i+1:], ":"):
+				return fmt.Errorf("uses a POSIX class")
+			case c == '-' && atoms > 0 && !ranged && !strings.HasPrefix(p[i+1:], "]"):
+				// A range; its start was checked as a class escape above.
+				if classEscape {
+					return fmt.Errorf(`uses a class escape as a range's end`)
+				}
+				rangeEnd = true
+			default:
+				atoms, classEscape, rangeEnd, ranged = atoms+1, false, false, rangeEnd
+			}
+		case c == '^' || c == '$':
+			assertion = true
+		case c == '[':
+			class = true
+			atoms, classEscape, rangeEnd, ranged = 0, false, false, false
+			if strings.HasPrefix(p[i+1:], "^") {
+				i++
+			}
+			if strings.HasPrefix(p[i+1:], "]") {
+				return fmt.Errorf("puts ']' first in a class")
+			}
+		case c == '(' && strings.HasPrefix(p[i+1:], "?"):
+			if g := p[i+2:]; !strings.HasPrefix(g, ":") && !strings.HasPrefix(g, "<") {
+				return fmt.Errorf("opens a group with %q", p[i:min(i+3, len(p))])
+			}
+			// RE2 takes a name of letters, digits, and '_'; ECMA-262 takes
+			// no name beginning with a digit.
+			if g := p[i+2:]; strings.HasPrefix(g, "<") && len(g) > 1 && '0' <= g[1] && g[1] <= '9' {
+				return fmt.Errorf("names a group beginning with a digit")
+			}
+		case c == '{':
+			q := quantifier.FindString(p[i:])
+			if q == "" {
+				return fmt.Errorf(`uses '{' for itself; escape it`)
+			}
+			i += len(q) - 1
+		case c == '}' || c == ']':
+			return fmt.Errorf(`uses %q for itself; escape it`, c)
+		case c == '.':
+			return fmt.Errorf(`uses '.', whose line terminators differ (write the set, such as [^\n])`)
+		}
+	}
+	return nil
+}
+
 func (s *schema) set(key, val string) error {
 	nonNeg := func() (*int, error) {
 		n, err := strconv.Atoi(val)
@@ -389,6 +517,9 @@ func (s *schema) set(key, val string) error {
 		s.re, err = regexp.Compile(val)
 		if err != nil {
 			return fmt.Errorf("%q does not compile: %v", val, err)
+		}
+		if err := ecmaPattern(val); err != nil {
+			return fmt.Errorf("%q %v, which the document's ECMA-262 dialect reads otherwise or not at all", val, err)
 		}
 		s.Pattern = val
 	case "format":
@@ -617,6 +748,16 @@ func (s *schema) keepTypeBounds(base *schema) {
 		}
 		if s.Maximum != nil && *s.Maximum > *hi {
 			s.Maximum = hi
+		}
+	}
+	// uint and uint64 hold less than 2^64 (uintMax); a bound at or past it
+	// gives way to that.
+	if base.uintMax {
+		if s.Maximum != nil && *s.Maximum >= 0x1p64 {
+			s.Maximum = nil
+		}
+		if s.ExclusiveMaximum != nil && *s.ExclusiveMaximum >= 0x1p64 {
+			s.ExclusiveMaximum = nil
 		}
 	}
 }
@@ -986,6 +1127,10 @@ func intRange(t reflect.Type) (lo, hi *big.Int) {
 // componentRef is how the document refers to a component.
 const componentRef = "#/components/schemas/"
 
+// problemComponent names geta's problem schema, a name an application's
+// types are unlikely to take.
+const problemComponent = "GetaProblem"
+
 // inputSuffix names a type's request schema component when it differs from
 // the response one: Booking and Booking-Input. Component names never contain
 // a hyphen, so the two cannot collide.
@@ -1131,6 +1276,9 @@ func (s *schema) render(lim *Limits, split map[string]bool) map[string]any {
 	putNum("maximum", s.Maximum)
 	putNum("exclusiveMinimum", s.ExclusiveMinimum)
 	putNum("exclusiveMaximum", s.ExclusiveMaximum)
+	if s.uintMax && s.Maximum == nil && s.ExclusiveMaximum == nil {
+		m["exclusiveMaximum"] = rawNumber("18446744073709551616")
+	}
 	putNum("multipleOf", s.MultipleOf)
 	putInt("minItems", s.MinItems)
 	putInt("maxItems", s.MaxItems)

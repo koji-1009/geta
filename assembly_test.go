@@ -313,6 +313,19 @@ func TestRejectsDefaultSchemeWithoutVerifier(t *testing.T) {
 	}
 }
 
+// A gate's malformed scheme is one mistake, however many operations the gate
+// covers.
+func TestAGatesMalformedSchemeIsReportedOnce(t *testing.T) {
+	for _, s := range []geta.Scheme{{Name: "api key", Type: "http", Scheme: "bearer"}, {Name: "k", Type: "apikey"}} {
+		tbl := geta.Table{Routes: []geta.Entry{{Path: "/a", Route: get(okHandler)}, {Path: "/b", Route: get(okHandler)}}}
+		tbl.Root = geta.Scope{geta.Secure(geta.Policy{Default: []geta.Scheme{s}, Verifiers: map[string]geta.Verifier{s.Name: admit}})}
+		_, err := geta.New(tbl)
+		if msg := fmt.Sprint(err); strings.Count(msg, "security scheme") != 1 {
+			t.Errorf("%+v: %s", s, msg)
+		}
+	}
+}
+
 func TestRejectsProtectedRouteWithoutGate(t *testing.T) {
 	r := geta.Route{Get: geta.Op(http.StatusOK, okHandler, geta.Doc{Security: []geta.Scheme{geta.Bearer}})}
 	rejects(t, one("/x", r), "GET /x", "requires bearer", "no geta.Secure gate")
@@ -342,8 +355,10 @@ func TestRejectsConflictingSchemeDefinitions(t *testing.T) {
 
 func TestRejectsDerivedOperationIDCollision(t *testing.T) {
 	tbl := geta.Table{Routes: []geta.Entry{
-		{Path: "/user-list", Route: get(okHandler)},
+		{Path: "/userList", Route: get(okHandler)},
 		{Path: "/user/list", Route: get(okHandler)},
 	}}
 	rejects(t, tbl, `operationId "getUserList"`)
+	tbl.Routes = []geta.Entry{{Path: "/user~list", Route: get(okHandler)}, {Path: "/userlist", Route: get(okHandler)}}
+	rejects(t, tbl, `operationId "getUserlist"`)
 }

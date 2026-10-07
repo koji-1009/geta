@@ -215,8 +215,9 @@ func (f *fastDecoder) value(c *codec, s *schema, dst reflect.Value) bool {
 			if raw.Kind() != '0' || (s.Type == "integer" && !isIntegerLiteral(string(raw))) {
 				return false
 			}
-			n, err := strconv.ParseFloat(string(raw), 64)
-			if err != nil || !numOK(s, []byte(raw), n) {
+			// As the reference path: past float64's range n is an infinity.
+			n, _ := strconv.ParseFloat(string(raw), 64)
+			if !numOK(s, []byte(raw), n) {
 				return false
 			}
 		case "boolean":

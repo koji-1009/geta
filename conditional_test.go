@@ -459,6 +459,14 @@ func TestConditionalIsDocumented(t *testing.T) {
 	if op := doc.Paths["/r"]["get"]; !strings.Contains(op.Responses["412"].Description, "If-Match") || strings.Contains(op.Responses["412"].Description, "If-None-Match") {
 		t.Errorf("GET 412: %q", op.Responses["412"].Description)
 	}
+	// The 304 states the validator it carries.
+	var m map[string]any
+	if err := json.Unmarshal(accepts(t, conditionalTable()).OpenAPI(), &m); err != nil {
+		t.Fatal(err)
+	}
+	if got := compact(t, at(t, m, "paths", "/r", "get", "responses", "304", "headers")); got != `{"ETag":{"description":"The entity tag given to Conditional.Check, when one was","required":false,"schema":{"type":"string"}},"Last-Modified":{"description":"The modification date given to Conditional.Check, an HTTP-date, when no entity tag was","required":false,"schema":{"type":"string"}}}` {
+		t.Error(got)
+	}
 	if plain := accepts(t, one("/x", get(okHandler))).OpenAPI(); strings.Contains(string(plain), "412") {
 		t.Fatal("an operation without a Conditional lists 412")
 	}

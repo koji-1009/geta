@@ -202,6 +202,59 @@
         ],
         "type": "object"
       },
+      "GetaProblem": {
+        "properties": {
+          "detail": {
+            "type": "string"
+          },
+          "errors": {
+            "items": {
+              "properties": {
+                "in": {
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                },
+                "path": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "in",
+                "path",
+                "message"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "instance": {
+            "format": "uri-reference",
+            "type": "string"
+          },
+          "omitted": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "status": {
+            "type": "integer"
+          },
+          "title": {
+            "type": "string"
+          },
+          "type": {
+            "format": "uri-reference",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "title",
+          "status"
+        ],
+        "type": "object"
+      },
       "Health": {
         "additionalProperties": false,
         "properties": {
@@ -370,59 +423,6 @@
           "opens",
           "closes",
           "hourlyRate"
-        ],
-        "type": "object"
-      },
-      "Problem": {
-        "properties": {
-          "detail": {
-            "type": "string"
-          },
-          "errors": {
-            "items": {
-              "properties": {
-                "in": {
-                  "type": "string"
-                },
-                "message": {
-                  "type": "string"
-                },
-                "path": {
-                  "type": "string"
-                }
-              },
-              "required": [
-                "in",
-                "path",
-                "message"
-              ],
-              "type": "object"
-            },
-            "type": "array"
-          },
-          "instance": {
-            "format": "uri-reference",
-            "type": "string"
-          },
-          "omitted": {
-            "minimum": 1,
-            "type": "integer"
-          },
-          "status": {
-            "type": "integer"
-          },
-          "title": {
-            "type": "string"
-          },
-          "type": {
-            "format": "uri-reference",
-            "type": "string"
-          }
-        },
-        "required": [
-          "type",
-          "title",
-          "status"
         ],
         "type": "object"
       },
@@ -619,7 +619,7 @@
   "paths": {
     "/bookings/{booking}": {
       "get": {
-        "operationId": "getBookingsBooking",
+        "operationId": "getBookingsByBooking",
         "parameters": [
           {
             "description": "\"*\" or a list of one or more entity tags (RFC 9110 §13.1.1), compared strongly; a failed match answers 412",
@@ -692,13 +692,29 @@
             }
           },
           "304": {
-            "description": "The representation has not changed"
+            "description": "The representation has not changed",
+            "headers": {
+              "ETag": {
+                "description": "The entity tag given to Conditional.Check, when one was",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Last-Modified": {
+                "description": "The modification date given to Conditional.Check, an HTTP-date, when no entity tag was",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           },
           "400": {
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -708,7 +724,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -727,7 +743,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -737,7 +753,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -747,7 +763,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -757,7 +773,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -778,7 +794,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -788,7 +804,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -798,7 +814,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -813,7 +829,7 @@
         "summary": "Fetch a booking"
       },
       "options": {
-        "operationId": "optionsBookingsBooking",
+        "operationId": "optionsBookingsByBooking",
         "parameters": [
           {
             "in": "path",
@@ -843,7 +859,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -862,7 +878,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -872,7 +888,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -893,7 +909,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -903,7 +919,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -913,7 +929,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -930,7 +946,7 @@
     },
     "/bookings/{booking}/changes": {
       "options": {
-        "operationId": "optionsBookingsBookingChanges",
+        "operationId": "optionsBookingsByBookingChanges",
         "parameters": [
           {
             "in": "path",
@@ -960,7 +976,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -979,7 +995,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -989,7 +1005,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -1010,7 +1026,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -1020,7 +1036,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -1030,7 +1046,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -1045,7 +1061,7 @@
         "summary": "The methods this URL serves"
       },
       "post": {
-        "operationId": "postBookingsBookingChanges",
+        "operationId": "postBookingsByBookingChanges",
         "parameters": [
           {
             "description": "\"*\" or a list of one or more entity tags (RFC 9110 §13.1.1), compared strongly; a failed match answers 412",
@@ -1105,6 +1121,7 @@
               }
             }
           },
+          "description": "Also taken as any application/*+json media type, read as application/json",
           "required": true
         },
         "responses": {
@@ -1131,7 +1148,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -1141,7 +1158,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -1160,7 +1177,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -1179,7 +1196,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -1189,7 +1206,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -1199,7 +1216,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -1209,7 +1226,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -1219,7 +1236,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -1229,7 +1246,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -1259,7 +1276,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -1269,7 +1286,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -1279,7 +1296,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -1300,7 +1317,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -1310,7 +1327,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -1320,7 +1337,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -1339,7 +1356,7 @@
     },
     "/bookings/{booking}/history": {
       "get": {
-        "operationId": "getBookingsBookingHistory",
+        "operationId": "getBookingsByBookingHistory",
         "parameters": [
           {
             "in": "path",
@@ -1347,6 +1364,15 @@
             "required": true,
             "schema": {
               "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "\"*\" or a list of one or more entity tags (RFC 9110 §13.1.2), compared weakly; a match answers 304 to a GET or HEAD and 412 otherwise, read by geta.ETag",
+            "in": "header",
+            "name": "If-None-Match",
+            "required": false,
+            "schema": {
               "type": "string"
             }
           }
@@ -1360,16 +1386,34 @@
                 }
               }
             },
-            "description": "OK"
+            "description": "OK",
+            "headers": {
+              "ETag": {
+                "description": "The entity tag geta.ETag computes over the body, unless the handler set one; a stream carries none",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           },
           "304": {
-            "description": "The representation has not changed"
+            "description": "The representation has not changed",
+            "headers": {
+              "ETag": {
+                "description": "The entity tag geta.ETag computes over the body, unless the handler set one; a stream carries none",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           },
           "400": {
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -1379,7 +1423,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -1398,7 +1442,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -1408,7 +1452,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -1418,7 +1462,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -1439,7 +1483,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -1449,7 +1493,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -1459,7 +1503,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -1474,7 +1518,7 @@
         "summary": "A booking's changes"
       },
       "options": {
-        "operationId": "optionsBookingsBookingHistory",
+        "operationId": "optionsBookingsByBookingHistory",
         "parameters": [
           {
             "in": "path",
@@ -1504,7 +1548,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -1523,7 +1567,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -1533,7 +1577,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -1554,7 +1598,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -1564,7 +1608,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -1574,7 +1618,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -1592,6 +1636,17 @@
     "/health": {
       "get": {
         "operationId": "getHealth",
+        "parameters": [
+          {
+            "description": "\"*\" or a list of one or more entity tags (RFC 9110 §13.1.2), compared weakly; a match answers 304 to a GET or HEAD and 412 otherwise, read by geta.ETag",
+            "in": "header",
+            "name": "If-None-Match",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -1601,16 +1656,34 @@
                 }
               }
             },
-            "description": "OK"
+            "description": "OK",
+            "headers": {
+              "ETag": {
+                "description": "The entity tag geta.ETag computes over the body, unless the handler set one; a stream carries none",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           },
           "304": {
-            "description": "The representation has not changed"
+            "description": "The representation has not changed",
+            "headers": {
+              "ETag": {
+                "description": "The entity tag geta.ETag computes over the body, unless the handler set one; a stream carries none",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           },
           "400": {
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -1620,7 +1693,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -1630,7 +1703,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -1651,7 +1724,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -1661,7 +1734,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -1671,7 +1744,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -1701,7 +1774,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -1720,7 +1793,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -1730,7 +1803,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -1751,7 +1824,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -1761,7 +1834,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -1771,7 +1844,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -1789,6 +1862,17 @@
     "/me": {
       "get": {
         "operationId": "getMe",
+        "parameters": [
+          {
+            "description": "\"*\" or a list of one or more entity tags (RFC 9110 §13.1.2), compared weakly; a match answers 304 to a GET or HEAD and 412 otherwise, read by geta.ETag",
+            "in": "header",
+            "name": "If-None-Match",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -1798,16 +1882,34 @@
                 }
               }
             },
-            "description": "OK"
+            "description": "OK",
+            "headers": {
+              "ETag": {
+                "description": "The entity tag geta.ETag computes over the body, unless the handler set one; a stream carries none",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           },
           "304": {
-            "description": "The representation has not changed"
+            "description": "The representation has not changed",
+            "headers": {
+              "ETag": {
+                "description": "The entity tag geta.ETag computes over the body, unless the handler set one; a stream carries none",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           },
           "400": {
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -1817,7 +1919,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -1836,7 +1938,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -1846,7 +1948,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -1867,7 +1969,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -1877,7 +1979,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -1887,7 +1989,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -1921,7 +2023,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -1940,7 +2042,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -1950,7 +2052,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -1971,7 +2073,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -1981,7 +2083,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -1991,7 +2093,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -2087,6 +2189,15 @@
               "minimum": 1,
               "type": "integer"
             }
+          },
+          {
+            "description": "\"*\" or a list of one or more entity tags (RFC 9110 §13.1.2), compared weakly; a match answers 304 to a GET or HEAD and 412 otherwise, read by geta.ETag",
+            "in": "header",
+            "name": "If-None-Match",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -2098,16 +2209,34 @@
                 }
               }
             },
-            "description": "OK"
+            "description": "OK",
+            "headers": {
+              "ETag": {
+                "description": "The entity tag geta.ETag computes over the body, unless the handler set one; a stream carries none",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           },
           "304": {
-            "description": "The representation has not changed"
+            "description": "The representation has not changed",
+            "headers": {
+              "ETag": {
+                "description": "The entity tag geta.ETag computes over the body, unless the handler set one; a stream carries none",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           },
           "400": {
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -2117,7 +2246,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -2136,7 +2265,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -2146,7 +2275,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -2167,7 +2296,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -2177,7 +2306,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -2187,7 +2316,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -2221,7 +2350,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -2240,7 +2369,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -2250,7 +2379,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -2271,7 +2400,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -2281,7 +2410,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -2291,7 +2420,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -2315,6 +2444,7 @@
               }
             }
           },
+          "description": "Also taken as any application/*+json media type, read as application/json",
           "required": true
         },
         "responses": {
@@ -2341,7 +2471,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -2351,7 +2481,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -2370,7 +2500,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -2389,7 +2519,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -2399,7 +2529,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -2409,7 +2539,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -2439,7 +2569,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -2449,7 +2579,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -2470,7 +2600,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -2480,7 +2610,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -2490,7 +2620,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -2509,7 +2639,7 @@
     },
     "/rooms/{room}": {
       "get": {
-        "operationId": "getRoomsRoom",
+        "operationId": "getRoomsByRoom",
         "parameters": [
           {
             "in": "path",
@@ -2517,6 +2647,15 @@
             "required": true,
             "schema": {
               "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "\"*\" or a list of one or more entity tags (RFC 9110 §13.1.2), compared weakly; a match answers 304 to a GET or HEAD and 412 otherwise, read by geta.ETag",
+            "in": "header",
+            "name": "If-None-Match",
+            "required": false,
+            "schema": {
               "type": "string"
             }
           }
@@ -2530,16 +2669,34 @@
                 }
               }
             },
-            "description": "OK"
+            "description": "OK",
+            "headers": {
+              "ETag": {
+                "description": "The entity tag geta.ETag computes over the body, unless the handler set one; a stream carries none",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           },
           "304": {
-            "description": "The representation has not changed"
+            "description": "The representation has not changed",
+            "headers": {
+              "ETag": {
+                "description": "The entity tag geta.ETag computes over the body, unless the handler set one; a stream carries none",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           },
           "400": {
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -2549,7 +2706,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -2568,7 +2725,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -2578,7 +2735,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -2588,7 +2745,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -2609,7 +2766,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -2619,7 +2776,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -2629,7 +2786,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -2644,7 +2801,7 @@
         "summary": "Fetch a room"
       },
       "options": {
-        "operationId": "optionsRoomsRoom",
+        "operationId": "optionsRoomsByRoom",
         "parameters": [
           {
             "in": "path",
@@ -2674,7 +2831,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -2693,7 +2850,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -2703,7 +2860,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -2724,7 +2881,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -2734,7 +2891,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -2744,7 +2901,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -2761,7 +2918,7 @@
     },
     "/rooms/{room}/bookings": {
       "get": {
-        "operationId": "getRoomsRoomBookings",
+        "operationId": "getRoomsByRoomBookings",
         "parameters": [
           {
             "in": "path",
@@ -2780,6 +2937,15 @@
               "format": "date",
               "type": "string"
             }
+          },
+          {
+            "description": "\"*\" or a list of one or more entity tags (RFC 9110 §13.1.2), compared weakly; a match answers 304 to a GET or HEAD and 412 otherwise, read by geta.ETag",
+            "in": "header",
+            "name": "If-None-Match",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -2791,16 +2957,34 @@
                 }
               }
             },
-            "description": "OK"
+            "description": "OK",
+            "headers": {
+              "ETag": {
+                "description": "The entity tag geta.ETag computes over the body, unless the handler set one; a stream carries none",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           },
           "304": {
-            "description": "The representation has not changed"
+            "description": "The representation has not changed",
+            "headers": {
+              "ETag": {
+                "description": "The entity tag geta.ETag computes over the body, unless the handler set one; a stream carries none",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           },
           "400": {
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -2810,7 +2994,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -2829,7 +3013,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -2839,7 +3023,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -2849,7 +3033,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -2870,7 +3054,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -2880,7 +3064,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -2890,7 +3074,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -2905,7 +3089,7 @@
         "summary": "List a room's bookings on a day"
       },
       "options": {
-        "operationId": "optionsRoomsRoomBookings",
+        "operationId": "optionsRoomsByRoomBookings",
         "parameters": [
           {
             "in": "path",
@@ -2935,7 +3119,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -2954,7 +3138,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -2964,7 +3148,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -2985,7 +3169,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -2995,7 +3179,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -3005,7 +3189,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -3020,7 +3204,7 @@
         "summary": "The methods this URL serves"
       },
       "post": {
-        "operationId": "postRoomsRoomBookings",
+        "operationId": "postRoomsByRoomBookings",
         "parameters": [
           {
             "in": "path",
@@ -3040,6 +3224,7 @@
               }
             }
           },
+          "description": "Also taken as any application/*+json media type, read as application/json",
           "required": true
         },
         "responses": {
@@ -3073,7 +3258,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -3083,7 +3268,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -3102,7 +3287,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -3121,7 +3306,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -3131,7 +3316,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -3141,7 +3326,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -3151,7 +3336,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -3161,7 +3346,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -3191,7 +3376,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -3201,7 +3386,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -3222,7 +3407,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -3232,7 +3417,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -3242,7 +3427,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -3321,7 +3506,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -3331,7 +3516,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -3350,7 +3535,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -3360,7 +3545,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -3370,17 +3555,33 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
-            "description": "The request does not ask to switch to this protocol"
+            "description": "The request does not ask to switch to this protocol",
+            "headers": {
+              "Connection": {
+                "description": "upgrade, sent with geta's own 426",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Upgrade": {
+                "description": "The protocol to switch to, sent with geta's own 426",
+                "required": false,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           },
           "429": {
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -3401,7 +3602,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -3411,7 +3612,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -3421,7 +3622,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -3436,7 +3637,7 @@
         "summary": "A room's live booking feed over WebSocket"
       },
       "options": {
-        "operationId": "optionsRoomsRoomLive",
+        "operationId": "optionsRoomsByRoomLive",
         "parameters": [
           {
             "in": "path",
@@ -3466,7 +3667,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -3485,7 +3686,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -3495,7 +3696,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -3516,7 +3717,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -3526,7 +3727,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -3536,7 +3737,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },

@@ -67,9 +67,10 @@ func ETag() Middleware {
 		})
 	})
 	m.name = "etag"
+	m.etag = true
 	m.answers = []answer{
-		{status: http.StatusNotModified, reason: "The representation has not changed", getOnly: true},
-		{status: http.StatusBadRequest, reason: "If-None-Match is neither \"*\" nor a list of one or more entity tags", getOnly: true},
+		{status: http.StatusNotModified, reason: "The representation has not changed", getOnly: true, held: true},
+		{status: http.StatusBadRequest, reason: "If-None-Match is neither \"*\" nor a list of one or more entity tags", getOnly: true, held: true},
 	}
 	m.exposes = []string{"ETag"}
 	return m

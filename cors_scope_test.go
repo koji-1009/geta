@@ -48,7 +48,7 @@ func TestCORSQueryPreflightBehindTheGate(t *testing.T) {
 	if r.Code != 401 {
 		t.Fatal(r.Code)
 	}
-	sameHeaders(t, "QUERY 401", r.Header().Get("Access-Control-Expose-Headers"), "Accept", "Accept-Query", "WWW-Authenticate")
+	sameHeaders(t, "QUERY 401", r.Header().Get("Access-Control-Expose-Headers"), "Accept", "Accept-Encoding", "Accept-Query", "WWW-Authenticate")
 }
 
 // Access-Control-Max-Age carries whole seconds: a PreflightMaxAge that is not a whole

@@ -24,7 +24,8 @@ import (
 // Description and Deprecated go with any type. Every URL must be absolute
 // https (http only on a loopback host).
 type Scheme struct {
-	// Name keys the scheme in the document and in [Policy.Verifiers].
+	// Name keys the scheme in the document and in [Policy.Verifiers]. As a
+	// component key it holds only ASCII letters, digits, '.', '_', and '-'.
 	Name string
 	// Type is the OpenAPI type: http, apiKey, oauth2, openIdConnect, or
 	// mutualTLS.
@@ -316,6 +317,10 @@ func Secure(p Policy) Middleware {
 // check returns an error for a scheme geta could not document or challenge
 // for, or that sets a member of another type.
 func (s Scheme) check() error {
+	// The name keys components.securitySchemes, which OpenAPI restricts.
+	if !componentKey.MatchString(s.Name) {
+		return fmt.Errorf("Name %q is not a component key: OpenAPI allows only ASCII letters, digits, '.', '_', and '-'", s.Name)
+	}
 	// The members set, by their OpenAPI names.
 	set := map[string]bool{
 		"scheme":            s.Scheme != "",

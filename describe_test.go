@@ -122,14 +122,14 @@ func TestFailuresDescribeTheirProblem(t *testing.T) {
 func TestDescribedFailuresAreDocumented(t *testing.T) {
 	m := doc(t, accepts(t, describedTable()))
 	r := at(t, m, "paths", "/f", "get", "responses", "429").(map[string]any)
-	if got := compact(t, at(t, r, "content", "application/problem+json", "schema")); got != `{"anyOf":[{"$ref":"#/components/schemas/Problem"},`+
-		`{"allOf":[{"$ref":"#/components/schemas/Problem"},{"properties":{"detail":{"type":"string"},"remaining":{"format":"int64","type":"integer"}},"required":["detail","remaining"],"type":"object"}]}]}` {
+	if got := compact(t, at(t, r, "content", "application/problem+json", "schema")); got != `{"anyOf":[{"$ref":"#/components/schemas/GetaProblem"},`+
+		`{"allOf":[{"$ref":"#/components/schemas/GetaProblem"},{"properties":{"detail":{"type":"string"},"remaining":{"format":"int64","type":"integer"}},"required":["detail","remaining"],"type":"object"}]}]}` {
 		t.Error(got)
 	}
 	if got := compact(t, at(t, r, "headers", "Retry-After")); got != `{"description":"seconds until a request is taken again","required":false,"schema":{"format":"int64","type":"integer"}}` {
 		t.Error(got)
 	}
-	if got := compact(t, at(t, m, "paths", "/f", "get", "responses", "409", "content", "application/problem+json", "schema")); !strings.HasPrefix(got, `{"allOf":[{"$ref":"#/components/schemas/Problem"},{"properties":{"detail":{"type":"string"},"with":`) {
+	if got := compact(t, at(t, m, "paths", "/f", "get", "responses", "409", "content", "application/problem+json", "schema")); !strings.HasPrefix(got, `{"allOf":[{"$ref":"#/components/schemas/GetaProblem"},{"properties":{"detail":{"type":"string"},"with":`) {
 		t.Error(got)
 	}
 	// Alone on its status, the header is required.

@@ -83,9 +83,26 @@ func Scan(dir string) (*Tree, error) {
 	t.RootScope = exists(filepath.Join(abs, "scope.go"))
 	t.RootOptions = exists(filepath.Join(abs, OptionsFile))
 	var scoped []string
+	// A root that is itself a link is refused below, as any link holding a
+	// route: ./... does not follow it either.
 	err = filepath.WalkDir(abs, func(p string, d os.DirEntry, err error) error {
 		if err != nil {
 			return err
+		}
+		if d.Type()&os.ModeSymlink != 0 {
+			// Neither the walk nor ./... follows a link, so a route or scope
+			// behind one would silently be left out.
+			target, err := filepath.EvalSymlinks(p)
+			if err != nil {
+				return nil // a dangling link holds nothing
+			}
+			if f, err := treeFile(target); err != nil || f != "" {
+				if err != nil {
+					return err
+				}
+				return fmt.Errorf("%s: a symbolic link to a directory holding %s, which neither geta sync nor ./... follows; move the directory here", p, f)
+			}
+			return nil
 		}
 		if !d.IsDir() {
 			return nil
@@ -146,7 +163,7 @@ func Scan(dir string) (*Tree, error) {
 // ignored reports whether the go command excludes a directory of this name
 // from patterns such as ./... (go help packages).
 func ignored(name string) bool {
-	return strings.HasPrefix(name, ".") || strings.HasPrefix(name, "_") || name == "testdata"
+	return strings.HasPrefix(name, ".") || strings.HasPrefix(name, "_") || name == "testdata" || name == "vendor"
 }
 
 // ignoredError reports the route.go or scope.go f found under a directory

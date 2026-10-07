@@ -84,7 +84,7 @@ func TestQueryNeedsOpenAPI32(t *testing.T) {
 	if op["operationId"] != "querySearch" || op["summary"] != "Search" {
 		t.Fatal(compact(t, op))
 	}
-	if got := compact(t, at(t, op, "requestBody")); got != `{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/querySearch"}}},"required":true}` {
+	if got := compact(t, at(t, op, "requestBody")); got != `{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/querySearch"}}},"description":"Also taken as any application/*+json media type, read as application/json","required":true}` {
 		t.Fatal(got)
 	}
 	if got := compact(t, at(t, op, "responses", "415", "headers", "Accept-Query", "schema")); got != `{"enum":["application/json"],"type":"string"}` {

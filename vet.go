@@ -34,6 +34,8 @@ func init() {
 	vet.CheckDocTimeout = checkDocTimeout
 	vet.CheckMethodBody = checkMethodBody
 	vet.CheckSuccessStatus = checkSuccessStatus
+	vet.CheckBodylessStatus = checkBodylessStatus
+	vet.CheckSpecialStatus = checkSpecialStatus
 	vet.CheckMemberField = checkMemberField
 	vet.CheckStructMembers = checkStructMembers
 	vet.DeclaresDefault = declaresDefault
@@ -954,6 +956,39 @@ func locationKind(kind string) bool {
 	return true
 }
 
+// checkBodylessStatus refuses a success status that takes no body (204,
+// 205) for an output with one. status is the operation's, replaced by the
+// statuses of tag, the output's status field's tag ("" if none). It applies
+// geta.New's rule.
+func checkBodylessStatus(status int, tag string, hasBody bool) error {
+	statuses := []int{status}
+	if tag != "" {
+		if s, err := successStatuses(tag); err == nil {
+			statuses = s
+		}
+	}
+	return bodylessStatuses(statuses, hasBody)
+}
+
+// checkSpecialStatus refuses a success status other than the one a stream
+// (200) or an upgrade (101) answers. It applies geta.New's rule.
+func checkSpecialStatus(status, answers int) error {
+	if status != answers {
+		return fmt.Errorf("success status %d, but this output answers %d", status, answers)
+	}
+	return nil
+}
+
+// bodylessStatuses is checkBodylessStatus over the success statuses.
+func bodylessStatuses(statuses []int, hasBody bool) error {
+	for _, s := range statuses {
+		if hasBody && (s == http.StatusNoContent || s == http.StatusResetContent) {
+			return fmt.Errorf("success status %d takes no body, but the output has one", s)
+		}
+	}
+	return nil
+}
+
 func statusDeclared(status int, statuses []int) error {
 	if !slices.Contains(statuses, status) {
 		return fmt.Errorf("success status %d is not in status tag %q", status, statusList(statuses))
@@ -1085,11 +1120,16 @@ var componentKey = regexp.MustCompile(`^[a-zA-Z0-9._-]+$`)
 // checkSchemaName reports whether geta.New accepts typ
 // ("lib.Page[example.com/app/lib.User]") as a component. Its component
 // name, without package paths ("Page_User"), may contain only ASCII
-// letters, digits, '.', '_', and '-', as OpenAPI requires. Only geta.New
-// refuses two types with the same component name.
+// letters, digits, '.', '_', and '-', as OpenAPI requires, and is not
+// GetaProblem, geta's own. Only geta.New refuses two types with the same
+// component name.
 func checkSchemaName(typ string) error {
-	if name := componentNameOf(typ); !componentKey.MatchString(name) {
+	name := componentNameOf(typ)
+	if !componentKey.MatchString(name) {
 		return fmt.Errorf("type %s: component name %q does not match %s", typ, name, componentKey)
+	}
+	if name == problemComponent {
+		return fmt.Errorf("type %s: component name %q is reserved for geta's problem schema; rename the type", typ, name)
 	}
 	return nil
 }

@@ -13,31 +13,7 @@
         ],
         "type": "object"
       },
-      "Identity": {
-        "additionalProperties": false,
-        "properties": {
-          "role": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "role"
-        ],
-        "type": "object"
-      },
-      "Message": {
-        "additionalProperties": false,
-        "properties": {
-          "message": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "message"
-        ],
-        "type": "object"
-      },
-      "Problem": {
+      "GetaProblem": {
         "properties": {
           "detail": {
             "type": "string"
@@ -87,6 +63,30 @@
           "type",
           "title",
           "status"
+        ],
+        "type": "object"
+      },
+      "Identity": {
+        "additionalProperties": false,
+        "properties": {
+          "role": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "role"
+        ],
+        "type": "object"
+      },
+      "Message": {
+        "additionalProperties": false,
+        "properties": {
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "message"
         ],
         "type": "object"
       },
@@ -166,7 +166,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -185,7 +185,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -195,7 +195,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -205,7 +205,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -215,7 +215,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -225,7 +225,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -259,7 +259,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -278,7 +278,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -288,7 +288,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -298,7 +298,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -334,7 +334,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -353,7 +353,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -363,7 +363,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -373,7 +373,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -440,7 +440,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -450,7 +450,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -460,7 +460,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -470,7 +470,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -500,7 +500,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -521,7 +521,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -531,7 +531,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -563,7 +563,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -582,7 +582,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -592,7 +592,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -602,7 +602,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -641,7 +641,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -660,7 +660,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -670,7 +670,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -680,7 +680,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -690,7 +690,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -723,7 +723,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -742,7 +742,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -752,7 +752,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -762,7 +762,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -772,7 +772,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -806,7 +806,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -825,7 +825,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -835,7 +835,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -845,7 +845,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -878,7 +878,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -897,7 +897,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -907,7 +907,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -917,7 +917,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -927,7 +927,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -964,7 +964,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -983,7 +983,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -993,7 +993,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -1003,7 +1003,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -1036,7 +1036,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -1046,7 +1046,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -1056,7 +1056,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -1086,7 +1086,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -1105,7 +1105,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -1115,7 +1115,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -1125,7 +1125,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },

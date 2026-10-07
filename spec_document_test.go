@@ -96,6 +96,10 @@ func TestUpgradeIsDocumented(t *testing.T) {
 	if got := at(t, responses, "426", "description"); got != "The request does not ask to switch to this protocol" {
 		t.Error(got)
 	}
+	// geta's own 426 names the protocol; a row's need not, so both are optional.
+	if got := compact(t, at(t, responses, "426", "headers")); got != `{"Connection":{"description":"upgrade, sent with geta's own 426","required":false,"schema":{"type":"string"}},"Upgrade":{"description":"The protocol to switch to, sent with geta's own 426","required":false,"schema":{"type":"string"}}}` {
+		t.Error(got)
+	}
 }
 
 // What a table leaves unsaid is absent, or geta's default: info's title and
@@ -153,11 +157,15 @@ func TestDerivedOperationIDs(t *testing.T) {
 		{Path: "/", Route: get(okHandler)},
 		{Path: "/users/by-role/{role}", Route: get(func(context.Context, *roleIn) (*ok, error) { return nil, nil })},
 		{Path: "/a_b/c2", Route: geta.Route{Post: geta.Op(http.StatusOK, okHandler, geta.Doc{})}},
+		{Path: "/a/b", Route: get(okHandler)},
+		{Path: "/a-b", Route: get(okHandler)},
+		{Path: "/a.b", Route: get(okHandler)},
 	}}))
 	for _, c := range [][3]string{
 		{"/", "get", "getRoot"}, {"/", "options", "optionsRoot"},
-		{"/users/by-role/{role}", "get", "getUsersByRoleRole"},
-		{"/a_b/c2", "post", "postABC2"},
+		{"/users/by-role/{role}", "get", "getUsersBy-roleByRole"},
+		{"/a_b/c2", "post", "postA_bC2"},
+		{"/a/b", "get", "getAB"}, {"/a-b", "get", "getA-b"}, {"/a.b", "get", "getA.b"},
 	} {
 		if got := at(t, m, "paths", c[0], c[1], "operationId"); got != c[2] {
 			t.Errorf("%s %s: %v, want %s", c[1], c[0], got, c[2])
@@ -165,24 +173,24 @@ func TestDerivedOperationIDs(t *testing.T) {
 	}
 }
 
-// geta writes no title: info's and the Problem component's member named
+// geta writes no title: info's and the GetaProblem component's member named
 // title are the only ones.
 func TestNoTitleIsWritten(t *testing.T) {
 	for name, tbl := range map[string]geta.Table{"meta": metaTable(), "rich": richTable(), "described": describedTable(), "deep": deepTable()} {
 		m := doc(t, accepts(t, tbl))
 		delete(m, "info")
-		delete(at(t, m, "components", "schemas").(map[string]any), "Problem")
+		delete(at(t, m, "components", "schemas").(map[string]any), "GetaProblem")
 		if s := compact(t, m); strings.Contains(s, `"title"`) {
 			t.Errorf("%s: a title: %s", name, s)
 		}
 	}
 }
 
-// The Problem component is always listed, and is RFC 9457's members as geta
-// writes them.
+// The GetaProblem component is always listed, and is RFC 9457's members as
+// geta writes them.
 func TestTheProblemComponent(t *testing.T) {
 	m := doc(t, accepts(t, one("/x", get(okHandler))))
-	if got := compact(t, at(t, m, "components", "schemas", "Problem")); got != `{"properties":{"detail":{"type":"string"},"errors":{"items":{"properties":{"in":{"type":"string"},"message":{"type":"string"},"path":{"type":"string"}},"required":["in","path","message"],"type":"object"},"type":"array"},"instance":{"format":"uri-reference","type":"string"},"omitted":{"minimum":1,"type":"integer"},"status":{"type":"integer"},"title":{"type":"string"},"type":{"format":"uri-reference","type":"string"}},"required":["type","title","status"],"type":"object"}` {
+	if got := compact(t, at(t, m, "components", "schemas", "GetaProblem")); got != `{"properties":{"detail":{"type":"string"},"errors":{"items":{"properties":{"in":{"type":"string"},"message":{"type":"string"},"path":{"type":"string"}},"required":["in","path","message"],"type":"object"},"type":"array"},"instance":{"format":"uri-reference","type":"string"},"omitted":{"minimum":1,"type":"integer"},"status":{"type":"integer"},"title":{"type":"string"},"type":{"format":"uri-reference","type":"string"}},"required":["type","title","status"],"type":"object"}` {
 		t.Error(got)
 	}
 }
@@ -253,10 +261,12 @@ type specScalars struct {
 }
 
 // Each Go scalar has its schema: its JSON type, its format, and the range of
-// an integer narrower than 64 bits or unsigned.
+// an integer narrower than 64 bits or unsigned (uint and uint64 below 2^64).
 func TestScalarSchemas(t *testing.T) {
 	m := doc(t, accepts(t, one("/s", get(func(context.Context, *empty) (*specScalars, error) { return nil, nil }))))
 	props := at(t, m, "components", "schemas", "specScalars", "properties")
+	// compact reads 2^64 as a float64, which rounds its digits;
+	// TestUint64IsDocumentedBelowTwoToThe64 reads them exactly.
 	for name, want := range map[string]string{
 		"s":     `{"type":"string"}`,
 		"b":     `{"type":"boolean"}`,
@@ -264,8 +274,8 @@ func TestScalarSchemas(t *testing.T) {
 		"i64":   `{"format":"int64","type":"integer"}`,
 		"i32":   `{"format":"int32","type":"integer"}`,
 		"i16":   `{"maximum":32767,"minimum":-32768,"type":"integer"}`,
-		"u":     `{"minimum":0,"type":"integer"}`,
-		"u64":   `{"minimum":0,"type":"integer"}`,
+		"u":     `{"exclusiveMaximum":18446744073709552000,"minimum":0,"type":"integer"}`,
+		"u64":   `{"exclusiveMaximum":18446744073709552000,"minimum":0,"type":"integer"}`,
 		"u32":   `{"maximum":4294967295,"minimum":0,"type":"integer"}`,
 		"u8":    `{"maximum":255,"minimum":0,"type":"integer"}`,
 		"f32":   `{"format":"float","type":"number"}`,
@@ -290,7 +300,7 @@ func TestOneTextIsListedOnce(t *testing.T) {
 		t.Fatal(got)
 	}
 	// A status no described row answers is the plain problem.
-	if got := compact(t, at(t, m, "paths", "/x", "get", "responses", "404", "content")); got != `{"application/problem+json":{"schema":{"$ref":"#/components/schemas/Problem"}}}` {
+	if got := compact(t, at(t, m, "paths", "/x", "get", "responses", "404", "content")); got != `{"application/problem+json":{"schema":{"$ref":"#/components/schemas/GetaProblem"}}}` {
 		t.Fatal(got)
 	}
 }
@@ -443,6 +453,7 @@ func TestTheSharedRulesAreSet(t *testing.T) {
 		formField        func(vet.Field, bool, map[string]string) (bool, error) = vet.CheckFormField
 		envelopeField    func(vet.Field, map[string]bool) error                 = vet.CheckEnvelopeField
 		envelopeStatus   func(int, string) error                                = vet.CheckEnvelopeStatus
+		bodylessStatus   func(int, string, bool) error                          = vet.CheckBodylessStatus
 		memberField      func(vet.Field, map[string]bool) (string, bool, error) = vet.CheckMemberField
 		structMembers    func(string, int, int) error                           = vet.CheckStructMembers
 		jsonType         func(vet.Type) error                                   = vet.CheckJSONType
@@ -470,6 +481,7 @@ func TestTheSharedRulesAreSet(t *testing.T) {
 			CT string `header:"Content-Type"`
 		}{}, "CT"), map[string]bool{}),
 		"CheckEnvelopeStatus": envelopeStatus(http.StatusAccepted, "200|201"),
+		"CheckBodylessStatus": bodylessStatus(http.StatusOK, "200|205", true),
 		"CheckMemberField":    memberErr,
 		"CheckStructMembers":  structMembers("lib.Hidden", 1, 0),
 		"CheckJSONType":       jsonType(vet.Type{Type: "chan int", Kind: "chan"}),

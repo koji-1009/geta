@@ -63,13 +63,13 @@ func TestDocumentShape(t *testing.T) {
 	}
 	// person is read and written, and its request schema states backstops
 	// its response schema does not: the request refers to person-Input.
-	if got := compact(t, at(t, put, "requestBody")); got != `{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/person-Input"}}},"required":true}` {
+	if got := compact(t, at(t, put, "requestBody")); got != `{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/person-Input"}}},"description":"Also taken as any application/*+json media type, read as application/json","required":true}` {
 		t.Fatal(got)
 	}
 	if got := compact(t, at(t, put, "responses", "200", "content")); got != `{"application/json":{"schema":{"$ref":"#/components/schemas/person"}}}` {
 		t.Fatal(got)
 	}
-	if at(t, put, "operationId") != "putPeopleId" || at(t, put, "summary") != "Replace" || at(t, put, "description") != "Replaces a person." {
+	if at(t, put, "operationId") != "putPeopleById" || at(t, put, "summary") != "Replace" || at(t, put, "description") != "Replaces a person." {
 		t.Fatal(put)
 	}
 	responses := at(t, put, "responses").(map[string]any)
@@ -128,7 +128,7 @@ func TestDocumentShape(t *testing.T) {
 		t.Fatal(got)
 	}
 	schemas := at(t, m, "components", "schemas").(map[string]any)
-	for _, name := range []string{"person", "person-Input", "address", "address-Input", "Problem", "ok"} {
+	for _, name := range []string{"person", "person-Input", "address", "address-Input", "GetaProblem", "ok"} {
 		if _, ok := schemas[name]; !ok {
 			t.Errorf("schema %s not collected", name)
 		}
@@ -224,8 +224,23 @@ func TestDocumentIgnoresTableOrder(t *testing.T) {
 }
 
 func TestReservedProblemSchemaName(t *testing.T) {
+	type GetaProblem struct {
+		X string `json:"x"`
+	}
+	rejects(t, one("/x", get(func(context.Context, *empty) (*GetaProblem, error) { return nil, nil })), `"GetaProblem" is reserved`)
+	// A domain's Problem is a component like any other.
 	type Problem struct {
 		X string `json:"x"`
 	}
-	rejects(t, one("/x", get(func(context.Context, *empty) (*Problem, error) { return nil, nil })), `"Problem" is reserved`)
+	accepts(t, one("/x", get(func(context.Context, *empty) (*Problem, error) { return nil, nil })))
+	// Read by two operations under different limits, it is refused too,
+	// without the document's limits check meeting it.
+	type in struct {
+		Body GetaProblem `body:"json"`
+	}
+	h := func(context.Context, *in) (*ok, error) { return nil, nil }
+	rejects(t, geta.Table{Routes: []geta.Entry{
+		{Path: "/a", Route: geta.Route{Post: geta.Op(http.StatusOK, h, geta.Doc{})}},
+		{Path: "/b", Route: geta.Route{Post: geta.Op(http.StatusOK, h, geta.Doc{Limits: func(l geta.Limits) geta.Limits { l.MaxStringLength = 10; return l }})}},
+	}}, `"GetaProblem" is reserved`)
 }

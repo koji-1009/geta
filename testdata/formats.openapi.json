@@ -1,7 +1,7 @@
 {
   "components": {
     "schemas": {
-      "Problem": {
+      "GetaProblem": {
         "properties": {
           "detail": {
             "type": "string"
@@ -240,7 +240,7 @@
   "paths": {
     "/days/{day}": {
       "options": {
-        "operationId": "optionsDaysDay",
+        "operationId": "optionsDaysByDay",
         "parameters": [
           {
             "in": "path",
@@ -270,7 +270,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -280,7 +280,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -291,7 +291,7 @@
         "summary": "The methods this URL serves"
       },
       "post": {
-        "operationId": "postDaysDay",
+        "operationId": "postDaysByDay",
         "parameters": [
           {
             "in": "path",
@@ -414,6 +414,7 @@
               }
             }
           },
+          "description": "Also taken as any application/*+json media type, read as application/json",
           "required": false
         },
         "responses": {
@@ -454,7 +455,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -464,7 +465,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -474,7 +475,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -504,7 +505,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },
@@ -514,7 +515,7 @@
             "content": {
               "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/GetaProblem"
                 }
               }
             },

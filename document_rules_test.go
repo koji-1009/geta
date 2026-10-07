@@ -175,6 +175,14 @@ func TestGateDefaultsDefiningOneSchemeTwiceAreRefused(t *testing.T) {
 	rejects(t, withRoot(one("/x", get(okHandler), geta.Scope{inner}), root), `security scheme "bearer" has two definitions`)
 }
 
+// A scheme's Name keys components.securitySchemes, so it is refused unless
+// it is a component key.
+func TestSchemeNameIsAComponentKey(t *testing.T) {
+	s := geta.Scheme{Name: "api key", Type: "http", Scheme: "bearer"}
+	rejects(t, withRoot(one("/x", get(okHandler)), geta.Secure(geta.Policy{Default: []geta.Scheme{s}, Verifiers: map[string]geta.Verifier{s.Name: admit}})),
+		`Name "api key" is not a component key`)
+}
+
 // Two rows of one status whose descriptions are of one type state its
 // schema once, and a header both set is required.
 func TestOneDescriptionTypeTwiceOnAStatus(t *testing.T) {
@@ -184,7 +192,7 @@ func TestOneDescriptionTypeTwiceOnAStatus(t *testing.T) {
 	}
 	m := doc(t, accepts(t, one("/f", geta.Route{Get: geta.Op(http.StatusOK, okHandler, geta.Doc{Failures: rows})})))
 	r := at(t, m, "paths", "/f", "get", "responses", "429")
-	if got := compact(t, at(t, r, "content", "application/problem+json", "schema")); !strings.HasPrefix(got, `{"allOf":[{"$ref":"#/components/schemas/Problem"},`) {
+	if got := compact(t, at(t, r, "content", "application/problem+json", "schema")); !strings.HasPrefix(got, `{"allOf":[{"$ref":"#/components/schemas/GetaProblem"},`) {
 		t.Error(got)
 	}
 	if at(t, r, "headers", "Retry-After", "required") != true {
@@ -205,7 +213,7 @@ func TestAHeadersOnlyDescriptionIsTheProblem(t *testing.T) {
 	rows := []geta.Failure{geta.OnAsProblem(http.StatusServiceUnavailable, "down", func(e *quotaError) retryOnly { return retryOnly{e.Wait} })}
 	m := doc(t, accepts(t, one("/f", geta.Route{Get: geta.Op(http.StatusOK, okHandler, geta.Doc{Failures: rows})})))
 	r := at(t, m, "paths", "/f", "get", "responses", "503")
-	if got := compact(t, at(t, r, "content", "application/problem+json", "schema")); got != `{"$ref":"#/components/schemas/Problem"}` {
+	if got := compact(t, at(t, r, "content", "application/problem+json", "schema")); got != `{"$ref":"#/components/schemas/GetaProblem"}` {
 		t.Error(got)
 	}
 	if got := compact(t, at(t, r, "headers", "Retry-After")); got != `{"required":true,"schema":{"format":"int64","type":"integer"}}` {

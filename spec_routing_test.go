@@ -284,10 +284,10 @@ func TestRoutingDerivedOperationIDs(t *testing.T) {
 	for _, c := range []struct{ path, method, want string }{
 		{"/", "get", "getRoot"},
 		{"/", "options", "optionsRoot"},
-		{"/users/{id}/posts", "get", "getUsersIdPosts"},
+		{"/users/{id}/posts", "get", "getUsersByIdPosts"},
 		{"/users/{id}/posts", "delete", "removePosts"},
-		{"/users/{id}/posts", "options", "optionsUsersIdPosts"},
-		{"/v2/café-menu", "get", "getV2CaféMenu"},
+		{"/users/{id}/posts", "options", "optionsUsersByIdPosts"},
+		{"/v2/café-menu", "get", "getV2Café-menu"},
 	} {
 		if got := at(t, m, "paths", c.path, c.method, "operationId"); got != c.want {
 			t.Errorf("%s %s: operationId %v, want %s", c.method, c.path, got, c.want)

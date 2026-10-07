@@ -107,11 +107,9 @@ func (a *App) openAPI(info Info, reg *registry) ([]byte, error) {
 	}
 	named := map[string]*codec{}
 	for _, c := range reg.codecs {
+		// checkSchemaName has refused the name GetaProblem.
 		if c.name == "" {
 			continue
-		}
-		if c.name == "Problem" {
-			return nil, fmt.Errorf("schema name %q is reserved; rename %s", c.name, qualified(c.t))
 		}
 		named[c.name] = c
 	}
@@ -130,7 +128,7 @@ func (a *App) openAPI(info Info, reg *registry) ([]byte, error) {
 	// write states none. One both read and written whose schemas differ is
 	// split: the response's under the plain name, the request's with
 	// inputSuffix.
-	schemas := map[string]any{"Problem": problemSchema()}
+	schemas := map[string]any{problemComponent: problemSchema()}
 	for name, c := range named {
 		switch {
 		case split[name]:
@@ -144,7 +142,7 @@ func (a *App) openAPI(info Info, reg *registry) ([]byte, error) {
 	}
 	// Drop unreferenced components. A row's description (OnAsProblem) is
 	// inlined, so its type is a component only if something else refers to it.
-	used := map[string]bool{"Problem": true}
+	used := map[string]bool{problemComponent: true}
 	refs(paths, used)
 	for todo := slices.Collect(maps.Keys(used)); len(todo) > 0; {
 		name := todo[len(todo)-1]
@@ -223,8 +221,9 @@ func readUnder(ops []*compiledOp, paths map[string]any, named map[string]*codec)
 		refs(d["parameters"], read)
 		refs(d["requestBody"], read)
 		reach(read, edges)
-		// Every name here is a named codec: Problem appears only in responses.
 		for _, name := range slices.Sorted(maps.Keys(read)) {
+			// Every name here is a named codec: GetaProblem appears only
+			// in responses.
 			c := named[name]
 			prev, ok := under[name]
 			if !ok {
@@ -414,6 +413,18 @@ func (c *compiledOp) document(lim *Limits, split map[string]bool) map[string]any
 		}
 		params = append(params, param)
 	}
+	// geta.ETag reads If-None-Match where the input binds none.
+	if c.etagged() && !slices.ContainsFunc(c.in.params, func(p paramPlan) bool {
+		return p.in == "header" && http.CanonicalHeaderKey(p.name) == "If-None-Match"
+	}) {
+		params = append(params, map[string]any{
+			"name":        "If-None-Match",
+			"in":          "header",
+			"required":    false,
+			"description": conditionalDocs["If-None-Match"] + ", read by geta.ETag",
+			"schema":      map[string]any{"type": "string"},
+		})
+	}
 	if len(params) > 0 {
 		m["parameters"] = params
 	}
@@ -422,9 +433,13 @@ func (c *compiledOp) document(lim *Limits, split map[string]bool) map[string]any
 			"required": !b.optional,
 			"content":  map[string]any{"application/json": map[string]any{"schema": b.use.render(lim, split)}},
 		}
+		// A media type key cannot name the structured-syntax suffix range, so
+		// the description states it.
+		desc := "Also taken as any application/*+json media type, read as application/json"
 		if b.desc != "" {
-			m["requestBody"].(map[string]any)["description"] = b.desc
+			desc = b.desc + "\n\n" + desc
 		}
+		m["requestBody"].(map[string]any)["description"] = desc
 	}
 	if f := c.in.form; f != nil {
 		m["requestBody"] = map[string]any{
@@ -461,6 +476,16 @@ func (c *compiledOp) document(lim *Limits, split map[string]bool) map[string]any
 	return m
 }
 
+// etagged reports whether geta.ETag tags the operation's responses: a GET
+// whose success is 200 and whose output is held whole, not a stream.
+func (c *compiledOp) etagged() bool {
+	if c.options || c.method != http.MethodGet || !slices.Contains(c.successes(), http.StatusOK) ||
+		c.out == nil || c.out.kind == outSpecial {
+		return false
+	}
+	return slices.ContainsFunc(c.chain, func(m Middleware) bool { return m.etag })
+}
+
 // responses lists every status the operation can answer: its successes, its
 // failure rows, and what geta and its middleware answer on their own.
 func (c *compiledOp) responses() map[string]any {
@@ -482,11 +507,12 @@ func (c *compiledOp) responses() map[string]any {
 		}
 	}
 	// Causes from geta and middleware are listed after the rows' reasons,
-	// even on the same status.
+	// even on the same status. Each answers a plain problem, whether or not
+	// a row gives the same reason.
 	add := func(status int, reason string) {
+		plain[status]++
 		if !slices.Contains(reasons[status], reason) {
 			reasons[status] = append(reasons[status], reason)
-			plain[status]++
 		}
 	}
 	body := c.in.body != nil || c.in.form != nil || c.in.raw != nil
@@ -508,6 +534,9 @@ func (c *compiledOp) responses() map[string]any {
 		for _, an := range m.answers {
 			if an.getOnly && (c.method != http.MethodGet || !slices.Contains(c.successes(), http.StatusOK)) {
 				continue
+			}
+			if an.held && c.out != nil && c.out.kind == outSpecial {
+				continue // a stream passes through untouched
 			}
 			if an.bodyOnly && !body {
 				continue
@@ -590,6 +619,42 @@ func (c *compiledOp) responses() map[string]any {
 		}
 	}
 	successes := c.successes()
+	// The headers geta sends itself: a 304 carries the validator a 200
+	// would, a 426 names the protocol to switch to, and ETag tags a GET's
+	// 200. A header already stated wins.
+	etag := c.etagged()
+	upgrade := false
+	if c.out != nil && c.out.kind == outSpecial {
+		_, upgrade = c.out.special.(upgradePlan)
+	}
+	ownHeaders := func(r map[string]any, status int) {
+		// Optional: a failure row or a middleware may answer the same status
+		// without them.
+		state := func(name, description string) {
+			headers, _ := r["headers"].(map[string]any)
+			if _, has := headers[headerKey(headers, name)]; has {
+				return
+			}
+			// A row's headers may be shared; r gets its own.
+			headers = maps.Clone(headers)
+			if headers == nil {
+				headers = map[string]any{}
+			}
+			headers[name] = map[string]any{"description": description, "required": false, "schema": map[string]any{"type": "string"}}
+			r["headers"] = headers
+		}
+		switch {
+		case status == http.StatusNotModified && c.in.cond != nil:
+			state("ETag", "The entity tag given to Conditional.Check, when one was")
+			state("Last-Modified", "The modification date given to Conditional.Check, an HTTP-date, when no entity tag was")
+		case status == http.StatusUpgradeRequired && upgrade:
+			state("Upgrade", "The protocol to switch to, sent with geta's own 426")
+			state("Connection", "upgrade, sent with geta's own 426")
+		}
+		if etag && (status == http.StatusOK || status == http.StatusNotModified) {
+			state("ETag", "The entity tag geta.ETag computes over the body, unless the handler set one; a stream carries none")
+		}
+	}
 	out := map[string]any{}
 	for _, status := range slices.Sorted(maps.Keys(reasons)) {
 		if slices.Contains(successes, status) {
@@ -616,7 +681,7 @@ func (c *compiledOp) responses() map[string]any {
 			// A non-success 2xx or 3xx comes from middleware and has no
 			// problem content.
 			r["content"] = map[string]any{
-				ProblemContentType: map[string]any{"schema": map[string]any{"$ref": "#/components/schemas/Problem"}},
+				ProblemContentType: map[string]any{"schema": map[string]any{"$ref": componentRef + problemComponent}},
 			}
 		}
 		if status == http.StatusUnsupportedMediaType && body {
@@ -636,6 +701,7 @@ func (c *compiledOp) responses() map[string]any {
 				return own
 			})
 		}
+		ownHeaders(r, status)
 		middlewareHeaders(r, status)
 		c.deprecated.document(r, status)
 		out[strconv.Itoa(status)] = r
@@ -651,6 +717,7 @@ func (c *compiledOp) responses() map[string]any {
 				c.headers[s] = append(c.headers[s], responseHeader{name: h.name, c: h.c, use: h.use, required: !h.optional})
 			}
 		}
+		ownHeaders(r, s)
 		middlewareHeaders(r, s)
 		out[strconv.Itoa(s)] = r
 	}

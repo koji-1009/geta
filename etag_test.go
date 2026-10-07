@@ -12,6 +12,25 @@ import (
 	"github.com/koji-1009/geta/getatest"
 )
 
+// A stream passes through geta.ETag untouched, so its document states none
+// of ETag's answers, its header, or its parameter.
+func TestETagLeavesAStreamsDocumentAlone(t *testing.T) {
+	h := func(ctx context.Context, _ *empty) (*geta.Stream[change], error) { return &geta.Stream[change]{}, nil }
+	m := doc(t, accepts(t, withRoot(one("/s", geta.Route{Get: geta.Op(http.StatusOK, h, geta.Doc{})}), geta.ETag())))
+	op := at(t, m, "paths", "/s", "get").(map[string]any)
+	for _, s := range []string{"304", "400"} {
+		if _, has := op["responses"].(map[string]any)[s]; has {
+			t.Errorf("a stream documents a %s", s)
+		}
+	}
+	if _, has := op["parameters"]; has {
+		t.Errorf("a stream documents If-None-Match")
+	}
+	if _, has := at(t, op, "responses", "200").(map[string]any)["headers"]; has {
+		t.Errorf("a stream's 200 states an ETag")
+	}
+}
+
 func TestETag(t *testing.T) {
 	a := accepts(t, withRoot(geta.Table{Routes: []geta.Entry{
 		{Path: "/x", Route: geta.Route{
@@ -157,7 +176,18 @@ func TestETagDeclaresItsNotModified(t *testing.T) {
 		t.Fatalf("%q", rec.errs)
 	}
 	m := doc(t, c.App())
-	if got := compact(t, at(t, m, "paths", "/x", "get", "responses", "304")); got != `{"description":"The representation has not changed"}` {
+	// The 304 and the 200 state the ETag it sends; the POST's 200 does not.
+	etag := `{"ETag":{"description":"The entity tag geta.ETag computes over the body, unless the handler set one; a stream carries none","required":false,"schema":{"type":"string"}}}`
+	for _, s := range []string{"304", "200"} {
+		if got := compact(t, at(t, m, "paths", "/x", "get", "responses", s, "headers")); got != etag {
+			t.Fatal(s, got)
+		}
+	}
+	if _, has := at(t, m, "paths", "/x", "post", "responses", "200").(map[string]any)["headers"]; has {
+		t.Fatal("a POST's 200 states a header")
+	}
+	// It states If-None-Match, which ETag reads, as a parameter of the GET.
+	if got := compact(t, at(t, m, "paths", "/x", "get", "parameters")); !strings.Contains(got, `"in":"header","name":"If-None-Match","required":false`) {
 		t.Fatal(got)
 	}
 	if got := at(t, m, "paths", "/x", "get", "responses", "400", "description"); got != `If-None-Match is neither "*" nor a list of one or more entity tags` {
