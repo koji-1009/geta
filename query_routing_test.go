@@ -51,9 +51,9 @@ func TestQueryRedirectKeepsTheQueryString(t *testing.T) {
 		t.Fatal(err)
 	}
 	for path, want := range map[string]string{
-		"/x/../search?q=1":    "/search?q=1",
-		"//search/form?a&b=c": "/search/form?a&b=c",
-		"/search/./cond":      "/search/cond",
+		"/x/../search?q=1":     "/search?q=1",
+		"/./search/form?a&b=c": "/search/form?a&b=c",
+		"/search/./cond":       "/search/cond",
 	} {
 		req := httptest.NewRequest(geta.MethodQuery, path, strings.NewReader(`{"term":"go"}`))
 		req.Header.Set("Content-Type", "application/json")

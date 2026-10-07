@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"path"
 	"slices"
 	"strings"
 )
@@ -270,9 +269,13 @@ func asterisk(method, escaped string) bool {
 	return method == http.MethodOptions && escaped == "*"
 }
 
-// cleanPath returns the path ServeMux redirects to: . and .. resolved,
-// doubled slashes collapsed, a trailing slash kept. CONNECT and the asterisk
-// form are returned unchanged.
+// cleanPath returns the path an unclean one redirects to: its dot segments
+// removed (RFC 3986 §5.2.4), a trailing slash kept. An empty segment is not
+// normalized (RFC 3986 §6.2.2.3): /a//b is a path of its own, which matches
+// no template. A clean form that would begin with an empty segment is never
+// a redirect's target, since a Location of //x names a host: the path is
+// returned as sent, and matches nothing. CONNECT and the asterisk form are
+// returned unchanged.
 func cleanPath(method, escaped string) string {
 	if method == http.MethodConnect || escaped == "*" {
 		return escaped
@@ -284,9 +287,47 @@ func cleanPath(method, escaped string) string {
 	if p[0] != '/' {
 		p = "/" + p
 	}
-	np := path.Clean(p)
-	if p[len(p)-1] == '/' && np != "/" {
-		np += "/"
+	if !hasDotSegment(p) {
+		return p
+	}
+	segs := strings.Split(p[1:], "/")
+	out := make([]string, 0, len(segs))
+	for i, s := range segs {
+		switch s {
+		case ".":
+		case "..":
+			if len(out) > 0 {
+				out = out[:len(out)-1]
+			}
+		default:
+			out = append(out, s)
+			continue
+		}
+		if i == len(segs)-1 {
+			out = append(out, "") // a/. and a/.. end in a slash
+		}
+	}
+	np := "/" + strings.Join(out, "/")
+	if strings.HasPrefix(np, "//") {
+		return p
 	}
 	return np
+}
+
+// hasDotSegment reports whether p, which begins with a slash, has a segment
+// that is . or ..
+func hasDotSegment(p string) bool {
+	for i := 0; i < len(p); i++ {
+		if p[i] != '/' {
+			continue
+		}
+		j := i + 1
+		for j < len(p) && j-i <= 2 && p[j] == '.' {
+			j++
+		}
+		if j > i+1 && j-i <= 3 && (j == len(p) || p[j] == '/') {
+			return true
+		}
+	}
+	return false
 }

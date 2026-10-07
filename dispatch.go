@@ -52,7 +52,7 @@ func (a *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // was not clean.
 //
 // The path is escaped before it is cleaned, so Location never carries a byte
-// a browser reads differently: //\evil.example/x becomes /%5Cevil.example/x,
+// a browser reads differently: /x/../\evil.example/x becomes /%5Cevil.example/x,
 // not /\evil.example/x, which a browser resolves to the host evil.example.
 func sentPath(r *http.Request) (target string, unclean bool) {
 	p, q := escapedPath(r.URL), r.URL.RawQuery
@@ -173,8 +173,9 @@ func redirectClean(w http.ResponseWriter, target string) {
 }
 
 // dispatch runs the matched operation, OPTIONS on a served path included.
-// Otherwise, as ServeMux would: an unclean path the client sent is a 307 to
-// its clean form, a path served under other methods is a 405 problem with
+// Otherwise: a path the client sent with a dot segment is a 307 to its clean
+// form (an empty segment is no dot segment: such a path matches nothing), a
+// path served under other methods is a 405 problem with
 // Allow, and anything else is a 404 problem. OPTIONS * answers 204 with every
 // method served; any other method in asterisk form is a 400.
 func (a *App) dispatch(w http.ResponseWriter, r *http.Request) {

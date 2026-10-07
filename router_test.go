@@ -68,7 +68,7 @@ func TestLiteralBeforeParameterWithBacktracking(t *testing.T) {
 			t.Errorf("%s: %d %s, want %s", path, res.Status, res.Body, want)
 		}
 	}
-	for path, want := range map[string]int{"/users/7/other": 404, "/users/": 404, "/users/7/name/x": 404, "/users//name": 307} {
+	for path, want := range map[string]int{"/users/7/other": 404, "/users/": 404, "/users/7/name/x": 404, "/users//name": 404} {
 		if res := c.Get(path); res.Status != want {
 			t.Errorf("%s: %d, want %d", path, res.Status, want)
 		}
@@ -105,21 +105,17 @@ func TestMethodNotAllowedUnionsTheBranches(t *testing.T) {
 func TestUncleanPathsRedirect(t *testing.T) {
 	c := getatest.New(t, one("/a/b", get(okHandler)))
 	for _, tc := range []struct{ target, want string }{
-		{"/a//b", "/a/b"},
 		{"/a/./b", "/a/b"},
 		{"/x/../a/b?q", "/a/b?q"},
-		{"//\\evil.example/x", "/%5Cevil.example/x"},
-		{"/a/..//\\evil.example", "/%5Cevil.example"},
-		{"//\\/evil.example", "/%5C/evil.example"},
-		{"//%5Cevil.example", "/%5Cevil.example"},
-		{"///evil.example", "/evil.example"},
-		{"/.//evil.example/", "/evil.example/"},
-		{"//%2F%2Fevil.example/a%2Fb", "/%2F%2Fevil.example/a%2Fb"},
-		{"//café?q=café", "/caf%C3%A9?q=caf%c3%a9"},
-		{"//?#%", "/?%23%25"},
-		{"//a?q=%41%zz#x%4", "/a?q=%41%25zz%23x%254"},
-		{"//a/\"<x>^`{|}", "/a/%22%3Cx%3E%5E%60%7B%7C%7D"},
-		{"//a/!$&'()*+,;=:@[]~", "/a/!$&'()*+,;=:@[]~"},
+		{"/x/../\\evil.example/x", "/%5Cevil.example/x"},
+		{"/a/../\\/evil.example", "/%5C/evil.example"},
+		{"/x/../%5Cevil.example", "/%5Cevil.example"},
+		{"/x/../%2F%2Fevil.example/a%2Fb", "/%2F%2Fevil.example/a%2Fb"},
+		{"/x/../café?q=café", "/caf%C3%A9?q=caf%c3%a9"},
+		{"/x/..?#%", "/?%23%25"},
+		{"/x/../a?q=%41%zz#x%4", "/a?q=%41%25zz%23x%254"},
+		{"/x/../a/\"<x>^`{|}", "/a/%22%3Cx%3E%5E%60%7B%7C%7D"},
+		{"/x/../a/!$&'()*+,;=:@[]~", "/a/!$&'()*+,;=:@[]~"},
 	} {
 		req := httptest.NewRequest(http.MethodGet, tc.target, nil)
 		rec := httptest.NewRecorder()
@@ -133,11 +129,11 @@ func TestUncleanPathsRedirect(t *testing.T) {
 	// Bytes net/http's server refuses in a request line, in a request made in
 	// process: as its request-target and as its URL's path.
 	for _, tc := range []struct{ path, want string }{
-		{"//\tevil.example/x", "/%09evil.example/x"},
-		{"//\nevil.example", "/%0Aevil.example"},
-		{"//\r\n/evil.example", "/%0D%0A/evil.example"},
-		{"// evil.example", "/%20evil.example"},
-		{"//%zz/%4", "/%25zz/%254"},
+		{"/x/../\tevil.example/x", "/%09evil.example/x"},
+		{"/x/../\nevil.example", "/%0Aevil.example"},
+		{"/x/../\r\n/evil.example", "/%0D%0A/evil.example"},
+		{"/x/../ evil.example", "/%20evil.example"},
+		{"/x/../%zz/%4", "/%25zz/%254"},
 	} {
 		for _, sent := range []bool{true, false} {
 			req := httptest.NewRequest(http.MethodGet, "/", nil)
@@ -155,10 +151,29 @@ func TestUncleanPathsRedirect(t *testing.T) {
 	// HEAD and other methods are redirected alike, with no body.
 	for _, m := range []string{http.MethodHead, http.MethodPost, http.MethodDelete} {
 		rec := httptest.NewRecorder()
-		c.App().ServeHTTP(rec, httptest.NewRequest(m, "//\\evil.example", nil))
+		c.App().ServeHTTP(rec, httptest.NewRequest(m, "/x/../\\evil.example", nil))
 		if h := rec.Header(); rec.Code != http.StatusTemporaryRedirect || h.Get("Location") != "/%5Cevil.example" ||
 			rec.Body.Len() != 0 || h.Get("Content-Length") != "0" || h.Get("Content-Type") != "" {
 			t.Errorf("%s: %d %v %q", m, rec.Code, h, rec.Body)
+		}
+	}
+}
+
+// An empty segment is not normalized (RFC 3986 §6.2.2.3): a path with one is
+// its own, which no template matches, so it is a 404, never a redirect. A
+// dot-segment path whose clean form would begin with an empty segment is not
+// redirected either, since a Location of //x would name a host.
+func TestEmptySegmentsAreNotRedirected(t *testing.T) {
+	c := getatest.New(t, one("/a/b", get(okHandler)))
+	for _, target := range []string{
+		"/a//b", "//a/b", "/a/b//", "//", "//evil.example/x", "///evil.example", "//\\evil.example/x",
+		"/.//evil.example", "/.//evil.example/", "/a/..//\\evil.example", "/x/..//evil.example",
+	} {
+		req := httptest.NewRequest(http.MethodGet, target, nil)
+		rec := httptest.NewRecorder()
+		c.App().ServeHTTP(rec, req)
+		if rec.Code != http.StatusNotFound || rec.Header().Get("Location") != "" {
+			t.Errorf("%s: %d %q", target, rec.Code, rec.Header().Get("Location"))
 		}
 	}
 }
@@ -494,24 +509,29 @@ func literalFirst(a, b *refTemplate) bool {
 	return false
 }
 
-// refClean resolves . and .. and drops empty segments of an escaped path,
-// keeping a trailing slash.
+// refClean removes the dot segments of an escaped path as RFC 3986 §5.2.4
+// does, keeping empty segments: a path ending in . or .. ends in a slash. A
+// result beginning with an empty segment would name a host as a Location, so
+// the path stays as it is.
 func refClean(escaped string) string {
+	in := strings.Split(escaped[1:], "/")
 	var stack []string
-	for _, s := range strings.Split(escaped[1:], "/") {
+	for i, s := range in {
 		switch s {
-		case "", ".":
-		case "..":
-			if len(stack) > 0 {
+		case ".", "..":
+			if s == ".." && len(stack) > 0 {
 				stack = stack[:len(stack)-1]
+			}
+			if i == len(in)-1 {
+				stack = append(stack, "")
 			}
 		default:
 			stack = append(stack, s)
 		}
 	}
 	out := "/" + strings.Join(stack, "/")
-	if strings.HasSuffix(escaped, "/") && out != "/" {
-		out += "/"
+	if strings.HasPrefix(out, "//") {
+		return escaped
 	}
 	return out
 }
@@ -610,13 +630,14 @@ func sameHit(a, b routeHit) bool {
 
 // FuzzRouter builds a table of generated templates and sends it generated
 // requests. Every answer agrees with refRoute, an independent statement of
-// the rules: an unclean path is redirected; among the templates that match
-// the decoded segments and serve the method (GET for HEAD), the one with a
-// literal at the first segment where they differ answers, with its values;
-// a path matched only under other methods is a 405 listing them all, and
-// OPTIONS on it a 204 listing the same; any other is a 404. The whole input
-// after "//", whatever its bytes, is redirected with no body to a Location
-// on the request's host.
+// the rules: a path with a dot segment is redirected; among the templates
+// that match the decoded segments and serve the method (GET for HEAD), the
+// one with a literal at the first segment where they differ answers, with
+// its values; an empty segment matches no template; a path matched only
+// under other methods is a 405 listing them all, and OPTIONS on it a 204
+// listing the same; any other is a 404. The whole input after "/x/../",
+// whatever its bytes, is either redirected with no body to a Location on the
+// request's host or not redirected at all.
 func FuzzRouter(f *testing.F) {
 	// Templates: a count, then per template a depth, its segments (0-2 a
 	// literal a, b, c; 3 and 4 a parameter xi, yi), and a method mask less
@@ -633,7 +654,7 @@ func FuzzRouter(f *testing.F) {
 		0, 2, 0, 1, // GET /a/b: the literal serves only PUT, so the parameter answers
 		5, 2, 0, 1, // DELETE /a/b: 405, GET, HEAD, POST, PUT
 		1, 2, 4, 6, // HEAD /%61/a%2Fb
-		0, 3, 0, 8, 2, // GET /a//c: redirect
+		0, 3, 0, 8, 2, // GET /a//c: 404, an empty segment
 		0, 2, 0, 8, // GET /a/: 404
 		6, 1, 9, // OPTIONS /.: redirect
 	})
@@ -648,7 +669,8 @@ func FuzzRouter(f *testing.F) {
 		3, 2, 3, 10, // PUT /x/..: redirect
 	})
 	f.Add([]byte{})
-	f.Add([]byte("\\evil.example/x?q")) // the redirect of //\evil.example/x stays on the host
+	f.Add([]byte("\\evil.example/x?q")) // the redirect of /x/../\evil.example/x stays on the host
+	f.Add([]byte("/evil.example/x"))    // /x/..//evil.example/x is not redirected
 	f.Add([]byte("\t/evil.example"))
 	f.Fuzz(func(t *testing.T, data []byte) {
 		b := fuzzBytes(data)
@@ -748,11 +770,11 @@ func FuzzRouter(f *testing.F) {
 				}
 			}
 		}
-		// The whole input as the rest of a path after "//", which is never
-		// clean: as a request-target the server read, when it reads as one,
-		// and as the path of a request made in process. Wherever it is
+		// The whole input as the rest of a path after "/x/../", which is
+		// never clean: as a request-target the server read, when it reads as
+		// one, and as the path of a request made in process. Wherever it is
 		// redirected, Location stays on the request's host.
-		raw := "//" + string(data)
+		raw := "/x/../" + string(data)
 		if u, err := url.ParseRequestURI(raw); err == nil {
 			req := httptest.NewRequest(http.MethodGet, "/", nil)
 			req.URL, req.RequestURI = u, raw
@@ -766,12 +788,16 @@ func FuzzRouter(f *testing.F) {
 
 // redirectStaysOnHost serves req, whose path is not clean, and fails unless
 // the answer is a 307 with no body whose Location, resolved against the
-// request's URL, names the request's host.
+// request's URL, names the request's host, or no redirect at all (a clean
+// form beginning with an empty segment).
 func redirectStaysOnHost(t *testing.T, app http.Handler, req *http.Request) {
 	t.Helper()
 	rec := httptest.NewRecorder()
 	app.ServeHTTP(rec, req)
 	loc := rec.Header().Get("Location")
+	if loc == "" && rec.Code != http.StatusTemporaryRedirect {
+		return
+	}
 	if rec.Code != http.StatusTemporaryRedirect || rec.Body.Len() != 0 {
 		t.Fatalf("%q (path %q): status %d, body %q, want a 307 with no body", req.RequestURI, req.URL.Path, rec.Code, rec.Body)
 	}

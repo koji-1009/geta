@@ -35,7 +35,8 @@ func TestWhatGetaAnswers(t *testing.T) {
 	expect(c.Patch("/users/1", map[string]any{}), http.StatusMethodNotAllowed, "Allow", "DELETE, GET, HEAD, OPTIONS, PUT")
 	expect(c.Get("/nowhere"), http.StatusNotFound, "", "")
 	expect(anonymous(t).Get("/nowhere"), http.StatusUnauthorized, "WWW-Authenticate", "Bearer")
-	expect(c.Get("/users//1"), http.StatusTemporaryRedirect, "Location", "/users/1")
+	expect(c.Get("/users/./1"), http.StatusTemporaryRedirect, "Location", "/users/1")
+	expect(c.Get("/users//1"), http.StatusNotFound, "", "")
 
 	expect(c.With("Content-Type", "text/plain").Post("/users", "id=2"), http.StatusUnsupportedMediaType, "Accept", "application/json")
 	expect(c.With("Content-Encoding", "gzip").Post("/users", "{}"), http.StatusUnsupportedMediaType, "Accept-Encoding", "identity")

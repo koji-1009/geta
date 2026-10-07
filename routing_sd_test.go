@@ -283,10 +283,10 @@ func TestRedirectUnderAMountStaysInsideIt(t *testing.T) {
 	}})
 	h := http.StripPrefix("/api", app)
 	for path, want := range map[string]string{
-		"/api//users":     "/api/users",
-		"/api//users?q=1": "/api/users?q=1",
-		"/api/x/../users": "/api/users",
-		"/api/./":         "/api/",
+		"/api/./users":     "/api/users",
+		"/api/./users?q=1": "/api/users?q=1",
+		"/api/x/../users":  "/api/users",
+		"/api/./":          "/api/",
 	} {
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
@@ -305,7 +305,7 @@ func TestRedirectUnderAMountStaysInsideIt(t *testing.T) {
 		}
 	}
 	// An absolute-form request target keeps its path.
-	req := httptest.NewRequest(http.MethodGet, "http://example.com/api//users", nil)
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/api/./users", nil)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	if rec.Code != http.StatusTemporaryRedirect || rec.Header().Get("Location") != "/api/users" {
@@ -321,7 +321,7 @@ func TestNoRedirectWhereTheClientsURLIsUnknown(t *testing.T) {
 	app := accepts(t, one("/users", get(okHandler)))
 	outer := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		r = r.Clone(r.Context())
-		r.URL.Path = "/v2/..//users"
+		r.URL.Path = "/v2/../users"
 		app.ServeHTTP(w, r)
 	})
 	rec := httptest.NewRecorder()
@@ -376,7 +376,7 @@ func TestRewriteToAnUncleanPathIsServedNotRedirected(t *testing.T) {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if rest, ok := strings.CutPrefix(r.URL.Path, "/alias/"); ok {
 				r = r.Clone(r.Context())
-				r.URL.Path = "/internal//users/" + rest
+				r.URL.Path = "/internal/./users/" + rest
 			}
 			next.ServeHTTP(w, r)
 		})
