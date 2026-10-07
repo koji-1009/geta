@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/koji-1009/geta"
-	"github.com/koji-1009/geta/getaclient"
 	"github.com/koji-1009/geta/getatest"
 )
 
@@ -80,7 +79,7 @@ func describedTable() geta.Table {
 
 // A row built with OnAsProblem answers with the problem the error describes:
 // its members beside the problem's own, the detail its own or the row's,
-// its headers; nothing of err.Error(). getaclient and getatest read it back.
+// its headers; nothing of err.Error(). getatest reads it back.
 func TestFailuresDescribeTheirProblem(t *testing.T) {
 	c := getatest.New(t, describedTable())
 	res := c.Get("/f?kind=quota")
@@ -105,14 +104,8 @@ func TestFailuresDescribeTheirProblem(t *testing.T) {
 	if got := c.Get("/f?kind=bare").Text(); got != `{"type":"about:blank","title":"Conflict","status":409,"detail":"conflict","with":""}` {
 		t.Fatal(got)
 	}
-	_, err := getaclient.Call[failIn, ok](t.Context(), c.Typed(), http.MethodGet, "/f", &failIn{Kind: "quota"})
-	q, found := getaclient.ProblemAs[quota](err)
-	if !found || q.RetryAfter != 30 || q.Body.Remaining != 0 || q.Body.Detail != "try again later" {
-		t.Fatal(q, found, err)
-	}
-	_, err = getaclient.Call[failIn, ok](t.Context(), c.Typed(), http.MethodGet, "/f", &failIn{Kind: "conflict"})
-	if cf, found := getaclient.ProblemAs[conflict](err); !found || cf.With != "b" {
-		t.Fatal(cf, found, err)
+	if cf := c.Get("/f?kind=conflict").ProblemAs[conflict](); cf.With != "b" {
+		t.Fatal(cf)
 	}
 }
 

@@ -13,7 +13,6 @@ import (
 	"testing"
 
 	"github.com/koji-1009/geta"
-	"github.com/koji-1009/geta/getaclient"
 	"github.com/koji-1009/geta/getatest"
 )
 
@@ -314,23 +313,5 @@ func TestAppendTextWritesHeadersAndBodies(t *testing.T) {
 	rec = do(t, a, http.MethodGet, "/y?q=hello")
 	if rec.Code != 200 || strings.TrimSpace(rec.Body.String()) != `"hello"` {
 		t.Fatalf("%d %s", rec.Code, rec.Body)
-	}
-	// The client sends and reads it the same way.
-	type cin struct {
-		Q ownAppText `query:"q"`
-	}
-	type cout struct {
-		A    ownAppText `header:"X-A"`
-		Body ownAppText `body:"json"`
-	}
-	c := getatest.New(t, one("/z", get(func(_ context.Context, in *cin) (*cout, error) {
-		return &cout{in.Q, in.Q}, nil
-	}))).Typed()
-	out, err := getaclient.Call[cin, cout](t.Context(), c, http.MethodGet, "/z", &cin{ownAppText{"sent"}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if out.A.V != "sent" || out.Body.V != "sent" {
-		t.Fatalf("%+v", out)
 	}
 }

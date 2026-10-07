@@ -18,7 +18,6 @@ import (
 	"time"
 
 	"github.com/koji-1009/geta"
-	"github.com/koji-1009/geta/getaclient"
 	"github.com/koji-1009/geta/getatest"
 	"github.com/koji-1009/geta/internal/vet"
 )
@@ -616,42 +615,6 @@ func TestFormatTypesBindRequests(t *testing.T) {
 		if !strings.Contains(rec.Body.String(), want) {
 			t.Errorf("missing %s in %s", want, rec.Body)
 		}
-	}
-}
-
-// getaclient sends and reads the format types as geta binds and writes
-// them, and getatest checks every response against the document.
-func TestTypedClientCarriesFormatTypes(t *testing.T) {
-	var got *formatIn
-	c := getatest.New(t, formatApp(t, &got)).Typed()
-	var body formatBody
-	if err := json.Unmarshal([]byte(formatBodyJSON), &body); err != nil {
-		t.Fatal(err)
-	}
-	day, _ := geta.NewDate(2024, 2, 29)
-	at, _ := geta.ParseTimeOfDay("23:59:60.5Z")
-	wait, _ := geta.DurationOf(90 * time.Second)
-	v6, _ := geta.ParseIPv6("2001:db8::1")
-	// A cookie value holds no semicolon or space (RFC 6265), so the pointer
-	// holds neither.
-	path := geta.NewJSONPointer("a/b", "c")
-	rel, _ := geta.ParseRelativeJSONPointer("2/a")
-	a1, _ := geta.ParseIPv4("192.0.2.1")
-	secret := geta.Password("p a s s")
-	since, _ := geta.ParseDateTime("2016-12-31T23:59:60.25Z")
-	in := &formatIn{Day: day, At: &at, Since: &since, For: &wait, Addrs: []geta.IPv4{a1, a1}, Origin: &v6, Path: &path,
-		Relative: &rel, Secret: &secret, Body: &body}
-	out, err := getaclient.Call[formatIn, formatOut](t.Context(), c, http.MethodPost, "/days/{day}", in)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got.Day != day || *got.At != at || *got.Since != since || *got.For != wait || !slices.Equal(got.Addrs, in.Addrs) || *got.Origin != v6 ||
-		!reflect.DeepEqual(*got.Path, path) || *got.Relative != rel ||
-		*got.Secret != secret || got.Client != nil || !reflect.DeepEqual(*got.Body, body) {
-		t.Fatalf("sent %+v, got %+v", in, got)
-	}
-	if out.Next != day || out.First != a1 || *out.Wait != wait || !reflect.DeepEqual(out.Body, body) {
-		t.Fatalf("received %+v", out)
 	}
 }
 

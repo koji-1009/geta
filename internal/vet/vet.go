@@ -1,5 +1,5 @@
 // Package vet holds the rules of geta.New that hold for what source shows,
-// for getavet, which reads source, and getaclient. Package geta sets every
+// for getavet, which reads source, and getatest. Package geta sets every
 // rule when it is initialized, so a caller imports geta, if only for that.
 package vet
 

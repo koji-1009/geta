@@ -13,7 +13,6 @@ A register of users and teams. It is the canonical shape of a geta application. 
 | Multipart upload of one file, and of several (`[]geta.File`) | `routes/users/id_/avatar/route.go`, `routes/users/id_/attachments/route.go` |
 | An event stream | `routes/users/events/route.go` |
 | Credential-free CORS (`*`) with conditional writes from a page | `routes/scope.go`, `cors_test.go` |
-| The typed Go client (`getaclient`) with the handlers' own types | `client_test.go`, `attachments_test.go` |
 
 ## Run
 

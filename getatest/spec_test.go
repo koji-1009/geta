@@ -14,7 +14,6 @@ import (
 	"testing"
 
 	"github.com/koji-1009/geta"
-	"github.com/koji-1009/geta/getaclient"
 )
 
 // Rules of getatest that no other test asserts.
@@ -331,44 +330,5 @@ func TestEventsAreCheckedThroughStream(t *testing.T) {
 	})
 	if len(f.errs) != 1 || !strings.Contains(f.errs[0], "$.v: expected string, got integer") {
 		t.Fatalf("%q", f.errs)
-	}
-}
-
-// Typed's client sends the getatest client's headers, and each response to
-// it is held to the document as any other.
-func TestTypedSendsTheClientsHeadersAndIsChecked(t *testing.T) {
-	var mu sync.Mutex
-	var traces []string
-	teapot := geta.Use(func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			mu.Lock()
-			traces = append(traces, r.Header.Get("X-Trace"))
-			mu.Unlock()
-			if r.Header.Get("X-Teapot") != "" {
-				w.WriteHeader(http.StatusTeapot)
-				return
-			}
-			next.ServeHTTP(w, r)
-		})
-	})
-	app, err := geta.New(geta.Table{Root: geta.Scope{teapot}, Routes: []geta.Entry{{Path: "/g", Route: geta.Route{Get: geta.Op(http.StatusOK, greet, geta.Doc{})}}}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	f := inGoroutine(t, func(f *failures) {
-		c := Serve(f, app).With("X-Trace", "t")
-		if out, err := getaclient.Call[struct{}, greeting](context.Background(), c.Typed(), http.MethodGet, "/g", nil); err != nil || out.Text != "hi" {
-			f.errs = append(f.errs, "the call failed")
-			return
-		}
-		getaclient.Call[struct{}, greeting](context.Background(), c.With("X-Teapot", "1").Typed(), http.MethodGet, "/g", nil)
-	})
-	if len(f.errs) != 1 || !strings.Contains(f.errs[0], "status 418 is not documented") {
-		t.Fatalf("%q", f.errs)
-	}
-	mu.Lock()
-	defer mu.Unlock()
-	if strings.Join(traces, ",") != "t,t" {
-		t.Fatalf("X-Trace sent: %q", traces)
 	}
 }

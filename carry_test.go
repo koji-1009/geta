@@ -2,14 +2,11 @@ package geta_test
 
 import (
 	"context"
-	"errors"
 	"net/http"
-	"slices"
 	"strings"
 	"testing"
 
 	"github.com/koji-1009/geta"
-	"github.com/koji-1009/geta/getaclient"
 	"github.com/koji-1009/geta/getatest"
 )
 
@@ -155,51 +152,6 @@ func TestPreconditionHeadersCarryTheirLists(t *testing.T) {
 	}
 }
 
-// getaclient refuses to send a header value a header field value does not
-// carry, as it refuses a cookie value net/http would not send.
-func TestClientRefusesAHeaderValueAHeaderCannotCarry(t *testing.T) {
-	var got *carryIn
-	c := getatest.New(t, carryApp(t, &got)).Typed()
-	for _, v := range []string{" a", "a\t", "a\nb", "a\x7f"} {
-		_, err := getaclient.Call[carryIn, ok](t.Context(), c, http.MethodGet, "/c", &carryIn{Name: &v})
-		if err == nil || !strings.Contains(err.Error(), `header parameter "X-Name"`) ||
-			!strings.Contains(err.Error(), "invalid value") {
-			t.Errorf("%q: %v", v, err)
-		}
-	}
-	tags := []string{"a", "b "}
-	if _, err := getaclient.Call[carryIn, ok](t.Context(), c, http.MethodGet, "/c", &carryIn{Tags: tags}); err == nil {
-		t.Error("sent a tag ending in a space")
-	}
-	v := "a \t b"
-	if _, err := getaclient.Call[carryIn, ok](t.Context(), c, http.MethodGet, "/c", &carryIn{Name: &v, Tags: []string{"a"}}); err != nil || *got.Name != v {
-		t.Fatal(err, got)
-	}
-}
-
-// A header a slice binds is a list the server splits at its commas and whose
-// empty elements it ignores (RFC 9110 section 5.6.1), so getaclient refuses,
-// before sending, an element holding a comma or empty: the server would read
-// another list than the one given. A scalar header's comma is its own.
-func TestClientRefusesAHeaderListElementTheListCannotCarry(t *testing.T) {
-	var got *carryIn
-	c := getatest.New(t, carryApp(t, &got)).Typed()
-	for _, tags := range [][]string{{"a,b"}, {"a", ""}, {"", "b"}, {"a, b"}} {
-		_, err := getaclient.Call[carryIn, ok](t.Context(), c, http.MethodGet, "/c", &carryIn{Tags: tags})
-		if err == nil || !strings.Contains(err.Error(), `header parameter "X-Tag"`) || !strings.Contains(err.Error(), "list element") {
-			t.Errorf("%q: %v", tags, err)
-		}
-	}
-	tags := []string{"a", "b c"}
-	if _, err := getaclient.Call[carryIn, ok](t.Context(), c, http.MethodGet, "/c", &carryIn{Tags: tags}); err != nil || !slices.Equal(got.Tags, tags) {
-		t.Fatal(err, got)
-	}
-	v := "a, b"
-	if _, err := getaclient.Call[carryIn, ok](t.Context(), c, http.MethodGet, "/c", &carryIn{Name: &v, Tags: []string{"a"}}); err != nil || *got.Name != v {
-		t.Fatal(err, got)
-	}
-}
-
 type carryOut struct {
 	Note  string      `header:"X-Note"`
 	Token *carryToken `header:"X-Token"`
@@ -250,55 +202,5 @@ func TestOutputHeadersHoldToWhatAHeaderCarries(t *testing.T) {
 		if r.Status != http.StatusOK || r.Header.Get("X-Note") != v || r.Header.Get("X-Token") != `W/"x"` {
 			t.Errorf("%q: %d %v", v, r.Status, r.Header)
 		}
-	}
-}
-
-// carriedMail is an application's mail address: any text with an @.
-type carriedMail string
-
-func (carriedMail) SchemaFormat() string           { return "email" }
-func (m carriedMail) MarshalText() ([]byte, error) { return []byte(m), nil }
-func (m *carriedMail) UnmarshalText(b []byte) error {
-	if !strings.Contains(string(b), "@") {
-		return errors.New("no @")
-	}
-	*m = carriedMail(b)
-	return nil
-}
-
-type carriedCookieIn struct {
-	Mail *carriedMail `cookie:"mail"`
-	Note *string      `cookie:"note"`
-}
-
-// The client refuses to send a cookie parameter whose value a cookie cannot
-// carry, which net/http would send altered, and carries a space and a comma
-// by quoting the value, which the server reads unquoted.
-func TestClientRefusesCookieValuesACookieCannotCarry(t *testing.T) {
-	var got *carriedCookieIn
-	h := func(ctx context.Context, in *carriedCookieIn) (*ok, error) {
-		got = in
-		return &ok{true}, nil
-	}
-	c := getatest.New(t, one("/c", geta.Route{Post: geta.Op(http.StatusOK, h, geta.Doc{})})).Typed()
-	quoted := carriedMail(`"a b"@example.com`)
-	for _, in := range []*carriedCookieIn{{Mail: &quoted}, {Note: new("a;b")}, {Note: new(`a\b`)}, {Note: new("a\x7fb")},
-		{Note: new("é")}, {Note: new("a\tb")}} {
-		got = nil
-		_, err := getaclient.Call[carriedCookieIn, ok](t.Context(), c, http.MethodPost, "/c", in)
-		if err == nil || !strings.Contains(err.Error(), "invalid value") {
-			t.Errorf("%+v: %v", in, err)
-		}
-		if got != nil {
-			t.Errorf("%+v was sent", in)
-		}
-	}
-	plain := carriedMail("x.y+z@example.com")
-	in := &carriedCookieIn{Mail: &plain, Note: new(" a, b ")}
-	if _, err := getaclient.Call[carriedCookieIn, ok](t.Context(), c, http.MethodPost, "/c", in); err != nil {
-		t.Fatal(err)
-	}
-	if *got.Mail != plain || *got.Note != " a, b " {
-		t.Fatalf("%+v %q", got.Mail, *got.Note)
 	}
 }

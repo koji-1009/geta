@@ -69,7 +69,6 @@ func TestServingsKeepNoRecordOfACancelledRequest(t *testing.T) {
 	c := New(t, geta.Table{Root: geta.Scope{wait}, Routes: []geta.Entry{{Path: "/x", Route: geta.Route{
 		Get: geta.Op(http.StatusOK, func(context.Context, *struct{}) (*struct{}, error) { return &struct{}{}, nil }, geta.Doc{}),
 	}}}})
-	rt := documenting{c: c, next: c.hc.Transport}
 	for _, early := range []bool{false, true} {
 		ctx, cancel := context.WithCancel(t.Context())
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.URL()+"/x", nil)
@@ -83,7 +82,11 @@ func TestServingsKeepNoRecordOfACancelledRequest(t *testing.T) {
 			<-reached
 			cancel()
 		}()
-		if _, err := rt.RoundTrip(req); err == nil {
+		// As Send does, which fails the test on the error.
+		id := c.log.number(req)
+		_, err = c.hc.Do(req)
+		c.log.take(id)
+		if err == nil {
 			t.Fatal("the cancelled request succeeded")
 		}
 		<-finished

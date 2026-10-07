@@ -15,7 +15,6 @@ import (
 	"testing"
 
 	"github.com/koji-1009/geta"
-	"github.com/koji-1009/geta/getaclient"
 	"github.com/koji-1009/geta/getatest"
 )
 
@@ -426,37 +425,6 @@ func (c *chunked) Read(p []byte) (int, error) {
 	n = copy(p, c.s[:n])
 	c.s = c.s[n:]
 	return n, nil
-}
-
-// getaclient sends a form or multipart body from the input type, files
-// from geta.NewFile.
-func TestClientSendsFormsAndFiles(t *testing.T) {
-	c := getatest.New(t, geta.Table{Routes: []geta.Entry{
-		{Path: "/m", Route: geta.Route{Post: geta.Op(http.StatusOK, echoUpload, geta.Doc{})}},
-		{Path: "/f", Route: geta.Route{Post: geta.Op(http.StatusOK, echoForm, geta.Doc{})}},
-	}})
-	tc := c.Typed()
-	extra := []geta.File{geta.NewFile("x.bin", "", strings.NewReader("X"))}
-	out, err := getaclient.Call[uploadIn, echoed](t.Context(), tc, http.MethodPost, "/m", &uploadIn{Body: upload{
-		Title:  "名前",
-		Avatar: geta.NewFile("avatar.png", "image/png", bytes.NewReader([]byte("PNGDATA"))),
-		Extra:  &extra,
-	}})
-	if err != nil || out.Got != "名前 avatar.png(image/png,7)=PNGDATA +x.bin(application/octet-stream,1)=X" {
-		t.Fatal(out, err)
-	}
-	age := 7
-	tags := []string{"a", "b c"}
-	fout, err := getaclient.Call[formIn, echoed](t.Context(), tc, http.MethodPost, "/f", &formIn{ID: "9",
-		Body: applicant{Name: "n&m=", Age: &age, Tags: &tags, Agree: true}})
-	if err != nil || fout.Got != "9 name=n&m= age=7 tags=[a b c] agree=true" {
-		t.Fatal(fout, err)
-	}
-	// A violation comes back as the problem.
-	_, err = getaclient.Call[formIn, echoed](t.Context(), tc, http.MethodPost, "/f", &formIn{ID: "9"})
-	if err == nil || !strings.Contains(err.Error(), "body $.name: string length 0 is shorter than minLength 1") {
-		t.Fatal(err)
-	}
 }
 
 func TestFormDocument(t *testing.T) {

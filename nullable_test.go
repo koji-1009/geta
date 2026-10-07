@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/koji-1009/geta"
-	"github.com/koji-1009/geta/getaclient"
 	"github.com/koji-1009/geta/getatest"
 	"github.com/koji-1009/geta/internal/vet"
 )
@@ -102,13 +101,6 @@ func TestNullableTellsAbsentFromNull(t *testing.T) {
 		if res.Status != http.StatusBadRequest || len(p.Errors) == 0 || p.Errors[0].Path+": "+p.Errors[0].Message != want {
 			t.Errorf("%s: %d %+v; want %s", body, res.Status, p.Errors, want)
 		}
-	}
-
-	// The typed client sends each state as the server reads it.
-	out, err := getaclient.Call[nullPatchIn, nullSeen](t.Context(), c.Typed(), http.MethodPatch, "/users/1",
-		&nullPatchIn{Body: nullPatch{Nickname: geta.Null[string](), Age: geta.NotNull[int8](7)}})
-	if err != nil || out.Nickname != "null" || out.Age != "value:7" || out.Friend != "absent" {
-		t.Fatal(out, err)
 	}
 }
 

@@ -752,8 +752,7 @@ type srOpenIn struct {
 }
 
 // A file the server received may be opened any number of times while the
-// handler runs; a file NewFile made has the name and media type it was
-// given, Size -1, and reads its reader.
+// handler runs.
 func TestFileAPI(t *testing.T) {
 	var reads []string
 	c := getatest.New(t, one("/m", post(func(_ context.Context, in *srOpenIn) (*ok, error) {
@@ -771,15 +770,6 @@ func TestFileAPI(t *testing.T) {
 	if res := c.Multipart(http.MethodPost, "/m", nil, getatest.FilePart{Field: "f", Filename: "a", Content: []byte("xyz")}); res.Status != 200 ||
 		fmt.Sprint(reads) != "[xyz xyz]" {
 		t.Fatal(res.Status, res.Text(), reads)
-	}
-	f := geta.NewFile("n.txt", "", strings.NewReader("abc"))
-	rc, err := f.Open()
-	if err != nil {
-		t.Fatal(err)
-	}
-	b, _ := io.ReadAll(rc)
-	if f.Filename() != "n.txt" || f.ContentType() != "" || f.Size() != -1 || string(b) != "abc" {
-		t.Fatal(f.Filename(), f.ContentType(), f.Size(), string(b))
 	}
 }
 

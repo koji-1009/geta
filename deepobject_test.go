@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/koji-1009/geta"
-	"github.com/koji-1009/geta/getaclient"
 	"github.com/koji-1009/geta/getatest"
 )
 
@@ -95,19 +94,6 @@ func TestDeepObjectQueryParameters(t *testing.T) {
 		if res.Status != http.StatusBadRequest || len(p.Errors) != 1 || p.Errors[0].In != "query" || p.Errors[0].Path+": "+p.Errors[0].Message != want {
 			t.Errorf("%s: %d %+v; want %s", path, res.Status, p.Errors, want)
 		}
-	}
-
-	// The typed client sends each member it holds as name[member].
-	since, _ := geta.ParseDate("2026-01-02")
-	minimum := 3
-	out, err := getaclient.Call[deepIn, deepOut](t.Context(), c.Typed(), http.MethodGet, "/items",
-		&deepIn{Filter: &deepFilter{Min: &minimum, Status: "closed", Since: &since}, Page: deepPage{Size: 7}})
-	if err != nil || *out != (deepOut{Filtered: true, Min: 3, Status: "closed", Since: "2026-01-02", Size: 7}) {
-		t.Fatal(out, err)
-	}
-	out, err = getaclient.Call[deepIn, deepOut](t.Context(), c.Typed(), http.MethodGet, "/items", &deepIn{Page: deepPage{Size: 7}})
-	if err != nil || out.Filtered {
-		t.Fatal(out, err)
 	}
 }
 

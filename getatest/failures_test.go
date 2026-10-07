@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/koji-1009/geta"
-	"github.com/koji-1009/geta/getaclient"
 )
 
 // inGoroutine runs fn with a failures TB, on a goroutine a Fatal may end.
@@ -21,30 +20,6 @@ func inGoroutine(t *testing.T, fn func(f *failures)) *failures {
 	}()
 	<-done
 	return f
-}
-
-// Typed checks a response's documented headers as Send does, a response
-// with no JSON body included.
-func TestTypedChecksTheHeadersOfEveryResponse(t *testing.T) {
-	aged := geta.Use(func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Age", "-1")
-			next.ServeHTTP(w, r)
-		})
-	}).Answers(http.StatusNoContent, "Gone").Header(http.StatusNoContent, "Age", "Seconds", geta.HeaderOf[int]("minimum=0"))
-	app, err := geta.New(geta.Table{Root: geta.Scope{aged}, Routes: []geta.Entry{{Path: "/x", Route: geta.Route{
-		Delete: geta.OpNoBody(http.StatusNoContent, func(context.Context, *struct{}) error { return nil }, geta.Doc{}),
-	}}}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	sent := inGoroutine(t, func(f *failures) { Serve(f, app).Delete("/x") })
-	typed := inGoroutine(t, func(f *failures) {
-		getaclient.CallNoBody[struct{}](context.Background(), Serve(f, app).Typed(), http.MethodDelete, "/x", nil)
-	})
-	if len(sent.errs) != 1 || len(typed.errs) != 1 || !strings.Contains(typed.errs[0], "Age") {
-		t.Fatalf("Send: %q; Typed: %q", sent.errs, typed.errs)
-	}
 }
 
 // New fails the test at once on an assembly error, with geta.New's text.

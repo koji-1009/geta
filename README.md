@@ -121,7 +121,7 @@ The tree is optional. `geta.New` also takes a table written by hand:
 geta.Table{Root: scope, Routes: []geta.Entry{{Path: "/users/{id}", Route: r, Scopes: []geta.Scope{s}}}}
 ```
 
-`Scopes` lists the directory scopes, outermost first; the root scope goes in `Root`. Types, the document, validation, the path-parameter checks in `geta.New`, `getatest.New(t, table)`, and `getaclient` all work the same. You lose `geta sync`, `geta check`, and getavet's path-parameter report, which reads an operation's URL from its directory. Your own test that calls `getatest.New` replaces the generated `zz_routes_test.go`. See "Without the routes tree" in `llms.txt`.
+`Scopes` lists the directory scopes, outermost first; the root scope goes in `Root`. Types, the document, validation, the path-parameter checks in `geta.New`, and `getatest.New(t, table)` all work the same. You lose `geta sync`, `geta check`, and getavet's path-parameter report, which reads an operation's URL from its directory. Your own test that calls `getatest.New` replaces the generated `zz_routes_test.go`. See "Without the routes tree" in `llms.txt`.
 
 ## Layout
 
@@ -129,13 +129,12 @@ geta.Table{Root: scope, Routes: []geta.Entry{{Path: "/users/{id}", Route: r, Sco
 | --- | --- |
 | `.` (`geta`) | Routes, operations, JSON, form, and multipart bodies, failure tables, scopes and ordering, built-in middleware (including pluggable content codings), automatic `OPTIONS`, the security gate, streams, upgrades, `New`, OpenAPI 3.1 or 3.2, `Run` |
 | `getatest` | In-memory test client, event-stream and upgrade helpers, a dialer for third-party clients, golden documents |
-| `getaclient` | A Go client that calls an app with its handlers' own input and output types; no generated code |
 | `getaotel` | OpenTelemetry spans and HTTP server metrics named by route template, on otelhttp (separate module) |
 | `getavet` | An analyzer that reports path-binding and schema-tag mistakes, and the field and type refusals of `geta.New` that source alone decides, before the program runs (separate module) |
 | `cmd/geta` | `geta sync [-check] [dir]`, `geta check [dir]` |
 | `examples/*` | Running applications; see [Examples](#examples) |
 | `internal/tree` | What `geta sync` and `geta check` read and write; `internal/fixture` holds packages the tests load |
-| `internal/vet` | The rules `geta.New` shares with getavet and getaclient, set by `geta` when it is initialized |
+| `internal/vet` | The rules `geta.New` shares with getavet and getatest, set by `geta` when it is initialized |
 | `scripts` | `bump.sh`, which sets the version getaotel and getavet require; see [`RELEASING.md`](RELEASING.md) |
 | `testdata` | Compile-failure packages, golden documents, the JSON Schema Test Suite's format tests, a fuzz corpus |
 | `docs` | [`claims.md`](docs/claims.md) |
