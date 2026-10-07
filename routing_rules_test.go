@@ -149,19 +149,17 @@ func TestMoreThanEightParameters(t *testing.T) {
 	}
 }
 
-// Cleaning resolves . and .., collapses doubled slashes, and keeps a
-// trailing slash.
+// Cleaning removes . and .. as RFC 3986 §5.2.4 does, keeping a trailing
+// slash, and keeps empty segments.
 func TestCleaningKeepsATrailingSlash(t *testing.T) {
 	a := accepts(t, one("/a/b", get(okHandler)))
 	for path, want := range map[string]string{
-		"/a//b/":    "/a/b/",
 		"/a/./b/":   "/a/b/",
 		"/a/c/../":  "/a/",
 		"/a/b/./":   "/a/b/",
-		"/a/b/..":   "/a",
+		"/a/b/..":   "/a/",
 		"/a/b/../":  "/a/",
-		"//":        "/",
-		"/a/b/.//":  "/a/b/",
+		"/a/b/.//":  "/a/b//",
 		"/x/../../": "/",
 	} {
 		rec := do(t, a, http.MethodGet, path)
@@ -176,7 +174,7 @@ func TestCleaningKeepsATrailingSlash(t *testing.T) {
 func TestARedirectedRequestCarriesTheCleanPathsMatch(t *testing.T) {
 	var m matchRecorder
 	a := accepts(t, geta.Table{Root: geta.Scope{m.middleware()}, Routes: []geta.Entry{{Path: "/a/b", Route: get(okHandler)}}})
-	for path, want := range map[string]string{"/a//b": "GET /a/b", "/x/../a/b": "GET /a/b", "/a//c": "none"} {
+	for path, want := range map[string]string{"/a/./b": "GET /a/b", "/x/../a/b": "GET /a/b", "/a/./c": "none"} {
 		rec := do(t, a, http.MethodGet, path)
 		if rec.Code != http.StatusTemporaryRedirect || m.get() != want {
 			t.Errorf("%s: %d, root read %q; want 307 and %q", path, rec.Code, m.get(), want)
@@ -373,10 +371,10 @@ func TestRedirectBehindARootGate(t *testing.T) {
 		path, auth string
 		status     int
 	}{
-		{"//secret", "", http.StatusUnauthorized},
-		{"//open", "", http.StatusTemporaryRedirect},
-		{"//nowhere", "", http.StatusUnauthorized},
-		{"//secret", "Bearer good", http.StatusTemporaryRedirect},
+		{"/./secret", "", http.StatusUnauthorized},
+		{"/./open", "", http.StatusTemporaryRedirect},
+		{"/./nowhere", "", http.StatusUnauthorized},
+		{"/./secret", "Bearer good", http.StatusTemporaryRedirect},
 	} {
 		var rec *httptest.ResponseRecorder
 		if c.auth != "" {

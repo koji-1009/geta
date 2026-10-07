@@ -453,7 +453,7 @@ func TestAnUnmatchedRequestIsNamedByItsMethodAlone(t *testing.T) {
 // template, as the access log's route does.
 func TestARedirectIsNamedByTheTemplateItLeadsTo(t *testing.T) {
 	h := serve(t, table(nil))
-	res := h.c.Get("/users//7")
+	res := h.c.Get("/users/./7")
 	if res.Status != http.StatusTemporaryRedirect || res.Header.Get("Location") != "/users/7" {
 		t.Fatal(res.Status, res.Header)
 	}

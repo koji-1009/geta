@@ -38,7 +38,7 @@ func TestObserveReportsWhatWasServed(t *testing.T) {
 		{"POST", "/items", "DELETE", 204, "DELETE", "/items"},
 		{"POST", "/items", "PATCH", 405, "PATCH", ""},
 		{"GET", "/nowhere", "", 404, "GET", ""},
-		{"POST", "//items", "", 307, "POST", ""},
+		{"POST", "/./items", "", 307, "POST", ""},
 	}
 	for _, c := range cases {
 		req := httptest.NewRequest(c.method, c.path, nil)

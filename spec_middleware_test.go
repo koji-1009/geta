@@ -375,16 +375,16 @@ func TestMWCORSMaxAgeOnlyWhenSetAndAllowed(t *testing.T) {
 // redirect, expose the headers of the operation the clean path reaches.
 func TestMWCORSRedirectExposesTheCleanPathsHeaders(t *testing.T) {
 	a := corsApp(t)
-	r := do(t, a, "GET", "//r", "Origin", "https://a.example")
+	r := do(t, a, "GET", "/./r", "Origin", "https://a.example")
 	if r.Code != 401 {
 		t.Fatal(r.Code, r.Header())
 	}
-	sameHeaders(t, "GET //r 401", r.Header().Get("Access-Control-Expose-Headers"), "ETag", "WWW-Authenticate")
-	r = do(t, a, "GET", "//r", "Origin", "https://a.example", "Authorization", "Bearer t")
+	sameHeaders(t, "GET /./r 401", r.Header().Get("Access-Control-Expose-Headers"), "ETag", "WWW-Authenticate")
+	r = do(t, a, "GET", "/./r", "Origin", "https://a.example", "Authorization", "Bearer t")
 	if r.Code != http.StatusTemporaryRedirect || r.Header().Get("Location") != "/r" {
 		t.Fatal(r.Code, r.Header())
 	}
-	sameHeaders(t, "GET //r 307", r.Header().Get("Access-Control-Expose-Headers"), "ETag", "WWW-Authenticate")
+	sameHeaders(t, "GET /./r 307", r.Header().Get("Access-Control-Expose-Headers"), "ETag", "WWW-Authenticate")
 }
 
 // What ConcurrencyLimit and Timeout answer is documented with their reasons,

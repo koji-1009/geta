@@ -135,7 +135,7 @@ func TestRoutingRedirectWithoutRequestURIUsesTheURL(t *testing.T) {
 		h          http.Handler
 		path, want string
 	}{
-		{app, "/x/..//users", "/users"},
+		{app, "/x/../users", "/users"},
 		{http.StripPrefix("/api", app), "/apiusers", "/users"},
 	} {
 		req, err := http.NewRequest(http.MethodGet, c.path, nil)
@@ -177,8 +177,8 @@ func TestRoutingRedirectRunsNoOperation(t *testing.T) {
 		Route:  geta.Route{Get: geta.Op(http.StatusOK, h, geta.Doc{Scope: geta.Scope{count(&opScope)}})},
 		Scopes: []geta.Scope{{count(&dir)}},
 	}}})
-	if rec := do(t, a, http.MethodGet, "/a//b"); rec.Code != http.StatusTemporaryRedirect || rec.Header().Get("Location") != "/a/b" {
-		t.Fatalf("GET /a//b: %d %q", rec.Code, rec.Header().Get("Location"))
+	if rec := do(t, a, http.MethodGet, "/a/./b"); rec.Code != http.StatusTemporaryRedirect || rec.Header().Get("Location") != "/a/b" {
+		t.Fatalf("GET /a/./b: %d %q", rec.Code, rec.Header().Get("Location"))
 	}
 	if root.Load() != 1 || dir.Load() != 0 || opScope.Load() != 0 || handler.Load() != 0 {
 		t.Fatalf("root %d, directory scope %d, Doc.Scope %d, handler %d; want 1, 0, 0, 0", root.Load(), dir.Load(), opScope.Load(), handler.Load())

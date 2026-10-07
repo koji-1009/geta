@@ -67,7 +67,7 @@ func TestARedirectCarriesTheMatchOfItsCleanPath(t *testing.T) {
 	tbl := limitedTable(geta.Scope{geta.AccessLog(log), tr.mark("root"), gate()})
 	a := accepts(t, tbl)
 	for range 2 {
-		if r := do(t, a, "POST", "//login"); r.Code != http.StatusTemporaryRedirect || r.Header().Get("Location") != "/login" {
+		if r := do(t, a, "POST", "/./login"); r.Code != http.StatusTemporaryRedirect || r.Header().Get("Location") != "/login" {
 			t.Fatal(r.Code, r.Header())
 		}
 	}

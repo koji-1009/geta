@@ -146,7 +146,7 @@ func TestDeprecationIsSentOnEveryResponse(t *testing.T) {
 		{"not deprecated", "GET", "/new", 200},
 		{"404", "GET", "/missing", 404},
 		{"405", "DELETE", "/old", 405},
-		{"redirect", "GET", "//old", 307},
+		{"redirect", "GET", "/./old", 307},
 		{"options", "OPTIONS", "/old", 204},
 	}
 	for _, c := range lacks {
