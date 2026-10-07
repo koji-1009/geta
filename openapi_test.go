@@ -63,7 +63,7 @@ func TestDocumentShape(t *testing.T) {
 	}
 	// person is read and written, and its request schema states backstops
 	// its response schema does not: the request refers to person-Input.
-	if got := compact(t, at(t, put, "requestBody")); got != `{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/person-Input"}}},"description":"Also taken as any application/*+json media type, read as application/json","required":true}` {
+	if got := compact(t, at(t, put, "requestBody")); got != `{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/person-Input"}}},"required":true}` {
 		t.Fatal(got)
 	}
 	if got := compact(t, at(t, put, "responses", "200", "content")); got != `{"application/json":{"schema":{"$ref":"#/components/schemas/person"}}}` {

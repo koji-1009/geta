@@ -79,6 +79,43 @@ func Build() (*geta.App, error) {
 	}
 }
 
+// A mediatype tag that names no JSON media type, or sits on another field
+// than a body:"json" one, is reported as geta.New refuses it.
+func TestMediaTypeTagsGetaNewRefuses(t *testing.T) {
+	diagnostics, built := vetAndNew(t, `package lib
+
+import (
+	"context"
+	"net/http"
+
+	"github.com/koji-1009/geta"
+)
+
+type Out struct {
+	OK bool `+"`json:\"ok\"`"+`
+}
+
+type In struct {
+	Body Out `+"`body:\"json\" mediatype:\"text/plain\"`"+`
+}
+
+type Query struct {
+	Q string `+"`query:\"q\" mediatype:\"application/json\"`"+`
+}
+
+func Build() (*geta.App, error) {
+	return geta.New(geta.Table{Routes: []geta.Entry{
+		{Path: "/a", Route: geta.Route{Post: geta.Op(http.StatusOK, func(context.Context, *In) (*Out, error) { return nil, nil }, geta.Doc{})}},
+		{Path: "/b", Route: geta.Route{Get: geta.Op(http.StatusOK, func(context.Context, *Query) (*Out, error) { return nil, nil }, geta.Doc{})}},
+	}})
+}
+`)
+	checkSame(t, diagnostics, built, []string{
+		`Body: mediatype "text/plain" is not JSON (application/json or application/*+json)`,
+		`Q: a mediatype tag goes only with body:"json"`,
+	})
+}
+
 // A 204 or 205 for an output with a body, and a stream's or an upgrade's
 // status other than its own, are reported as geta.New refuses them.
 func TestStatusesGetaNewRefuses(t *testing.T) {

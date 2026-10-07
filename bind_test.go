@@ -178,12 +178,96 @@ func TestBodyBinding(t *testing.T) {
 	same(t, violations(t, c.Post("/x", `{"name":"a","price":1,"name":"b"}`)), "body $.name: duplicate object key")
 	same(t, violations(t, c.Post("/x", `{"name":"a"`)), "body $: unexpected end of JSON input")
 	same(t, violations(t, c.Post("/x", `nope`)), "body $: malformed JSON at byte 1: invalid character 'o' in literal null (expecting 'u')")
-	got(t, c.With("Content-Type", "application/merge-patch+json").Post("/x", `{"name":"a","price":1}`))
+	got(t, c.With("Content-Type", "application/json; charset=utf-8").Post("/x", `{"name":"a","price":1}`))
+	// Another JSON media type is another format: the body takes only its own.
+	if res := c.With("Content-Type", "application/merge-patch+json").Post("/x", `{"name":"a","price":1}`); res.Status != http.StatusUnsupportedMediaType {
+		t.Fatal(res.Status, res.Text())
+	}
 
 	o := getatest.New(t, echoBody[optionalBodyIn]("/x"))
 	if g := got(t, o.Post("/x", "")); g != `{"Body":null}` {
 		t.Fatalf("%s", g)
 	}
+}
+
+type vendorBodyIn struct {
+	Body item `body:"json" mediatype:"application/vnd.x+json"`
+}
+
+type plainPatchIn struct {
+	Body item `body:"json" mediatype:"application/json"`
+}
+
+// A JSON body is taken as one media type: application/json, or on PATCH
+// application/merge-patch+json (RFC 5789 §2, RFC 7396), or the one its
+// mediatype tag declares. Another is a 415 naming it, and the document's
+// content key is it.
+func TestABodyTakesItsOneMediaType(t *testing.T) {
+	patch := func(h func(context.Context, *bodyIn) (*item, error)) geta.Route {
+		return geta.Route{Patch: geta.Op(http.StatusOK, h, geta.Doc{})}
+	}
+	echo := func(_ context.Context, in *bodyIn) (*item, error) { return &in.Body, nil }
+	vendor := func(_ context.Context, in *vendorBodyIn) (*item, error) { return &in.Body, nil }
+	plain := func(_ context.Context, in *plainPatchIn) (*item, error) { return &in.Body, nil }
+	tbl := geta.Table{Routes: []geta.Entry{
+		{Path: "/p", Route: patch(echo)},
+		{Path: "/v", Route: geta.Route{Post: geta.Op(http.StatusOK, vendor, geta.Doc{})}},
+		{Path: "/j", Route: geta.Route{Patch: geta.Op(http.StatusOK, plain, geta.Doc{})}},
+	}}
+	c := getatest.New(t, tbl)
+	const body = `{"name":"a","price":1}`
+	for _, tc := range []struct {
+		method, path, ct string
+		status           int
+		accept           string
+	}{
+		{http.MethodPatch, "/p", "application/merge-patch+json", 200, ""},
+		{http.MethodPatch, "/p", "application/json", 415, "application/merge-patch+json"},
+		{http.MethodPost, "/v", "application/vnd.x+json; v=2", 200, ""},
+		{http.MethodPost, "/v", "application/json", 415, "application/vnd.x+json"},
+		{http.MethodPatch, "/j", "application/json", 200, ""},
+		{http.MethodPatch, "/j", "application/merge-patch+json", 415, "application/json"},
+	} {
+		res := c.Content(tc.method, tc.path, tc.ct, []byte(body))
+		if res.Status != tc.status || res.Header.Get("Accept") != tc.accept {
+			t.Errorf("%s %s %s: %d Accept %q", tc.method, tc.path, tc.ct, res.Status, res.Header.Get("Accept"))
+		}
+		if tc.method == http.MethodPatch && tc.status == 415 && res.Header.Get("Accept-Patch") != tc.accept {
+			t.Errorf("%s %s: Accept-Patch %q", tc.path, tc.ct, res.Header.Get("Accept-Patch"))
+		}
+	}
+	m := doc(t, c.App())
+	for path, want := range map[string]string{"/p": "patch", "/v": "post", "/j": "patch"} {
+		content := at(t, m, "paths", path, want, "requestBody", "content").(map[string]any)
+		if len(content) != 1 {
+			t.Errorf("%s: %v", path, content)
+		}
+	}
+	at(t, m, "paths", "/p", "patch", "requestBody", "content", "application/merge-patch+json")
+	at(t, m, "paths", "/v", "post", "requestBody", "content", "application/vnd.x+json")
+	at(t, m, "paths", "/j", "patch", "requestBody", "content", "application/json")
+}
+
+// A mediatype tag names one JSON media type, canonical and without
+// parameters, and goes only on a body:"json" field.
+func TestMediaTypeTagMistakes(t *testing.T) {
+	rejects(t, posting[struct {
+		Body item `body:"json" mediatype:"text/plain"`
+	}](), `mediatype "text/plain" is not JSON`)
+	rejects(t, posting[struct {
+		Body item `body:"json" mediatype:"application/vnd.x+json; v=2"`
+	}](), "has parameters")
+	rejects(t, posting[struct {
+		Body item `body:"json" mediatype:"Application/JSON"`
+	}](), "is not canonical")
+	rejects(t, posting[struct {
+		Body struct {
+			A string `form:"a"`
+		} `body:"form" mediatype:"application/json"`
+	}](), `a mediatype tag goes only with body:"json"`)
+	rejects(t, posting[struct {
+		Q string `query:"q" mediatype:"application/json"`
+	}](), `a mediatype tag goes only with body:"json"`)
 }
 
 func TestBodyLimitIs413AtTheExactBoundary(t *testing.T) {

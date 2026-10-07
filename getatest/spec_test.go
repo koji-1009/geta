@@ -90,7 +90,7 @@ func TestDoSendsBodiesAndTheirContentType(t *testing.T) {
 		{http.MethodDelete, "", nil, nil},
 		{http.MethodPost, "application/json", nil, []byte("p")},
 		{http.MethodPut, "application/json", nil, []byte("u")},
-		{http.MethodPatch, "application/json", nil, []byte("a")},
+		{http.MethodPatch, "application/merge-patch+json", nil, []byte("a")},
 		{geta.MethodQuery, "application/json", nil, []byte("q")},
 	}
 	all := got()

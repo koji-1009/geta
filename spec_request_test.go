@@ -360,7 +360,7 @@ func TestContentTypeAndCodingDetails(t *testing.T) {
 	if res := c.Content(http.MethodPost, "/j", "application/json; charset=utf-8", []byte(`{"a":"x"}`)); res.Status != 200 {
 		t.Fatal(res.Status, res.Text())
 	}
-	if res := c.Content(http.MethodPost, "/j", "application/vnd.x+json; v=2", []byte(`{"a":"x"}`)); res.Status != 200 {
+	if res := c.Content(http.MethodPost, "/j", "application/vnd.x+json; v=2", []byte(`{"a":"x"}`)); res.Status != 415 {
 		t.Fatal(res.Status, res.Text())
 	}
 	res = c.Content(http.MethodPost, "/j", "application/json; =x", []byte(`{"a":"x"}`))

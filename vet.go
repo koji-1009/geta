@@ -374,6 +374,14 @@ func checkInputField(f vet.Field, seen map[string]string) (walk bool, err error)
 			}
 			return false, nil
 		}
+		if mt, ok := f.Tag.Lookup("mediatype"); ok {
+			if name != "json" {
+				return false, fmt.Errorf("%s: a mediatype tag goes only with body:\"json\"", f.Name)
+			}
+			if err := jsonMediaType(f.Name, mt); err != nil {
+				return false, err
+			}
+		}
 		if name != "json" {
 			if _, ok := f.Tag.Lookup("schema"); ok {
 				return false, fmt.Errorf("%s: a body:%q field takes no schema tag", f.Name, name)
@@ -388,6 +396,9 @@ func checkInputField(f vet.Field, seen map[string]string) (walk bool, err error)
 	}
 	if name == "" {
 		return false, fmt.Errorf("%s: empty %s name", f.Name, loc)
+	}
+	if _, ok := f.Tag.Lookup("mediatype"); ok {
+		return false, fmt.Errorf("%s: a mediatype tag goes only with body:\"json\"", f.Name)
 	}
 	// A cookie or header name that is not a token (RFC 9110 §5.1) never
 	// reaches the handler, so such a parameter could never arrive.
@@ -507,6 +518,26 @@ var bodyMediaTypes = map[string]string{
 	"json":      "application/json",
 	"form":      "application/x-www-form-urlencoded",
 	"multipart": "multipart/form-data",
+}
+
+// jsonMediaType reports whether mt, a body:"json" field's mediatype tag, is a
+// JSON media type the body may be sent as instead of its default
+// (application/json; application/merge-patch+json on PATCH): application/json
+// or application/*+json (RFC 6839), canonical, without parameters. The error
+// begins with field.
+func jsonMediaType(field, mt string) error {
+	essence, params, err := mime.ParseMediaType(mt)
+	switch {
+	case err != nil:
+		return fmt.Errorf("%s: mediatype %q is not a media type: %v", field, mt, err)
+	case len(params) > 0:
+		return fmt.Errorf("%s: mediatype %q has parameters; name the media type alone", field, mt)
+	case essence != mt:
+		return fmt.Errorf("%s: mediatype %q is not canonical; write %q", field, mt, essence)
+	case essence != "application/json" && !(strings.HasPrefix(essence, "application/") && strings.HasSuffix(essence, "+json")):
+		return fmt.Errorf("%s: mediatype %q is not JSON (application/json or application/*+json)", field, mt)
+	}
+	return nil
 }
 
 // rawMediaType reports whether body tag mt is valid for a raw body of an

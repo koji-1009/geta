@@ -855,7 +855,6 @@
               }
             }
           },
-          "description": "Also taken as any application/*+json media type, read as application/json",
           "required": true
         },
         "responses": {
@@ -1214,7 +1213,7 @@
               }
             }
           },
-          "description": "The item to file\n\nAlso taken as any application/*+json media type, read as application/json",
+          "description": "The item to file",
           "required": true
         },
         "responses": {
@@ -1357,13 +1356,12 @@
         "operationId": "patchNullUsers1",
         "requestBody": {
           "content": {
-            "application/json": {
+            "application/merge-patch+json": {
               "schema": {
                 "$ref": "#/components/schemas/nullPatch-Input"
               }
             }
           },
-          "description": "Also taken as any application/*+json media type, read as application/json",
           "required": true
         },
         "responses": {
@@ -1411,7 +1409,7 @@
                 "description": "The media type the operation takes, sent with geta's own 415 for content of another media type (RFC 9110 section 15.5.16)",
                 "schema": {
                   "enum": [
-                    "application/json"
+                    "application/merge-patch+json"
                   ],
                   "type": "string"
                 }
@@ -1429,7 +1427,7 @@
                 "description": "The media type the operation takes, sent with geta's own 415 for content of another media type (RFC 5789 section 2.2)",
                 "schema": {
                   "enum": [
-                    "application/json"
+                    "application/merge-patch+json"
                   ],
                   "type": "string"
                 }
@@ -1511,7 +1509,6 @@
               }
             }
           },
-          "description": "Also taken as any application/*+json media type, read as application/json",
           "required": true
         },
         "responses": {

@@ -57,7 +57,25 @@ type bodyPlan struct {
 	// by the reference path (applyDefaults); nil for none.
 	defaults map[*codec]bool
 	desc     string // the body's description (doc tag)
+	declared string // the mediatype tag, or "" for the default
 }
+
+// mediaType returns the one media type the body is taken as: the declared
+// one, or application/json, or on PATCH application/merge-patch+json (RFC
+// 7396), whose absent, null, and value members are what omitzero and
+// geta.Nullable read. A PATCH body is a patch document, and application/json
+// defines none (RFC 5789 §2).
+func (b *bodyPlan) mediaType() string {
+	switch {
+	case b.declared != "":
+		return b.declared
+	case b.method == http.MethodPatch:
+		return mergePatchMediaType
+	}
+	return bodyMediaTypes["json"]
+}
+
+const mergePatchMediaType = "application/merge-patch+json"
 
 var paramLocations = []string{"path", "query", "header", "cookie", "body"}
 
@@ -192,7 +210,8 @@ func (r *registry) bodyPlan(f reflect.StructField, index []int) (*bodyPlan, erro
 		return nil, err
 	}
 	return &bodyPlan{index: index, c: c, optional: optional, use: use,
-		fast: fastEligible(c, map[*codec]bool{}), opts: r.decOpts, defaults: defaultsUnder(c), desc: f.Tag.Get("doc")}, nil
+		fast: fastEligible(c, map[*codec]bool{}), opts: r.decOpts, defaults: defaultsUnder(c), desc: f.Tag.Get("doc"),
+		declared: f.Tag.Get("mediatype")}, nil
 }
 
 // validWildcard reports whether s is a Go identifier, as ServeMux requires
@@ -622,14 +641,15 @@ func (b *bodyPlan) bind(w http.ResponseWriter, r *http.Request, dst reflect.Valu
 	return nil
 }
 
-// judge answers 415 to content in a content coding or not JSON, and nil
-// otherwise.
+// judge answers 415 to content in a content coding or of another media type
+// than the body's (parameters aside), and nil otherwise.
 func (b *bodyPlan) judge(w http.ResponseWriter, r *http.Request) *bindError {
 	if be := codingRefused(w, r); be != nil {
 		return be
 	}
-	if ct := r.Header.Get("Content-Type"); !isJSONMediaType(ct) {
-		return unsupported(w, ct, bodyMediaTypes["json"], b.method)
+	mt := b.mediaType()
+	if ct := r.Header.Get("Content-Type"); !isMediaType(ct, mt) {
+		return unsupported(w, ct, mt, b.method)
 	}
 	return nil
 }
@@ -678,15 +698,14 @@ func (b *bodyPlan) reference(dec *jsontext.Decoder, data []byte, dst reflect.Val
 
 var jsonNumberSyntax = regexp.MustCompile(`^-?(0|[1-9][0-9]*)(\.[0-9]+)?([eE][+-]?[0-9]+)?$`)
 
-func isJSONMediaType(ct string) bool {
-	if ct == "application/json" {
+// isMediaType reports whether Content-Type ct names media type mt, a lower
+// case essence, whatever its parameters.
+func isMediaType(ct, mt string) bool {
+	if ct == mt {
 		return true // fast path
 	}
-	mt, _, err := mime.ParseMediaType(ct)
-	if err != nil {
-		return false
-	}
-	return mt == "application/json" || (strings.HasPrefix(mt, "application/") && strings.HasSuffix(mt, "+json"))
+	essence, _, err := mime.ParseMediaType(ct)
+	return err == nil && essence == mt
 }
 
 // unsupported answers 415 to content whose Content-Type ct is not mt (RFC

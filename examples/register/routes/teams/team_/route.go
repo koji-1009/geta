@@ -92,8 +92,8 @@ type PutIn struct {
 // (omitzero), and a member left out keeps its value. Name is a pointer: it
 // may be left out, but not cleared, and a null for it is a 400. Description
 // is a geta.Nullable: left out, null, and a value are three states, keep,
-// clear, and set. A client may send it as application/merge-patch+json,
-// which geta takes as JSON.
+// clear, and set. A client sends it as application/merge-patch+json, the
+// media type a PATCH's body:"json" takes.
 type TeamPatch struct {
 	Name        *string               `json:"name,omitzero" doc:"The new name; left out, the name is kept" schema:"minLength=1,maxLength=100"`
 	Description geta.Nullable[string] `json:"description,omitzero" doc:"The new description; null removes it, left out it is kept" schema:"maxLength=500"`

@@ -120,6 +120,7 @@ Every behaviour geta states has a test or a command that checks it. The guide ([
 | `Doc.Limits` are the operation's own, in reading, buffering, and the document | `TestOperationLimitsAreTheOperationsOwn`, `TestOperationLimitsKeepComponentsTruthful`, `TestOperationLimitsBufferTheResponse` |
 | `WithLimits` replaces `DefaultLimits` whole; a zero cap is refused | `TestWithLimitsRefusesAZeroCap` |
 | Content of the wrong media type is a 415 naming the right one | `TestUnsupportedMediaTypeIs415` |
+| A JSON body takes one media type: application/json, application/merge-patch+json on PATCH, or the one its mediatype tag declares, which is the document's content key; a mediatype tag is checked by geta.New and getavet alike | `TestABodyTakesItsOneMediaType`, `TestBodyBinding`, `TestMediaTypeTagMistakes`, `TestMediaTypeTagsGetaNewRefuses` (getavet), `FuzzContentHeaders` |
 | Content sent to an operation that reads no body is a 415 | `TestContentToAnOperationWithoutABodyIs415` |
 | Content in a content coding is a 415 with `Accept-Encoding: identity` | `TestContentCodingIs415`, `TestRefusedContentIs415PastTheBodyLimit`, `TestDecodedContentIsTaken` |
 | A declared length is judged before any content is read | `TestDeclaredContentIsRefusedBeforeItIsRead`, `TestADeclaredLengthLeavesAReaderToItsHandler`, `TestAReplacedBodyIsReadNotJudgedByItsHeaders` |

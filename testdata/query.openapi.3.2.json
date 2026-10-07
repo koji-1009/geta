@@ -213,7 +213,6 @@
               }
             }
           },
-          "description": "Also taken as any application/*+json media type, read as application/json",
           "required": true
         },
         "responses": {
@@ -413,7 +412,6 @@
               }
             }
           },
-          "description": "Also taken as any application/*+json media type, read as application/json",
           "required": true
         },
         "responses": {
