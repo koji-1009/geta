@@ -275,8 +275,8 @@ func TestSealedOptionsKeepTheClientsOwn(t *testing.T) {
 
 // An error inside a sealed value has the offset and pointer whether the value
 // is read in one pass or whole (as it is when the client allows duplicate
-// names): relative to the sealed object, at any depth, for a wrong type, a
-// syntax error, and an unknown tag inside.
+// names): its place in the input, at any depth, for a wrong type, a syntax
+// error, and an unknown tag inside.
 func TestSealedErrorsArePlacedAlikeOnBothReads(t *testing.T) {
 	whole := json.JoinOptions(fastShapes.JSONOptions(), jsontext.AllowDuplicateNames(true))
 	where := func(err error) string {

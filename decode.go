@@ -177,7 +177,121 @@ type vpath struct {
 // rootPath is the vpath of a value whose path is path.
 func rootPath(path string) *vpath { return &vpath{name: path, index: -1} }
 
-// member is the path of p's member name: path + "." + name.
+// A path names a member as RFC 9535 (JSONPath) does: by the shorthand .name
+// where name is a member-name-shorthand (§2.5.1.1), and otherwise by a name
+// selector in brackets, ['name'], escaped as a Normalized Path escapes it
+// (§2.7). A name of digits, or one holding a dot, a bracket, or a quote, is
+// then told from an element and from two members.
+
+// isShorthand reports whether name is a member-name-shorthand (RFC 9535
+// §2.5.1.1): a name-first (ALPHA, "_", or a character past U+007F) and then
+// name-chars (those and DIGIT).
+func isShorthand(name string) bool {
+	if name == "" {
+		return false
+	}
+	for i := 0; i < len(name); {
+		r, size := utf8.DecodeRuneInString(name[i:])
+		switch {
+		case 'a' <= r && r <= 'z', 'A' <= r && r <= 'Z', r == '_':
+		case '0' <= r && r <= '9':
+			if i == 0 {
+				return false
+			}
+		case r == utf8.RuneError && size == 1:
+			return false // invalid UTF-8, which brackets write as U+FFFD
+		case r < 0x80:
+			return false
+		}
+		i += size
+	}
+	return true
+}
+
+// A pathWriter is what a member's selector is written to.
+type pathWriter interface {
+	WriteByte(byte) error
+	WriteString(string) (int, error)
+	WriteRune(rune) (int, error)
+}
+
+// writeMember writes the selector of member name to w.
+func writeMember(w pathWriter, name string) {
+	if isShorthand(name) {
+		w.WriteByte('.')
+		w.WriteString(name)
+		return
+	}
+	w.WriteString("['")
+	for _, r := range name {
+		if s := escapeInName(r); s != "" {
+			w.WriteString(s)
+			continue
+		}
+		if r < 0x20 {
+			w.WriteString(`\u00`)
+			w.WriteByte(lowerHex[r>>4])
+			w.WriteByte(lowerHex[r&0xf])
+			continue
+		}
+		w.WriteRune(r) // an invalid byte as U+FFFD
+	}
+	w.WriteString("']")
+}
+
+const lowerHex = "0123456789abcdef"
+
+// escapeInName returns the escape a Normalized Path writes for r in a name
+// (RFC 9535 §2.7, normal-escapable), or "" for none or \u00XX.
+func escapeInName(r rune) string {
+	switch r {
+	case '\b':
+		return `\b`
+	case '\f':
+		return `\f`
+	case '\n':
+		return `\n`
+	case '\r':
+		return `\r`
+	case '\t':
+		return `\t`
+	case '\'':
+		return `\'`
+	case '\\':
+		return `\\`
+	}
+	return ""
+}
+
+// memberLen returns the bytes writeMember writes for name.
+func memberLen(name string) int {
+	if isShorthand(name) {
+		return 1 + len(name)
+	}
+	n := len("['']")
+	for _, r := range name {
+		switch {
+		case escapeInName(r) != "":
+			n += 2
+		case r < 0x20:
+			n += len(`\u0000`)
+		default:
+			n += utf8.RuneLen(r) // U+FFFD for an invalid byte
+		}
+	}
+	return n
+}
+
+// memberPath returns path followed by the selector of member name.
+func memberPath(path, name string) string {
+	var b strings.Builder
+	b.Grow(len(path) + memberLen(name))
+	b.WriteString(path)
+	writeMember(&b, name)
+	return b.String()
+}
+
+// member is the path of p's member name: path + its selector (writeMember).
 func (p *vpath) member(name string) *vpath { return &vpath{up: p, name: name, index: -1} }
 
 // item is the path of p's element i: path + "[i]".
@@ -194,7 +308,7 @@ func (p *vpath) render(limit int) string {
 	top := p
 	for ; top.up != nil && n <= limit; top = top.up {
 		if top.index < 0 {
-			n += 1 + len(top.name)
+			n += memberLen(top.name)
 		} else {
 			n += 2 + len(strconv.Itoa(top.index))
 		}
@@ -242,8 +356,7 @@ func (p *vpath) writeTo(b *strings.Builder, top *vpath) {
 	}
 	p.up.writeTo(b, top)
 	if p.index < 0 {
-		b.WriteByte('.')
-		b.WriteString(p.name)
+		writeMember(b, p.name)
 		return
 	}
 	b.WriteByte('[')
@@ -450,18 +563,285 @@ func (d *decoder) checkAt(c *codec, s *schema, v any, at vpath) {
 // decodeJSON decodes data, which passed check, into dst. A failure is
 // reported as a violation at its JSON Pointer.
 func (d *decoder) decodeJSON(data []byte, dst reflect.Value, opts json.Options) {
-	err := json.Unmarshal(data, dst.Addr().Interface(), opts)
-	if err == nil {
+	if err := json.Unmarshal(data, dst.Addr().Interface(), opts); err != nil {
+		d.failJSON(err, data)
+	}
+}
+
+// failJSON reports err, from encoding/json/v2 reading data, as a violation
+// at its JSON Pointer, the body itself when it has none.
+func (d *decoder) failJSON(err error, data []byte) {
+	path := "$"
+	if p, ok := errorPointer(err); ok {
+		path = pointerPath(data, p)
+	}
+	d.fail(path, "%s", errorText(err))
+}
+
+// errorPointer returns the JSON Pointer err, from encoding/json/v2, is at,
+// if it has one.
+func errorPointer(err error) (jsontext.Pointer, bool) {
+	if se, ok := errors.AsType[*json.SemanticError](err); ok {
+		return se.JSONPointer, true
+	}
+	if se, ok := errors.AsType[*jsontext.SyntacticError](err); ok {
+		return se.JSONPointer, true
+	}
+	return "", false
+}
+
+// errorText returns err's text as a violation's message carries it. The
+// text is the type's own, and may quote the value.
+func errorText(err error) string { return clip(err.Error(), maxErrorBytes) }
+
+// A methodWalk runs the JSON methods of the types under a body that read
+// themselves (kJSON values, and map keys of such types), each on its own
+// value, so that every refusal is a violation listed with the rest of the
+// body's, as check lists the schema's. encoding/json/v2 stops at the first
+// refusal, and decodeJSON runs only on a body check passed.
+//
+// It reads the body (dec) in step with its parsed tree, and runs a method
+// only where check reaches the value and the value's schema passes, so that
+// it reports nothing check reports or does not reach: a member check found
+// unknown, an array or object past its bound, a key the keys' schema
+// refuses, a variant no discriminator selects, a declared type's keyword.
+type methodWalk struct {
+	d   *decoder
+	dec *jsontext.Decoder
+	// opts are the body's options (bodyPlan.opts), with which v2 runs the
+	// methods.
+	opts json.Options
+	// under are the codecs at or under which a method runs (methodsUnder).
+	under map[*codec]bool
+	// scratch is a decoder whose violations are discarded: it asks check's
+	// own questions of one value.
+	scratch decoder
+	// refused counts the refusals, listed or not.
+	refused int
+	// ptr is the JSON Pointer of the value being read, kept as the walk
+	// enters and leaves values, so that a refusal's costs one copy of it
+	// (jsontext.Decoder.StackPointer escapes every name again).
+	ptr []byte
+	// path is the value's path as check names it (vpath), kept as ptr is.
+	path bytes.Buffer
+	// root is the path the scratch decoder's violations are at.
+	root vpath
+}
+
+// A mark is the lengths of ptr and path before a step, which leave restores.
+type mark struct{ ptr, path int }
+
+// enter appends a member name to ptr and path and returns their lengths
+// before it.
+func (w *methodWalk) enter(name string) mark {
+	n := mark{len(w.ptr), w.path.Len()}
+	writeMember(&w.path, name)
+	w.ptr = append(w.ptr, '/')
+	for i := 0; i < len(name); i++ {
+		// RFC 6901 §3, as jsontext writes a pointer.
+		switch c := name[i]; c {
+		case '~':
+			w.ptr = append(w.ptr, "~0"...)
+		case '/':
+			w.ptr = append(w.ptr, "~1"...)
+		default:
+			w.ptr = append(w.ptr, c)
+		}
+	}
+	return n
+}
+
+// enterIndex appends an array index to ptr and path, as enter does a name.
+func (w *methodWalk) enterIndex(i int) mark {
+	n := mark{len(w.ptr), w.path.Len()}
+	w.path.WriteByte('[')
+	w.path.WriteString(strconv.Itoa(i))
+	w.path.WriteByte(']')
+	w.ptr = strconv.AppendInt(append(w.ptr, '/'), int64(i), 10)
+	return n
+}
+
+// leave cuts ptr and path back to the mark enter returned.
+func (w *methodWalk) leave(n mark) { w.ptr = w.ptr[:n.ptr]; w.path.Truncate(n.path) }
+
+// methods runs the JSON methods under c, as methodWalk describes, on data,
+// whose parsed tree is v, and reports each refusal at its path. It returns
+// how many methods refused.
+func (d *decoder) methods(c *codec, s *schema, v any, data []byte, opts json.Options, under map[*codec]bool) int {
+	if !under[c] {
+		return 0
+	}
+	w := &methodWalk{d: d, dec: jsontext.NewDecoder(bytes.NewReader(data)), opts: opts, under: under,
+		scratch: decoder{limits: d.limits, in: d.in, written: d.written}, root: vpath{index: -1}}
+	w.path.WriteByte('$')
+	w.value(c, s, v)
+	return w.refused
+}
+
+// passes reports whether check, at the value only, finds no violation.
+func (w *methodWalk) passes(check func(d *decoder, p *vpath) bool) bool {
+	w.scratch.errs, w.scratch.omitted = w.scratch.errs[:0], 0
+	return check(&w.scratch, &w.root) && len(w.scratch.errs) == 0
+}
+
+// skip reads the next value, which the walk does not enter. The body was
+// parsed already, so the read cannot fail.
+func (w *methodWalk) skip() { w.dec.SkipValue() }
+
+// value reads one value of c, at the use s, whose parsed tree is v. It
+// enters the value where checkAt does.
+func (w *methodWalk) value(c *codec, s *schema, v any) {
+	if !w.under[c] {
+		w.skip()
 		return
 	}
-	path := "$"
-	if se, ok := errors.AsType[*json.SemanticError](err); ok {
-		path = pointerPath(se.JSONPointer)
-	} else if se, ok := errors.AsType[*jsontext.SyntacticError](err); ok {
-		path = pointerPath(se.JSONPointer)
+	if s.Ref != "" {
+		s = c.schema
 	}
-	// The text is the type's own, and may quote the value.
-	d.fail(path, "%s", clip(err.Error(), maxErrorBytes))
+	switch c.kind {
+	case kOneOf:
+		// The variant checkOneOf checks the object against, if any.
+		m, _ := v.(map[string]any)
+		tag, _ := m[c.disc].(string)
+		if vc := c.variant([]byte(tag)); vc != nil && m != nil {
+			w.value(vc, vc.use(), v)
+			return
+		}
+	case kNull:
+		if v != nil {
+			w.value(c.elem, s, v)
+			return
+		}
+	case kJSON:
+		if w.passes(func(d *decoder, p *vpath) bool { d.checkAt(c, s, v, *p); return true }) {
+			w.run(c.t)
+			return
+		}
+	case kStruct:
+		if m, ok := v.(map[string]any); ok {
+			w.object(c, m)
+			return
+		}
+	case kSlice:
+		a, ok := v.([]any)
+		if ok && w.passes(func(d *decoder, p *vpath) bool { return d.arrayLenAt(s, len(a), p) }) {
+			w.dec.ReadToken() // '['
+			for i, el := range a {
+				n := w.enterIndex(i)
+				w.value(c.elem, s.Items, el)
+				w.leave(n)
+			}
+			w.dec.ReadToken() // ']'
+			return
+		}
+	case kMap:
+		m, ok := v.(map[string]any)
+		if ok && w.passes(func(d *decoder, p *vpath) bool { return d.objectLen(s, len(m), p) }) {
+			w.mapValue(c, s, m)
+			return
+		}
+	}
+	w.skip()
+}
+
+// object reads the members of a struct whose parsed tree is m.
+func (w *methodWalk) object(c *codec, m map[string]any) {
+	w.dec.ReadToken() // '{'
+	for w.dec.PeekKind() != '}' {
+		name, _ := w.dec.ReadToken()
+		k := name.String()
+		i := c.fieldIndex([]byte(k))
+		if i < 0 {
+			w.skip() // an unknown member
+			continue
+		}
+		fc := &c.fields[i]
+		// A pointer member sent null stays nil: v2 runs no method.
+		if fc.optional && m[k] == nil && c.t.FieldByIndex(fc.index).Type.Kind() == reflect.Pointer {
+			w.skip()
+			continue
+		}
+		n := w.enter(k)
+		w.value(fc.c, fc.use, m[k])
+		w.leave(n)
+	}
+	w.dec.ReadToken() // '}'
+}
+
+// mapValue reads the members of a map whose parsed tree is m. A value is
+// entered only if its key passes, as in checkAt; a key of a type that reads
+// itself is then read by its method, and the value only if the method takes
+// the key.
+func (w *methodWalk) mapValue(c *codec, s *schema, m map[string]any) {
+	w.dec.ReadToken() // '{'
+	for w.dec.PeekKind() != '}' {
+		raw, _ := w.dec.ReadValue() // the name as written, which v2 hands the key's method
+		k := memberName(raw)
+		if !w.passes(func(d *decoder, p *vpath) bool { return d.key(s, k, p) && d.keyText(c.key, k, p) }) {
+			w.skip()
+			continue
+		}
+		n := w.enter(k)
+		if c.keyMethods && c.key.kind == kJSON && !w.runOn(c.key.t, raw) {
+			w.skip()
+		} else {
+			w.value(c.elem, s.Additional, m[k])
+		}
+		w.leave(n)
+	}
+	w.dec.ReadToken() // '}'
+}
+
+// memberName returns the unquoted member name raw, which the parse
+// validated.
+func memberName(raw jsontext.Value) string {
+	b, _ := jsontext.AppendUnquote(nil, raw)
+	return string(b)
+}
+
+// run reads the next value and runs t's method on it.
+func (w *methodWalk) run(t reflect.Type) {
+	raw, _ := w.dec.ReadValue()
+	w.runOn(t, raw)
+}
+
+// runOn runs t's method on raw, the value or member name just read, and
+// reports whether it took it. A refusal is reported where v2 reading the
+// whole body would report it, in the same words: the error's position is
+// moved from raw's start to the body's.
+func (w *methodWalk) runOn(t reflect.Type, raw jsontext.Value) bool {
+	err := json.Unmarshal(raw, reflect.New(t).Interface(), w.opts)
+	if err == nil {
+		return true
+	}
+	w.refused++
+	if len(w.d.errs) >= maxViolations {
+		// Counted, not listed: its pointer, as long as the nesting, is not
+		// copied.
+		w.d.omitted++
+		return false
+	}
+	// The path: the value's, then where in raw the error is.
+	path := w.path.String()
+	if rel, ok := errorPointer(err); ok && rel != "" {
+		path += pointerPath(raw, rel)[len("$"):]
+	}
+	at, off := jsontext.Pointer(w.ptr), w.dec.InputOffset()-int64(len(raw))
+	if se, ok := errors.AsType[*json.SemanticError](err); ok {
+		se.JSONPointer, se.ByteOffset = at+se.JSONPointer, off+se.ByteOffset
+	} else if se, ok := errors.AsType[*jsontext.SyntacticError](err); ok {
+		se.JSONPointer, se.ByteOffset = at+se.JSONPointer, off+se.ByteOffset
+	}
+	w.d.fail(path, "%s", errorText(err))
+	return false
+}
+
+// methodsUnder returns the codecs reachable from c at or under which a type
+// reads itself with its JSON methods (methodWalk), or nil if there are none.
+func methodsUnder(c *codec) map[*codec]bool {
+	return codecsUnder(c, func(c *codec) bool {
+		return c.kind == kJSON || c.kind == kMap && c.keyMethods && c.key.kind == kJSON
+	})
 }
 
 // applyDefaults sets, at any depth of dst, every member missing from v that
@@ -545,6 +925,14 @@ func applyDefaults(c *codec, v any, dst reflect.Value, under map[*codec]bool, op
 // defaultsUnder returns the codecs reachable from c under which some member
 // declares a default, or nil if there are none.
 func defaultsUnder(c *codec) map[*codec]bool {
+	return codecsUnder(c, func(c *codec) bool {
+		return c.kind == kStruct && slices.ContainsFunc(c.fields, func(f fieldCodec) bool { return f.use.Default != nil })
+	})
+}
+
+// codecsUnder returns the codecs reachable from c that are, or reach, one
+// that self holds of, or nil if there are none.
+func codecsUnder(c *codec, self func(c *codec) bool) map[*codec]bool {
 	var all []*codec
 	seen := map[*codec]bool{}
 	var walk func(c *codec)
@@ -575,14 +963,14 @@ func defaultsUnder(c *codec) map[*codec]bool {
 			if under[c] {
 				continue
 			}
-			has := false
+			has := self(c)
 			switch c.kind {
 			case kStruct:
-				has = slices.ContainsFunc(c.fields, func(f fieldCodec) bool { return f.use.Default != nil || under[f.c] })
+				has = has || slices.ContainsFunc(c.fields, func(f fieldCodec) bool { return under[f.c] })
 			case kSlice, kMap, kNull:
-				has = under[c.elem]
+				has = has || under[c.elem]
 			case kOneOf:
-				has = slices.ContainsFunc(c.variants, func(v variantCodec) bool { return under[v.c] })
+				has = has || slices.ContainsFunc(c.variants, func(v variantCodec) bool { return under[v.c] })
 			}
 			if has {
 				if under == nil {

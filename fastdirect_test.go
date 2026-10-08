@@ -395,7 +395,7 @@ func wholeOptions() json.Options {
 	s := &sealedReader{t: fastShapes.t, disc: fastShapes.disc, types: types}
 	return json.JoinOptions(json.RejectUnknownMembers(true), json.WithUnmarshalers(json.JoinUnmarshalers(timeUnmarshaler,
 		json.UnmarshalFromFunc(func(dec *jsontext.Decoder, v *fastShape) error {
-			x, err := s.whole(dec, nil)
+			x, err := s.whole(dec)
 			if err == nil {
 				*v = x.(fastShape)
 			}

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"mime"
 	"mime/multipart"
@@ -440,6 +441,47 @@ func fzCutPath(path string) string {
 	return "…" + path[i:]
 }
 
+// fzMemberPath is the path of the body's member or form field name as RFC
+// 9535 writes it: $.name for a member-name-shorthand (§2.5.1.1), else
+// $['name'] escaped as in a Normalized Path (§2.7), invalid UTF-8 as U+FFFD.
+func fzMemberPath(name string) string {
+	name = strings.ToValidUTF8(name, "�")
+	short := name != ""
+	for i, r := range name {
+		if !(r == '_' || r >= 0x80 || 'a' <= r && r <= 'z' || 'A' <= r && r <= 'Z' || i > 0 && '0' <= r && r <= '9') {
+			short = false
+		}
+	}
+	if short {
+		return "$." + name
+	}
+	var b strings.Builder
+	b.WriteString("$['")
+	for _, r := range name {
+		switch {
+		case r == '\b':
+			b.WriteString(`\b`)
+		case r == '\f':
+			b.WriteString(`\f`)
+		case r == '\n':
+			b.WriteString(`\n`)
+		case r == '\r':
+			b.WriteString(`\r`)
+		case r == '\t':
+			b.WriteString(`\t`)
+		case r == '\'' || r == '\\':
+			b.WriteByte('\\')
+			b.WriteRune(r)
+		case r < 0x20:
+			fmt.Fprintf(&b, `\u%04x`, r)
+		default:
+			b.WriteRune(r)
+		}
+	}
+	b.WriteString("']")
+	return b.String()
+}
+
 // FuzzFormBody sends an arbitrary form body, with a declared length or
 // none, to an input whose form holds every kind of field. A body past
 // MaxBodyBytes is a 413, an empty one a missing body, one net/url cannot
@@ -530,7 +572,7 @@ func FuzzFormBody(f *testing.F) {
 		} else {
 			listed := fzListed(p, "")
 			for _, k := range unknownNames {
-				if want := fzCutPath("$."+strings.ToValidUTF8(k, "�")) + ": unknown field"; !slices.Contains(listed, want) && p.Omitted == 0 {
+				if want := fzCutPath(fzMemberPath(k)) + ": unknown field"; !slices.Contains(listed, want) && p.Omitted == 0 {
 					t.Fatalf("%q: no %q in %q", body, want, listed)
 				}
 			}
@@ -631,7 +673,7 @@ func fzDeepObjectAgreesWithForm(tb testing.TB) func(t *testing.T, raw string) {
 		asForm := map[string]string{}
 		for k := range vals {
 			m := strings.ToValidUTF8(k, "�")
-			asForm[fzCutPath("filter["+m+"]")] = fzCutPath("$." + m)
+			asForm[fzCutPath("filter["+m+"]")] = fzCutPath(fzMemberPath(m))
 		}
 		dl := make([]string, len(dp.Errors))
 		for i, v := range dp.Errors {

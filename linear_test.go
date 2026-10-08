@@ -2,6 +2,7 @@ package geta
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"reflect"
 	"runtime"
@@ -379,14 +380,48 @@ func TestBodyWorkIsLinear(t *testing.T) {
 			}
 		}
 	})
+	// Every element's own method refuses it, under a name as long as half
+	// the body: only the kept refusals' pointers are made.
+	linear(t, "many method refusals", func(n int) func() {
+		data := []byte(`{"x":"no","d":{"` + strings.Repeat("k", n/2) + `":[` + strings.Repeat("1,", n/4) + `1]}}`)
+		limits := linLimits
+		limits.MaxStringLength = 4 << 20
+		r, c := linCodec[linRefusedRoot](t)
+		return func() {
+			errs := reference(r, c, c.use(), data, limits, reflect.ValueOf(new(linRefusedRoot)).Elem())
+			if len(errs) != maxViolations || !strings.HasSuffix(errs[1].Path, "[0]") {
+				t.Fatal(len(errs))
+			}
+		}
+	})
 }
 
-// A path is rendered as building it step by step would: path + "." + name,
-// path + "[i]".
+// linRefused refuses every value with its own method.
+type linRefused struct{}
+
+func (linRefused) MarshalJSON() ([]byte, error) { return []byte(`0`), nil }
+func (*linRefused) UnmarshalJSON([]byte) error  { return errors.New("refused") }
+
+type linRefusedRoot struct {
+	X int                     `json:"x"`
+	D map[string][]linRefused `json:"d"`
+}
+
+// A path is rendered as building it step by step would: path + the name's
+// selector (writeMember), path + "[i]", and cut as capPath cuts the whole.
 func TestViolationPathRendering(t *testing.T) {
-	p := rootPath("$").member("").item(3).member("a.b").item(0).item(12)
-	if got := p.String(); got != "$.[3].a.b[0][12]" {
+	p := rootPath("$").member("").item(3).member("a.b").item(0).item(12).member("ok")
+	if got := p.String(); got != "$[''][3]['a.b'][0][12].ok" {
 		t.Fatal(got)
+	}
+	// Past 256 bytes, names whose selectors are longer than the names.
+	p, whole := rootPath("$"), "$"
+	for i := range 40 {
+		name := strings.Repeat("'\n", i%3) + "x"
+		p, whole = p.member(name).item(i), memberPath(whole, name)+"["+strconv.Itoa(i)+"]"
+	}
+	if got := p.String(); got != capPath(whole) || len(whole) <= maxPathBytes {
+		t.Fatalf("%s\n%s", got, capPath(whole))
 	}
 	if got := rootPath("q").String(); got != "q" {
 		t.Fatal(got)

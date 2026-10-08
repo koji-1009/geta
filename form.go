@@ -138,13 +138,14 @@ func (r *registry) formFields(p *formPlan) error {
 	return nil
 }
 
-// at returns a field's violation path: $.name in a form, param[name] in a
+// at returns a field's violation path: $ and the name's selector in a form,
+// named as a JSON body's member is ($.name, $['a.b']), and param[name] in a
 // deepObject.
 func (p *formPlan) at(name string) string {
 	if p.enc == deepObject {
 		return p.param + "[" + name + "]"
 	}
-	return "$." + name
+	return memberPath("$", name)
 }
 
 // in returns where the values are: body, or query for a deepObject.

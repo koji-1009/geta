@@ -111,15 +111,16 @@ type sealedReader struct {
 // object again (whole) costs, for sealed values nested in one another, time
 // proportional to the depth times the input. So where it can, read checks
 // the outermost sealed object once, finds each discriminator with a
-// lookahead, and reads each variant from dec itself. An error is then
-// reported at the offset and pointer whole reports it at: relative to the
-// sealed object whose variant was being read.
+// lookahead, and reads each variant from dec itself. An error is reported
+// where encoding/json/v2 reports one outside a sealed value, at its offset
+// and pointer in dec's input, whichever way the value was read (whole moves
+// its errors there).
 func (s *sealedReader) read(dec *jsontext.Decoder) (any, error) {
 	st, nested := sealedStates.Load(dec)
 	if !nested {
 		st = s.begin(dec)
 		if st == nil {
-			return s.whole(dec, nil)
+			return s.whole(dec)
 		}
 		defer sealedStates.Delete(dec)
 	}
@@ -132,15 +133,7 @@ var sealedStates sync.Map // *jsontext.Decoder → *sealedState
 
 type sealedState struct {
 	ahead lookahead
-	// levels are the sealed objects being read, outermost first: the offset
-	// of each one's '{' and the depth of dec before it.
-	levels []sealedLevel
-	// final is the error last made relative; the sealed objects around it
-	// pass it on as it is.
-	final error
 }
-
-type sealedLevel struct{ start, depth int }
 
 // begin checks that the object dec is about to read is valid JSON as dec
 // would read it, all in dec's buffer, and returns the state of the reads in
@@ -179,82 +172,40 @@ func (s *sealedReader) begin(dec *jsontext.Decoder) any {
 // begin checked, as the variant its discriminator selects, from dec itself.
 func (s *sealedReader) stream(dec *jsontext.Decoder, st *sealedState) (any, error) {
 	if dec.PeekKind() != '{' {
-		return s.whole(dec, st) // whole reports why
+		return s.whole(dec) // whole reports why
 	}
 	buf, base := dec.UnreadBuffer(), int(dec.InputOffset())
 	// begin held the nesting of the whole object to jsontext's ceiling.
 	tag, ok := st.ahead.tag(buf, base, 0, s.disc, math.MaxInt)
 	vt := s.types[string(tag)]
 	if !ok || vt == nil {
-		return s.whole(dec, st) // whole reports why
+		return s.whole(dec) // whole reports why
 	}
-	level := sealedLevel{base + bytes.IndexByte(buf, '{'), dec.StackDepth()}
-	st.levels = append(st.levels, level)
+	// Read from dec itself, an error is at its place in dec's input.
 	nv := reflect.New(vt)
-	err := json.UnmarshalDecode(dec, nv.Interface())
-	st.levels = st.levels[:len(st.levels)-1]
-	if err != nil {
-		return nil, st.relative(err, level)
+	if err := json.UnmarshalDecode(dec, nv.Interface()); err != nil {
+		return nil, err
 	}
 	return nv.Elem().Interface(), nil
 }
 
-// relative makes err, from reading the variant of the sealed object at
-// level, relative to that object, as whole reports it, unless a sealed
-// object inside already did.
-func (st *sealedState) relative(err error, level sealedLevel) error {
-	if err == st.final {
-		return err
+// inInput moves err, from reading on its own a value dec has just read
+// whole, from the value's start to its place in dec's input: its pointer
+// follows the value's, and its offset the value's.
+func inInput(err error, dec *jsontext.Decoder, raw jsontext.Value) error {
+	at, off := dec.StackPointer(), dec.InputOffset()-int64(len(raw))
+	if se, ok := errors.AsType[*json.SemanticError](err); ok {
+		se.JSONPointer, se.ByteOffset = at+se.JSONPointer, off+se.ByteOffset
+	} else if se, ok := errors.AsType[*jsontext.SyntacticError](err); ok {
+		se.JSONPointer, se.ByteOffset = at+se.JSONPointer, off+se.ByteOffset
 	}
-	var parent sealedLevel // the decoder's root for the outermost
-	if n := len(st.levels); n > 0 {
-		parent = st.levels[n-1]
-	}
-	switch e := err.(type) {
-	case *json.SemanticError:
-		e.ByteOffset, e.JSONPointer = relativeTo(e.ByteOffset, e.JSONPointer, level, parent)
-	case *jsontext.SyntacticError:
-		e.ByteOffset, e.JSONPointer = relativeTo(e.ByteOffset, e.JSONPointer, level, parent)
-	default:
-		return err
-	}
-	st.final = err
 	return err
 }
 
-// relativeTo returns the offset and pointer of an error at off and ptr in
-// the input relative to the sealed object at level. Where the relative
-// offset is 0 or the pointer empty, the error is at the object itself, and
-// v2 positions it in the sealed object around it, parent.
-func relativeTo(off int64, ptr jsontext.Pointer, level, parent sealedLevel) (int64, jsontext.Pointer) {
-	rel := off - int64(level.start)
-	if rel == 0 {
-		rel = int64(level.start - parent.start)
-	}
-	p := trimPointer(ptr, level.depth)
-	if p == "" {
-		p = trimPointer(ptr, parent.depth)
-	}
-	return rel, p
-}
-
-// trimPointer drops the first n reference tokens of p.
-func trimPointer(p jsontext.Pointer, n int) jsontext.Pointer {
-	for range n {
-		i := strings.IndexByte(string(p[min(1, len(p)):]), '/')
-		if i < 0 {
-			return ""
-		}
-		p = p[i+1:]
-	}
-	return p
-}
-
 // whole reads the next value of dec whole, finds its discriminator, and
-// reads the value again as the variant it selects. Inside an object begin
-// checked (st non-nil), an error from reading the variant is already
-// relative to it.
-func (s *sealedReader) whole(dec *jsontext.Decoder, st *sealedState) (any, error) {
+// reads the value again as the variant it selects. An error from reading it
+// again is moved to its place in dec's input (inInput).
+func (s *sealedReader) whole(dec *jsontext.Decoder) (any, error) {
 	raw, err := dec.ReadValue()
 	if err != nil {
 		return nil, err
@@ -264,7 +215,7 @@ func (s *sealedReader) whole(dec *jsontext.Decoder, st *sealedState) (any, error
 	opts := dec.Options()
 	var members map[string]jsontext.Value
 	if err := json.Unmarshal(raw, &members, opts); err != nil {
-		return nil, err
+		return nil, inInput(err, dec, raw)
 	}
 	var tag string
 	if err := json.Unmarshal(members[s.disc], &tag, opts); err != nil {
@@ -276,10 +227,7 @@ func (s *sealedReader) whole(dec *jsontext.Decoder, st *sealedState) (any, error
 	}
 	nv := reflect.New(vt)
 	if err := json.Unmarshal(raw, nv.Interface(), opts); err != nil {
-		if st != nil {
-			st.final = err
-		}
-		return nil, err
+		return nil, inInput(err, dec, raw)
 	}
 	return nv.Elem().Interface(), nil
 }
