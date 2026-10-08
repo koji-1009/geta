@@ -83,7 +83,7 @@ func FuzzBinding(f *testing.F) {
 		app.ServeHTTP(rec, req)
 		switch rec.Code {
 		case 200, 400, 413:
-		case 404, 301, 307, 308: // ServeMux: no match, or a path it cleans by redirect
+		case 404, 308: // no match, or a dot segment redirected to the clean path
 		default:
 			t.Fatalf("status %d for %q %q %q: %s", rec.Code, u, trace, body, rec.Body)
 		}

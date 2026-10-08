@@ -381,10 +381,10 @@ func TestMWCORSRedirectExposesTheCleanPathsHeaders(t *testing.T) {
 	}
 	sameHeaders(t, "GET /./r 401", r.Header().Get("Access-Control-Expose-Headers"), "ETag", "WWW-Authenticate")
 	r = do(t, a, "GET", "/./r", "Origin", "https://a.example", "Authorization", "Bearer t")
-	if r.Code != http.StatusTemporaryRedirect || r.Header().Get("Location") != "/r" {
+	if r.Code != http.StatusPermanentRedirect || r.Header().Get("Location") != "/r" {
 		t.Fatal(r.Code, r.Header())
 	}
-	sameHeaders(t, "GET /./r 307", r.Header().Get("Access-Control-Expose-Headers"), "ETag", "WWW-Authenticate")
+	sameHeaders(t, "GET /./r 308", r.Header().Get("Access-Control-Expose-Headers"), "ETag", "WWW-Authenticate")
 }
 
 // What ConcurrencyLimit and Timeout answer is documented with their reasons,

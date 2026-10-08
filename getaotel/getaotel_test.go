@@ -454,11 +454,11 @@ func TestAnUnmatchedRequestIsNamedByItsMethodAlone(t *testing.T) {
 func TestARedirectIsNamedByTheTemplateItLeadsTo(t *testing.T) {
 	h := serve(t, table(nil))
 	res := h.c.Get("/users/./7")
-	if res.Status != http.StatusTemporaryRedirect || res.Header.Get("Location") != "/users/7" {
+	if res.Status != http.StatusPermanentRedirect || res.Header.Get("Location") != "/users/7" {
 		t.Fatal(res.Status, res.Header)
 	}
 	s := h.span()
-	if s.Name() != "GET /users/{id}" || status(t, s) != 307 {
+	if s.Name() != "GET /users/{id}" || status(t, s) != 308 {
 		t.Fatal(s.Name(), status(t, s))
 	}
 }

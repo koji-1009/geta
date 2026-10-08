@@ -59,7 +59,7 @@ func TestRejectsZeroAndInvalidMiddlewareEverywhere(t *testing.T) {
 }
 
 // A request redirected to its clean path carries the match its clean path
-// reaches, and the access log records that route with 307; the target's
+// reaches, and the access log records that route with 308; the target's
 // Doc.BeforeGate does not run for the redirect.
 func TestARedirectCarriesTheMatchOfItsCleanPath(t *testing.T) {
 	var tr trail
@@ -67,14 +67,14 @@ func TestARedirectCarriesTheMatchOfItsCleanPath(t *testing.T) {
 	tbl := limitedTable(geta.Scope{geta.AccessLog(log), tr.mark("root"), gate()})
 	a := accepts(t, tbl)
 	for range 2 {
-		if r := do(t, a, "POST", "/./login"); r.Code != http.StatusTemporaryRedirect || r.Header().Get("Location") != "/login" {
+		if r := do(t, a, "POST", "/./login"); r.Code != http.StatusPermanentRedirect || r.Header().Get("Location") != "/login" {
 			t.Fatal(r.Code, r.Header())
 		}
 	}
 	if got := tr.take(); got != "root=/login,root=/login" {
 		t.Fatal(got)
 	}
-	if !strings.Contains(buf.String(), "method=POST route=/login status=307") {
+	if !strings.Contains(buf.String(), "method=POST route=/login status=308") {
 		t.Fatal(buf.String())
 	}
 	// The limit of one a minute is untouched by the redirects.

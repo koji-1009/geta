@@ -163,17 +163,19 @@ func escapedByte(p string, i int) bool {
 	}
 }
 
-// redirectClean answers 307 to target with Location, Content-Length 0, and no
-// body.
+// redirectClean answers 308 to target with Location, Content-Length 0, and no
+// body. The clean form is the same resource for good (RFC 9110 §4.2.3: URIs
+// equivalent after normalization), so the redirect is permanent; 308, like
+// 307, keeps the method and the body (RFC 9110 §15.4.9).
 func redirectClean(w http.ResponseWriter, target string) {
 	h := w.Header()
 	h.Set("Location", target)
 	h.Set("Content-Length", "0")
-	w.WriteHeader(http.StatusTemporaryRedirect)
+	w.WriteHeader(http.StatusPermanentRedirect)
 }
 
 // dispatch runs the matched operation, OPTIONS on a served path included.
-// Otherwise: a path the client sent with a dot segment is a 307 to its clean
+// Otherwise: a path the client sent with a dot segment is a 308 to its clean
 // form (an empty segment is no dot segment: such a path matches nothing), a
 // path served under other methods is a 405 problem with
 // Allow, and anything else is a 404 problem. OPTIONS * answers 204 with every

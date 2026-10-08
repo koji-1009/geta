@@ -290,8 +290,8 @@ func TestRedirectUnderAMountStaysInsideIt(t *testing.T) {
 	} {
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
-		if rec.Code != http.StatusTemporaryRedirect || rec.Header().Get("Location") != want {
-			t.Errorf("%s: %d Location %q; want 307 %q", path, rec.Code, rec.Header().Get("Location"), want)
+		if rec.Code != http.StatusPermanentRedirect || rec.Header().Get("Location") != want {
+			t.Errorf("%s: %d Location %q; want 308 %q", path, rec.Code, rec.Header().Get("Location"), want)
 		}
 	}
 	for path, want := range map[string]string{
@@ -308,7 +308,7 @@ func TestRedirectUnderAMountStaysInsideIt(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "http://example.com/api/./users", nil)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
-	if rec.Code != http.StatusTemporaryRedirect || rec.Header().Get("Location") != "/api/users" {
+	if rec.Code != http.StatusPermanentRedirect || rec.Header().Get("Location") != "/api/users" {
 		t.Errorf("absolute form: %d Location %q", rec.Code, rec.Header().Get("Location"))
 	}
 }

@@ -121,7 +121,7 @@ func TestUncleanPathsRedirect(t *testing.T) {
 		rec := httptest.NewRecorder()
 		c.App().ServeHTTP(rec, req)
 		h := rec.Header()
-		if rec.Code != http.StatusTemporaryRedirect || h.Get("Location") != tc.want || rec.Body.Len() != 0 ||
+		if rec.Code != http.StatusPermanentRedirect || h.Get("Location") != tc.want || rec.Body.Len() != 0 ||
 			h.Get("Content-Length") != "0" || h.Get("Content-Type") != "" {
 			t.Errorf("%s: %d %q %v %q", tc.target, rec.Code, h.Get("Location"), h, rec.Body)
 		}
@@ -143,7 +143,7 @@ func TestUncleanPathsRedirect(t *testing.T) {
 			}
 			rec := httptest.NewRecorder()
 			c.App().ServeHTTP(rec, req)
-			if rec.Code != http.StatusTemporaryRedirect || rec.Header().Get("Location") != tc.want {
+			if rec.Code != http.StatusPermanentRedirect || rec.Header().Get("Location") != tc.want {
 				t.Errorf("%q (sent %v): %d %q", tc.path, sent, rec.Code, rec.Header().Get("Location"))
 			}
 		}
@@ -152,7 +152,7 @@ func TestUncleanPathsRedirect(t *testing.T) {
 	for _, m := range []string{http.MethodHead, http.MethodPost, http.MethodDelete} {
 		rec := httptest.NewRecorder()
 		c.App().ServeHTTP(rec, httptest.NewRequest(m, "/x/../\\evil.example", nil))
-		if h := rec.Header(); rec.Code != http.StatusTemporaryRedirect || h.Get("Location") != "/%5Cevil.example" ||
+		if h := rec.Header(); rec.Code != http.StatusPermanentRedirect || h.Get("Location") != "/%5Cevil.example" ||
 			rec.Body.Len() != 0 || h.Get("Content-Length") != "0" || h.Get("Content-Type") != "" {
 			t.Errorf("%s: %d %v %q", m, rec.Code, h, rec.Body)
 		}
@@ -547,7 +547,7 @@ type routeWant struct {
 // alone.
 func refRoute(tmpls []refTemplate, method, escaped string) routeWant {
 	if c := refClean(escaped); c != escaped {
-		return routeWant{status: http.StatusTemporaryRedirect, location: c}
+		return routeWant{status: http.StatusPermanentRedirect, location: c}
 	}
 	var segs []string
 	if escaped != "/" {
@@ -764,7 +764,7 @@ func FuzzRouter(f *testing.F) {
 						t.Fatalf("%s: the document of OPTIONS %s does not list Allow %q", where, m.Template, want.allow)
 					}
 				}
-			case http.StatusTemporaryRedirect:
+			case http.StatusPermanentRedirect:
 				if got := rec.Header().Get("Location"); got != want.location {
 					t.Fatalf("%s: Location %q, want %q", where, got, want.location)
 				}
@@ -787,7 +787,7 @@ func FuzzRouter(f *testing.F) {
 }
 
 // redirectStaysOnHost serves req, whose path is not clean, and fails unless
-// the answer is a 307 with no body whose Location, resolved against the
+// the answer is a 308 with no body whose Location, resolved against the
 // request's URL, names the request's host, or no redirect at all (a clean
 // form beginning with an empty segment).
 func redirectStaysOnHost(t *testing.T, app http.Handler, req *http.Request) {
@@ -795,11 +795,11 @@ func redirectStaysOnHost(t *testing.T, app http.Handler, req *http.Request) {
 	rec := httptest.NewRecorder()
 	app.ServeHTTP(rec, req)
 	loc := rec.Header().Get("Location")
-	if loc == "" && rec.Code != http.StatusTemporaryRedirect {
+	if loc == "" && rec.Code != http.StatusPermanentRedirect {
 		return
 	}
-	if rec.Code != http.StatusTemporaryRedirect || rec.Body.Len() != 0 {
-		t.Fatalf("%q (path %q): status %d, body %q, want a 307 with no body", req.RequestURI, req.URL.Path, rec.Code, rec.Body)
+	if rec.Code != http.StatusPermanentRedirect || rec.Body.Len() != 0 {
+		t.Fatalf("%q (path %q): status %d, body %q, want a 308 with no body", req.RequestURI, req.URL.Path, rec.Code, rec.Body)
 	}
 	u, err := url.Parse(loc)
 	if err != nil {

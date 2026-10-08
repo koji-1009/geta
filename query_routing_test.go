@@ -45,7 +45,7 @@ func TestETagSkipsQuery(t *testing.T) {
 	}
 }
 
-// An unclean QUERY path is answered 307 to the clean path, the query
+// An unclean QUERY path is answered 308 to the clean path, the query
 // string kept, so the client repeats the method and the body there.
 func TestQueryRedirectKeepsTheQueryString(t *testing.T) {
 	a, err := geta.New(queryTable(), geta.WithOpenAPI(geta.OpenAPI32))
@@ -61,8 +61,8 @@ func TestQueryRedirectKeepsTheQueryString(t *testing.T) {
 		req.Header.Set("Content-Type", "application/json")
 		rec := httptest.NewRecorder()
 		a.ServeHTTP(rec, req)
-		if rec.Code != http.StatusTemporaryRedirect || rec.Header().Get("Location") != want || rec.Body.Len() != 0 {
-			t.Errorf("QUERY %s: %d Location %q body %q; want 307 %q and no body", path, rec.Code, rec.Header().Get("Location"), rec.Body, want)
+		if rec.Code != http.StatusPermanentRedirect || rec.Header().Get("Location") != want || rec.Body.Len() != 0 {
+			t.Errorf("QUERY %s: %d Location %q body %q; want 308 %q and no body", path, rec.Code, rec.Header().Get("Location"), rec.Body, want)
 		}
 	}
 }
