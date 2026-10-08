@@ -163,8 +163,8 @@ func TestCleaningKeepsATrailingSlash(t *testing.T) {
 		"/x/../../": "/",
 	} {
 		rec := do(t, a, http.MethodGet, path)
-		if rec.Code != http.StatusTemporaryRedirect || rec.Header().Get("Location") != want {
-			t.Errorf("%s: %d Location %q; want 307 %q", path, rec.Code, rec.Header().Get("Location"), want)
+		if rec.Code != http.StatusPermanentRedirect || rec.Header().Get("Location") != want {
+			t.Errorf("%s: %d Location %q; want 308 %q", path, rec.Code, rec.Header().Get("Location"), want)
 		}
 	}
 }
@@ -176,8 +176,8 @@ func TestARedirectedRequestCarriesTheCleanPathsMatch(t *testing.T) {
 	a := accepts(t, geta.Table{Root: geta.Scope{m.middleware()}, Routes: []geta.Entry{{Path: "/a/b", Route: get(okHandler)}}})
 	for path, want := range map[string]string{"/a/./b": "GET /a/b", "/x/../a/b": "GET /a/b", "/a/./c": "none"} {
 		rec := do(t, a, http.MethodGet, path)
-		if rec.Code != http.StatusTemporaryRedirect || m.get() != want {
-			t.Errorf("%s: %d, root read %q; want 307 and %q", path, rec.Code, m.get(), want)
+		if rec.Code != http.StatusPermanentRedirect || m.get() != want {
+			t.Errorf("%s: %d, root read %q; want 308 and %q", path, rec.Code, m.get(), want)
 		}
 	}
 }
@@ -187,7 +187,7 @@ func TestConnectIsNeverRedirected(t *testing.T) {
 	a := accepts(t, one("/a/b", get(okHandler)))
 	for _, path := range []string{"/a//b", "/a/./b", "/x/../a/b"} {
 		rec := do(t, a, http.MethodConnect, path)
-		if rec.Code == http.StatusTemporaryRedirect || rec.Header().Get("Location") != "" || rec.Code != http.StatusNotFound {
+		if rec.Code == http.StatusPermanentRedirect || rec.Header().Get("Location") != "" || rec.Code != http.StatusNotFound {
 			t.Errorf("CONNECT %s: %d Location %q; want 404 and no redirect", path, rec.Code, rec.Header().Get("Location"))
 		}
 	}
@@ -361,7 +361,7 @@ func TestMatchingIgnoresTableOrder(t *testing.T) {
 // A request that will be redirected passes the root scope with the
 // match of its clean path, so without credentials an unclean path to a
 // protected operation, or to none, answers 401, and one to a public
-// operation 307.
+// operation 308.
 func TestRedirectBehindARootGate(t *testing.T) {
 	a := accepts(t, geta.Table{Root: geta.Scope{bearerGate()}, Routes: []geta.Entry{
 		{Path: "/secret", Route: get(okHandler)},
@@ -372,9 +372,9 @@ func TestRedirectBehindARootGate(t *testing.T) {
 		status     int
 	}{
 		{"/./secret", "", http.StatusUnauthorized},
-		{"/./open", "", http.StatusTemporaryRedirect},
+		{"/./open", "", http.StatusPermanentRedirect},
 		{"/./nowhere", "", http.StatusUnauthorized},
-		{"/./secret", "Bearer good", http.StatusTemporaryRedirect},
+		{"/./secret", "Bearer good", http.StatusPermanentRedirect},
 	} {
 		var rec *httptest.ResponseRecorder
 		if c.auth != "" {

@@ -31,7 +31,7 @@ func TestAnAbsoluteFormTargetWithoutAPathIsTheRoot(t *testing.T) {
 // and leaves the ASCII bytes after one as they were.
 func TestARedirectEscapesTheQuerysNonASCIIBytes(t *testing.T) {
 	a := accepts(t, one("/x", get(okHandler)))
-	if r := do(t, a, "GET", "/./x?q=\xc3\xa9x&r=1"); r.Code != 307 || r.Header().Get("Location") != "/x?q=%c3%a9x&r=1" {
+	if r := do(t, a, "GET", "/./x?q=\xc3\xa9x&r=1"); r.Code != 308 || r.Header().Get("Location") != "/x?q=%c3%a9x&r=1" {
 		t.Fatal(r.Code, r.Header())
 	}
 }
@@ -87,7 +87,7 @@ func TestAMethodRewriteOfARedirectStaysARedirect(t *testing.T) {
 	tbl := withRoot(one("/x", geta.Route{Get: geta.Op(http.StatusOK, okHandler, geta.Doc{}),
 		Post: geta.Op(http.StatusOK, okHandler, geta.Doc{Deprecated: true, Deprecation: dep})}), toPost, geta.Timeout(time.Second))
 	a := accepts(t, tbl)
-	if r := do(t, a, "GET", "/./x"); r.Code != 307 || r.Header().Get("Location") != "/x" || r.Header().Get("Deprecation") != "" {
+	if r := do(t, a, "GET", "/./x"); r.Code != 308 || r.Header().Get("Location") != "/x" || r.Header().Get("Deprecation") != "" {
 		t.Fatal(r.Code, r.Header())
 	}
 	if r := do(t, a, "GET", "/x"); r.Code != 200 || r.Header().Get("Deprecation") == "" {

@@ -150,9 +150,9 @@ func TestQueryIsServedWithABody(t *testing.T) {
 			t.Errorf("%s %s: %d Allow %q; want %d %q", tc.method, tc.path, rec.Code, rec.Header().Get("Allow"), tc.status, tc.allow)
 		}
 	}
-	// An unclean path is redirected with 307, which keeps the method and the
+	// An unclean path is redirected with 308, which keeps the method and the
 	// body.
-	if rec := do(t, a, geta.MethodQuery, "/x/../search"); rec.Code != http.StatusTemporaryRedirect || rec.Header().Get("Location") != "/search" {
+	if rec := do(t, a, geta.MethodQuery, "/x/../search"); rec.Code != http.StatusPermanentRedirect || rec.Header().Get("Location") != "/search" {
 		t.Fatal(rec.Code, rec.Header())
 	}
 

@@ -53,7 +53,7 @@ func refDate(s string) bool {
 // escapes it,
 // to a path parameter of an int32, a uuid.UUID, a geta.Date, and a string
 // of at most 8 code points, and holds the answer to the rules: "." and ".."
-// are redirected (307) to the clean path on the request's host; an empty
+// are redirected (308) to the clean path on the request's host; an empty
 // segment matches nothing (404); any other, its escapes decoded (%2F stays
 // in the segment, %2E is no dot segment), binds the reference's value (an
 // integer as JSON writes one in range, a 36-character uuid, a real

@@ -58,8 +58,8 @@ func TestRoutingPathWithoutLeadingSlashIsRedirected(t *testing.T) {
 	req.URL.Path, req.RequestURI = "x", ""
 	rec := httptest.NewRecorder()
 	a.ServeHTTP(rec, req)
-	if rec.Code != http.StatusTemporaryRedirect || rec.Header().Get("Location") != "/x" {
-		t.Fatalf("GET x: %d Location %q; want 307 /x", rec.Code, rec.Header().Get("Location"))
+	if rec.Code != http.StatusPermanentRedirect || rec.Header().Get("Location") != "/x" {
+		t.Fatalf("GET x: %d Location %q; want 308 /x", rec.Code, rec.Header().Get("Location"))
 	}
 }
 
@@ -144,8 +144,8 @@ func TestRoutingRedirectWithoutRequestURIUsesTheURL(t *testing.T) {
 		}
 		rec := httptest.NewRecorder()
 		c.h.ServeHTTP(rec, req)
-		if rec.Code != http.StatusTemporaryRedirect || rec.Header().Get("Location") != c.want {
-			t.Errorf("%s without a RequestURI: %d Location %q; want 307 %q", c.path, rec.Code, rec.Header().Get("Location"), c.want)
+		if rec.Code != http.StatusPermanentRedirect || rec.Header().Get("Location") != c.want {
+			t.Errorf("%s without a RequestURI: %d Location %q; want 308 %q", c.path, rec.Code, rec.Header().Get("Location"), c.want)
 		}
 	}
 	// With the RequestURI a server sets, the client's URL is clean.
@@ -177,7 +177,7 @@ func TestRoutingRedirectRunsNoOperation(t *testing.T) {
 		Route:  geta.Route{Get: geta.Op(http.StatusOK, h, geta.Doc{Scope: geta.Scope{count(&opScope)}})},
 		Scopes: []geta.Scope{{count(&dir)}},
 	}}})
-	if rec := do(t, a, http.MethodGet, "/a/./b"); rec.Code != http.StatusTemporaryRedirect || rec.Header().Get("Location") != "/a/b" {
+	if rec := do(t, a, http.MethodGet, "/a/./b"); rec.Code != http.StatusPermanentRedirect || rec.Header().Get("Location") != "/a/b" {
 		t.Fatalf("GET /a/./b: %d %q", rec.Code, rec.Header().Get("Location"))
 	}
 	if root.Load() != 1 || dir.Load() != 0 || opScope.Load() != 0 || handler.Load() != 0 {
