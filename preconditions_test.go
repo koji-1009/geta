@@ -452,6 +452,175 @@ func TestAWriteBesideATaggedGetChecksItsTag(t *testing.T) {
 	}
 }
 
+// A GET whose input embeds no Conditional but which declares a validator
+// through its output or geta.ETag: GET is safe (RFC 9110 §9.2.1), so its
+// handler runs, and the preconditions are evaluated against the validators
+// its response carries, in §13.2.2's order: If-Match with the tag the GET
+// sends holds (§13.1.1), and If-None-Match matching it is a 304 (§13.1.2).
+// Every status is one the document lists: getatest fails any other.
+
+type itemDated struct {
+	Modified string   `header:"Last-Modified"`
+	Body     itemBody `body:"json"`
+}
+
+type itemEither struct {
+	Status int      `status:"200|202"`
+	ETag   string   `header:"ETag"`
+	Body   itemBody `body:"json"`
+}
+
+// selectingTable serves /tagged/{id} (an ETag header field), /computed/{id}
+// (geta.ETag in the GET's scope, no header field), /dated/{id} (a
+// Last-Modified header field alone), and /either/{id} (an ETag header field,
+// answering 202 for id "later"), where only "a" and "later" exist. ran counts
+// the handlers run.
+func selectingTable(ran *atomic.Int32) geta.Table {
+	notFound := geta.Doc{Failures: []geta.Failure{geta.On(errNoHook, http.StatusNotFound, "no such item")}}
+	find := func(id string) error {
+		ran.Add(1)
+		if id != "a" && id != "later" {
+			return errNoHook
+		}
+		return nil
+	}
+	computed := notFound
+	computed.Scope = geta.Scope{geta.ETag()}
+	return geta.Table{Routes: []geta.Entry{
+		{Path: "/tagged/{id}", Route: geta.Route{Get: geta.Op(http.StatusOK, func(_ context.Context, in *itemIn) (*itemTagged, error) {
+			if err := find(in.ID); err != nil {
+				return nil, err
+			}
+			return &itemTagged{ETag: current, Body: itemBody{Name: "a"}}, nil
+		}, notFound)}},
+		{Path: "/computed/{id}", Route: geta.Route{Get: geta.Op(http.StatusOK, func(_ context.Context, in *itemIn) (*itemBody, error) {
+			if err := find(in.ID); err != nil {
+				return nil, err
+			}
+			return &itemBody{Name: "a"}, nil
+		}, computed)}},
+		{Path: "/dated/{id}", Route: geta.Route{Get: geta.Op(http.StatusOK, func(_ context.Context, in *itemIn) (*itemDated, error) {
+			if err := find(in.ID); err != nil {
+				return nil, err
+			}
+			return &itemDated{Modified: dateExact, Body: itemBody{Name: "a"}}, nil
+		}, notFound)}},
+		{Path: "/either/{id}", Route: geta.Route{Get: geta.Op(http.StatusOK, func(_ context.Context, in *itemIn) (*itemEither, error) {
+			if err := find(in.ID); err != nil {
+				return nil, err
+			}
+			out := &itemEither{ETag: current, Body: itemBody{Name: "a"}}
+			if in.ID == "later" {
+				out.Status = http.StatusAccepted
+			}
+			return out, nil
+		}, notFound)}},
+	}}
+}
+
+func TestAGetChecksTheValidatorsItAnswers(t *testing.T) {
+	var ran atomic.Int32
+	c := getatest.New(t, selectingTable(&ran))
+	computed := c.Get("/computed/a").Header.Get("ETag")
+	if computed == "" {
+		t.Fatal("geta.ETag sent no tag")
+	}
+	for _, tc := range []struct {
+		name    string
+		method  string
+		path    string
+		headers []string
+		want    int
+		etag    string // the ETag the response carries, "" for none
+	}{
+		// §13.1.1: the tag the GET sends matches, any other does not.
+		{"If-Match the tag", "GET", "/tagged/a", header("If-Match", current), 200, current},
+		{"If-Match a list holding it", "GET", "/tagged/a", header("If-Match", `"x", `+current), 200, current},
+		{"If-Match another tag", "GET", "/tagged/a", header("If-Match", `"x"`), 412, ""},
+		{"If-Match its weak form", "GET", "/tagged/a", header("If-Match", "W/"+current), 412, ""},
+		{"If-Match *", "GET", "/tagged/a", header("If-Match", "*"), 200, current},
+		{"If-Match neither * nor a tag", "GET", "/tagged/a", header("If-Match", "x"), 400, ""},
+		// §13.1.2: a 304 carrying the tag, for GET and HEAD alike.
+		{"If-None-Match the tag", "GET", "/tagged/a", header("If-None-Match", current), 304, current},
+		{"If-None-Match its weak form", "GET", "/tagged/a", header("If-None-Match", "W/"+current), 304, current},
+		{"If-None-Match *", "GET", "/tagged/a", header("If-None-Match", "*"), 304, current},
+		{"If-None-Match another tag", "GET", "/tagged/a", header("If-None-Match", `"x"`), 200, current},
+		{"If-None-Match on HEAD", "HEAD", "/tagged/a", header("If-None-Match", current), 304, current},
+		{"If-Match another tag on HEAD", "HEAD", "/tagged/a", header("If-Match", `"x"`), 412, ""},
+		// §13.2.1: the handler's 404 takes precedence.
+		{"If-Match on a missing target", "GET", "/tagged/b", header("If-Match", current), 404, ""},
+		{"If-None-Match * on a missing target", "GET", "/tagged/b", header("If-None-Match", "*"), 404, ""},
+		// geta.ETag's tag, which only the body decides.
+		{"If-Match geta.ETag's tag", "GET", "/computed/a", header("If-Match", computed), 200, computed},
+		{"If-Match another tag than geta.ETag's", "GET", "/computed/a", header("If-Match", `"x"`), 412, ""},
+		{"If-Match neither * nor a tag, geta.ETag", "GET", "/computed/a", header("If-Match", "x"), 400, ""},
+		{"If-None-Match geta.ETag's tag", "GET", "/computed/a", header("If-None-Match", computed), 304, computed},
+		{"If-Match on a missing target, geta.ETag", "GET", "/computed/b", header("If-Match", computed), 404, ""},
+		// §13.1.3, §13.1.4: the date the GET sends, with no entity tag.
+		{"If-Modified-Since the date", "GET", "/dated/a", header("If-Modified-Since", dateExact), 304, ""},
+		{"If-Modified-Since earlier", "GET", "/dated/a", header("If-Modified-Since", dateEarly), 200, ""},
+		{"If-Unmodified-Since earlier", "GET", "/dated/a", header("If-Unmodified-Since", dateEarly), 412, ""},
+		{"If-Unmodified-Since the date", "GET", "/dated/a", header("If-Unmodified-Since", dateExact), 200, ""},
+		{"If-Match a tag, with no entity tag", "GET", "/dated/a", header("If-Match", current), 412, ""},
+		// §15.4.5: a 304 stands only for a 200.
+		{"If-None-Match the tag on a 202", "GET", "/either/later", header("If-None-Match", current), 202, current},
+		{"If-Match another tag on a 202", "GET", "/either/later", header("If-Match", `"x"`), 412, ""},
+		{"If-None-Match the tag on its 200", "GET", "/either/a", header("If-None-Match", current), 304, current},
+	} {
+		cl := c
+		for i := 0; i+1 < len(tc.headers); i += 2 {
+			cl = cl.With(tc.headers[i], tc.headers[i+1])
+		}
+		before := ran.Load()
+		res := cl.Do(tc.method, tc.path, nil)
+		if res.Status != tc.want || res.Header.Get("ETag") != tc.etag {
+			t.Errorf("%s: %d ETag %q %s, want %d ETag %q", tc.name, res.Status, res.Header.Get("ETag"), res.Text(), tc.want, tc.etag)
+		}
+		if res.Status == http.StatusNotModified && len(res.Body) != 0 {
+			t.Errorf("%s: a 304 with a body", tc.name)
+		}
+		if ran.Load() == before {
+			t.Errorf("%s: the handler did not run", tc.name)
+		}
+	}
+	if res := c.With("If-Modified-Since", dateExact).Get("/dated/a"); res.Header.Get("Last-Modified") != dateExact {
+		t.Errorf("a 304 without the date: %v", res.Header)
+	}
+}
+
+// The document states what a GET that checks its validators answers: 304
+// where it answers 200, 412, and 400, and the validators on its 304.
+func TestAGetCheckingItsValidatorsIsDocumented(t *testing.T) {
+	var ran atomic.Int32
+	m := doc(t, accepts(t, selectingTable(&ran)))
+	const against = ", against the validators the response carries (its input does not embed geta.Conditional)"
+	for path, want := range map[string]map[string]string{
+		"/tagged/{id}": {
+			"304": "The representation has not changed: If-None-Match, or If-Modified-Since" + against,
+			"412": "A precondition failed: If-Match, or If-Unmodified-Since" + against,
+		},
+		"/computed/{id}": {
+			"304": "The representation has not changed",
+			"412": "A precondition failed: If-Match, or If-Unmodified-Since" + against,
+		},
+	} {
+		for s, d := range want {
+			if got := at(t, m, "paths", path, "get", "responses", s, "description"); got != d {
+				t.Errorf("%s %s: %q, want %q", path, s, got, d)
+			}
+		}
+		if got := at(t, m, "paths", path, "get", "responses", "400", "description").(string); !strings.Contains(got, `If-Match`) {
+			t.Errorf("%s 400: %q", path, got)
+		}
+	}
+	if got := compact(t, at(t, m, "paths", "/tagged/{id}", "get", "responses", "304", "headers")); got != `{"ETag":{"description":"The entity tag the 200 would carry, when it carries one","required":false,"schema":{"type":"string"}}}` {
+		t.Errorf("/tagged 304 headers: %s", got)
+	}
+	if got := compact(t, at(t, m, "paths", "/dated/{id}", "get", "responses", "304", "headers")); got != `{"Last-Modified":{"description":"The modification date the 200 would carry, when it carries no entity tag","required":false,"schema":{"type":"string"}}}` {
+		t.Errorf("/dated 304 headers: %s", got)
+	}
+}
+
 // A body declared geta.Deferred is read when the handler asks, so the
 // handler's own checks answer first, in RFC 9110 §13.2.1's order: the target
 // (404), then the preconditions (428, 412), then the content (400).

@@ -197,7 +197,8 @@ func TestETagDeclaresItsNotModified(t *testing.T) {
 	if got := compact(t, at(t, m, "paths", "/x", "get", "parameters")); !strings.Contains(got, `"in":"header","name":"If-None-Match","required":false`) {
 		t.Fatal(got)
 	}
-	if got := at(t, m, "paths", "/x", "get", "responses", "400", "description"); got != `If-None-Match is neither "*" nor a list of one or more entity tags` {
+	// It reads If-Match too, the GET's input embedding no Conditional.
+	if got := at(t, m, "paths", "/x", "get", "responses", "400", "description"); got != `If-None-Match is neither "*" nor a list of one or more entity tags; If-Match is neither "*" nor a list of one or more entity tags` {
 		t.Fatal(got)
 	}
 	for _, s := range []string{"304", "400"} {

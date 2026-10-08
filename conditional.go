@@ -244,8 +244,16 @@ func (c *Conditional) check(exists bool, etag string, modified time.Time) error 
 //
 // A value that is not a list of entity tags is evaluated as the RFC says of
 // any other value: If-Match fails and If-None-Match holds.
+//
+// A GET or HEAD to a GET that declares a validator through its output or
+// geta.ETag (selecting) is not evaluated here: its preconditions are
+// evaluated once the handler has answered, against the validators the
+// response carries (selected).
 func (c *compiledOp) unvalidated(r *http.Request) *PreconditionError {
 	safe := r.Method == http.MethodGet || r.Method == http.MethodHead
+	if safe && c.selecting {
+		return nil
+	}
 	if v := r.Header.Values("If-Match"); len(v) > 0 && !starred(v) {
 		return &PreconditionError{status: http.StatusPreconditionFailed, field: "If-Match",
 			detail: "failed: the operation declares no entity tag"}
@@ -274,6 +282,78 @@ func (c *compiledOp) validator() vet.Validator {
 		}
 	}
 	return v
+}
+
+// selects reports whether c is a GET whose input does not embed Conditional
+// but which declares a validator through its output (an ETag or
+// Last-Modified header field) or geta.ETag. A GET is safe (RFC 9110
+// §9.2.1), so its handler may run before the preconditions are evaluated:
+// geta evaluates them against the validators its response carries
+// (selected), as the RFC's "the entity tag of the selected representation"
+// (§13.1.1) is the one the GET sends. geta.ETag evaluates them for a GET it
+// tags, whose tag it alone knows; geta, before writing, for any other.
+func (c *compiledOp) selects() bool {
+	if c.options || c.method != http.MethodGet || c.in.cond != nil {
+		return false
+	}
+	v := c.validator()
+	return v.Header != "" || v.Chain
+}
+
+// selected evaluates the preconditions of a GET or HEAD r against the
+// response its operation answers: its status, its entity tag ("" for none),
+// and its modification date (zero for none), in RFC 9110 §13.2.2's order, as
+// [Conditional.Check] reads them. It returns the refusal, or nil to send the
+// response.
+//
+// A status other than 2xx ignores them: "A server MUST ignore all received
+// preconditions if its response to the same request without those
+// conditions ... would have been a status code other than a 2xx" (§13.2.1).
+// A 304 stands only for a 200 (§15.4.5), so a matching If-None-Match or an
+// unmodified If-Modified-Since leaves any other 2xx as it is. An etag that is
+// not one entity tag is no entity tag.
+func selected(r *http.Request, status int, etag string, modified time.Time) *PreconditionError {
+	if status < 200 || status > 299 {
+		return nil
+	}
+	if !validETag(etag) {
+		etag = ""
+	}
+	h := r.Header
+	cond := Conditional{
+		IfMatch:           conditionField(h.Values("If-Match")),
+		IfNoneMatch:       conditionField(h.Values("If-None-Match")),
+		IfModifiedSince:   conditionField(h.Values("If-Modified-Since")),
+		IfUnmodifiedSince: conditionField(h.Values("If-Unmodified-Since")),
+		method:            r.Method,
+	}
+	pe, _ := cond.check(true, etag, modified).(*PreconditionError)
+	if pe == nil || pe.status == http.StatusNotModified && status != http.StatusOK {
+		return nil
+	}
+	return pe
+}
+
+// lastModified returns the modification date a Last-Modified field in h
+// carries, or the zero Time for none or one that is not an HTTP-date.
+func lastModified(h http.Header) time.Time {
+	v := h.Get("Last-Modified")
+	if v == "" {
+		return time.Time{}
+	}
+	t, _ := httpDate(&v)
+	return t
+}
+
+// selectingAt reports whether r was served by an operation whose
+// preconditions are evaluated against its response (selects).
+func selectingAt(r *http.Request) bool {
+	rc := requestFrom(r.Context())
+	if rc == nil || !rc.dispatched || rc.match == nil {
+		return false
+	}
+	op := rc.app.byMatch[rc.match]
+	return op != nil && op.selecting
 }
 
 // notModified reports whether geta answers 304 itself to If-None-Match: * on

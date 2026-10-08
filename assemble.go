@@ -548,6 +548,8 @@ func (a *App) compile(reg *registry, path string, params []string, m methodOp, c
 	if c.opID == "" {
 		c.opID = operationID(m.method, path)
 	}
+	c.selecting = c.selects()
+	c.answering = c.selecting && !c.etagged()
 	return c, nil
 }
 
