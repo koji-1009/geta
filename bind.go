@@ -56,6 +56,10 @@ type bodyPlan struct {
 	// defaults are the codecs with a member that declares a default, filled
 	// by the reference path (applyDefaults); nil for none.
 	defaults map[*codec]bool
+	// methods are the codecs under which a type reads itself with its JSON
+	// methods, whose refusals the reference path lists (methodWalk); nil
+	// for none.
+	methods  map[*codec]bool
 	desc     string // the body's description (doc tag)
 	declared string // the mediatype tag, or "" for the default
 	deferred bool   // a [Deferred]: read when the handler asks
@@ -216,7 +220,7 @@ func (r *registry) bodyPlan(f reflect.StructField, index []int) (*bodyPlan, erro
 		return nil, err
 	}
 	return &bodyPlan{index: index, c: c, optional: optional, use: use,
-		fast: fastEligible(c, map[*codec]bool{}), opts: r.decOpts, defaults: defaultsUnder(c), desc: f.Tag.Get("doc"),
+		fast: fastEligible(c, map[*codec]bool{}), opts: r.decOpts, defaults: defaultsUnder(c), methods: methodsUnder(c), desc: f.Tag.Get("doc"),
 		declared: f.Tag.Get("mediatype")}, nil
 }
 
@@ -732,7 +736,7 @@ func (b *bodyPlan) reference(dec *jsontext.Decoder, data []byte, dst reflect.Val
 	if b.defaults != nil {
 		sp = &spellings{data: data}
 	}
-	tree, err := parseJSONFrom(dec, limits.MaxDepth, sp)
+	tree, err := parseJSONFrom(dec, data, limits.MaxDepth, sp)
 	if err != nil {
 		if de, ok := err.(*duplicateKeyError); ok {
 			return []Violation{{In: "body", Path: capPath(de.path), Message: "duplicate object key"}}, 0
@@ -742,6 +746,9 @@ func (b *bodyPlan) reference(dec *jsontext.Decoder, data []byte, dst reflect.Val
 	d := &decoder{limits: limits, in: "body"}
 	d.check(b.c, b.use, tree, "$")
 	if len(d.errs) > 0 {
+		// The types that read themselves are judged too, so that their
+		// refusals are listed with the schema's.
+		d.methods(b.c, b.use, tree, data, b.opts, b.methods)
 		return d.errs, d.omitted
 	}
 	target := dst
@@ -750,8 +757,16 @@ func (b *bodyPlan) reference(dec *jsontext.Decoder, data []byte, dst reflect.Val
 		dst.Set(ptr)
 		target = ptr.Elem()
 	}
-	d.decodeJSON(data, target, b.opts)
-	if len(d.errs) == 0 && b.defaults != nil {
+	if err := json.Unmarshal(data, target.Addr().Interface(), b.opts); err != nil {
+		// v2 stops at its first refusal: list every method's instead. Only
+		// when no method refuses is v2's refusal its own (two names a key's
+		// method reads as one key).
+		if d.methods(b.c, b.use, tree, data, b.opts, b.methods) == 0 {
+			d.failJSON(err, data)
+		}
+		return d.errs, d.omitted
+	}
+	if b.defaults != nil {
 		applyDefaults(b.c, tree, target, b.defaults, b.opts, sp)
 	}
 	return d.errs, d.omitted

@@ -85,7 +85,7 @@ func TestAKeyTypesFormatIsStatedAndHeld(t *testing.T) {
 		t.Fatal(res.Status, res.Text())
 	}
 	same(t, violations(t, c.Post("/b", `{"mail":{"nope":1,"a@b":"x"},"secrets":{}}`)),
-		"body $.mail.a@b: expected integer, got string",
+		"body $.mail['a@b']: expected integer, got string",
 		`body $.mail.nope: key "nope" is not a valid email`)
 	same(t, violations(t, c.Post("/b", `{"mail":{"nope":-1},"secrets":{}}`)), `body $.mail.nope: key "nope" is not a valid email`)
 	c.Get("/o")

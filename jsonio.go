@@ -21,15 +21,18 @@ type number string
 // was sent. It refuses duplicate names, invalid UTF-8, trailing data, and
 // nesting past maxDepth.
 func parseJSON(data []byte, maxDepth int) (any, error) {
-	return parseJSONFrom(jsontext.NewDecoder(bytes.NewReader(data)), maxDepth, nil)
+	return parseJSONFrom(jsontext.NewDecoder(bytes.NewReader(data)), data, maxDepth, nil)
 }
 
-// parseJSONFrom is parseJSON reading from dec, a decoder with default options
-// at the start of the data. A non-nil sp records the member names written
-// with an escape.
-func parseJSONFrom(dec *jsontext.Decoder, maxDepth int, sp *spellings) (any, error) {
+// parseJSONFrom is parseJSON reading data from dec, a decoder with default
+// options at its start. A non-nil sp records the member names written with
+// an escape.
+func parseJSONFrom(dec *jsontext.Decoder, data []byte, maxDepth int, sp *spellings) (any, error) {
 	v, err := parseValue(dec, maxDepth, sp)
 	if err != nil {
+		if de, ok := err.(*duplicateKeyError); ok {
+			de.path = pointerPath(data, de.ptr)
+		}
 		return nil, err
 	}
 	if _, err := dec.ReadToken(); err != io.EOF {
@@ -139,7 +142,7 @@ func syntaxError(err error) error {
 	}
 	if se, ok := errors.AsType[*jsontext.SyntacticError](err); ok {
 		if errors.Is(se.Err, jsontext.ErrDuplicateName) {
-			return &duplicateKeyError{path: pointerPath(se.JSONPointer)}
+			return &duplicateKeyError{ptr: se.JSONPointer}
 		}
 		return fmt.Errorf("malformed JSON at byte %d: %v", se.ByteOffset, se.Err)
 	}
@@ -148,30 +151,89 @@ func syntaxError(err error) error {
 	return errors.New("malformed JSON")
 }
 
-// A duplicateKeyError is a member name an object repeats, at path. A
-// request's violation names the path as its path (capPath), since the path
-// is as long as the body chooses.
-type duplicateKeyError struct{ path string }
+// A duplicateKeyError is a member name an object repeats, at ptr, whose
+// path parseJSONFrom renders. A request's violation names the path as its
+// path (capPath), since the path is as long as the body chooses.
+type duplicateKeyError struct {
+	ptr  jsontext.Pointer
+	path string
+}
 
 func (e *duplicateKeyError) Error() string { return "duplicate object key at " + e.path }
 
-// pointerPath renders a JSON Pointer the way violations name paths: $.a[0].
-// It is built in one buffer, since a pointer can have as many tokens as the
-// body has nesting and be as long as the body.
-func pointerPath(p jsontext.Pointer) string {
+// pointerPath renders p, a JSON Pointer into data, the way violations name
+// paths, as check names them (vpath): a token is an element's index, [0],
+// where it steps into an array in data, and a member's name, .0, where it
+// steps into an object, whatever its characters. A pointer reads alike for
+// both. It is built in one buffer, since a pointer can have as many tokens
+// as the body has nesting and be as long as the body; data is read once, up
+// to the value p names.
+func pointerPath(data []byte, p jsontext.Pointer) string {
 	var b strings.Builder
+	b.Grow(1 + len(p))
 	b.WriteByte('$')
+	// Whatever data holds: an error's data may repeat a name or hold
+	// invalid UTF-8 where the reader allowed it.
+	dec := jsontext.NewDecoder(bytes.NewReader(data), jsontext.AllowDuplicateNames(true), jsontext.AllowInvalidUTF8(true))
+	at := true // dec is before the value the tokens so far name
 	for tok := range p.Tokens() {
-		if _, err := strconv.Atoi(tok); err == nil && tok != "" {
+		if at && dec.PeekKind() == '[' {
 			b.WriteByte('[')
 			b.WriteString(tok)
 			b.WriteByte(']')
+			at = seekElement(dec, tok)
 			continue
 		}
-		b.WriteByte('.')
-		b.WriteString(tok)
+		// A member, or, past where data matches p, taken as one.
+		writeMember(&b, tok)
+		at = at && seekMember(dec, tok)
 	}
 	return b.String()
+}
+
+// seekElement reads the array dec is before up to its element tok, and
+// reports whether it is there.
+func seekElement(dec *jsontext.Decoder, tok string) bool {
+	if len(tok) > len("9223372036854775807") {
+		return false // no index; Atoi's error would copy it
+	}
+	i, err := strconv.Atoi(tok)
+	if err != nil || i < 0 {
+		return false
+	}
+	if _, err := dec.ReadToken(); err != nil {
+		return false
+	}
+	for ; i > 0; i-- {
+		if dec.PeekKind() == ']' || dec.SkipValue() != nil {
+			return false
+		}
+	}
+	return dec.PeekKind() != ']'
+}
+
+// seekMember reads the object dec is before up to the value of its member
+// tok, and reports whether it is there.
+func seekMember(dec *jsontext.Decoder, tok string) bool {
+	if dec.PeekKind() != '{' {
+		return false
+	}
+	if _, err := dec.ReadToken(); err != nil {
+		return false
+	}
+	for dec.PeekKind() == '"' {
+		name, err := dec.ReadToken()
+		if err != nil {
+			return false
+		}
+		if name.String() == tok {
+			return true
+		}
+		if dec.SkipValue() != nil {
+			return false
+		}
+	}
+	return false
 }
 
 func jsonType(v any) string {

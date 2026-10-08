@@ -242,7 +242,7 @@ type fastMany struct {
 // with the registry's options.
 // It is the body plan's own reference path, which a request reaches.
 func reference(r *registry, c *codec, use *schema, data []byte, limits Limits, dst reflect.Value) []Violation {
-	b := &bodyPlan{c: c, use: use, opts: r.decOpts, defaults: defaultsUnder(c)}
+	b := &bodyPlan{c: c, use: use, opts: r.decOpts, defaults: defaultsUnder(c), methods: methodsUnder(c)}
 	errs, _ := b.reference(jsontext.NewDecoder(bytes.NewReader(data)), data, dst, limits)
 	return errs
 }

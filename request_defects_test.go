@@ -258,7 +258,7 @@ func TestViolationListsAreBounded(t *testing.T) {
 	res = c.Post("/t", `{"k":{"`+name+`":{},"`+name+`":{}}}`)
 	p = res.Problem()
 	if res.Status != 400 || len(res.Body) >= 2<<10 || len(p.Errors) != 1 ||
-		p.Errors[0].Path != "…"+strings.Repeat("<", 253) || p.Errors[0].Message != "duplicate object key" {
+		p.Errors[0].Path != "…"+strings.Repeat("<", 251)+"']" || p.Errors[0].Message != "duplicate object key" {
 		t.Fatalf("%d, %d bytes: %q", res.Status, len(res.Body), listed(p))
 	}
 
