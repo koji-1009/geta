@@ -316,6 +316,91 @@ func TestKeyKeywordsHoldEachKey(t *testing.T) {
 	}
 }
 
+type kvMember struct {
+	Links map[string]string           `json:"links" schema:"propertyNames.pattern=^[a-z]+$,additionalProperties.pattern=^https://"`
+	Pick  *map[string]int8            `json:"pick,omitzero" schema:"propertyNames.enum=a|b,additionalProperties.minimum=0"`
+	Rows  *[]map[string]string        `json:"rows,omitzero" schema:"items.propertyNames.maxLength=2,items.additionalProperties.enum=x|y"`
+	Deep  *map[string]map[string]int8 `json:"deep,omitzero" schema:"additionalProperties.propertyNames.minLength=2,additionalProperties.additionalProperties.maximum=9"`
+	Mail  *map[keyMail]int8           `json:"mail,omitzero" schema:"additionalProperties.minimum=0"`
+	Free  *map[string]int8            `json:"free,omitzero" schema:"additionalProperties.minimum=0"`
+	Money *map[string]cents           `json:"money,omitzero" schema:"propertyNames.maxLength=3"`
+	Keys  *map[someKey]someValue      `json:"keys,omitzero"`
+}
+
+type kvBody struct {
+	Body kvMember `body:"json"`
+}
+
+type kvOut struct {
+	Links map[string]string `json:"links" schema:"propertyNames.pattern=^[a-z]+$,additionalProperties.pattern=^https://"`
+}
+
+type kvCeiling struct {
+	Body struct {
+		M map[string]int8 `json:"m" schema:"propertyNames.pattern=^k+$,additionalProperties.minimum=0"`
+	} `body:"json"`
+}
+
+// JSON Schema applies propertyNames and additionalProperties apart, so a
+// member whose key a keyword refuses has its value checked too: both
+// violations are listed at the member, the key's first, on every map a body
+// holds (nested, in an array, a FormatType's key, a key or value read by its
+// own JSON method) and in Conforms. Only a key past a backstop, which bounds
+// the work a request costs, leaves its value unchecked.
+func TestAKeysViolationLeavesItsValueChecked(t *testing.T) {
+	out := &kvOut{Links: map[string]string{"a": "https://x"}}
+	c := getatest.New(t, geta.Table{Routes: []geta.Entry{
+		{Path: "/b", Route: post(func(context.Context, *kvBody) (*ok, error) { return &ok{true}, nil })},
+		{Path: "/o", Route: get(func(context.Context, *empty) (*kvOut, error) { return out, nil })},
+	}}, geta.WithSchema[cents]("string", `pattern=^-?[0-9]+\.[0-9]+$`))
+	send := func(body string) *getatest.Response {
+		return c.Content(http.MethodPost, "/b", "application/json", []byte(body))
+	}
+	if res := send(`{"links":{"ok":"https://x"},"pick":{"a":0},"rows":[{"ab":"x"}],"deep":{"d":{"ab":9}},"mail":{"a@b":0},` +
+		`"money":{"m":"1.00"},"keys":{"k":1}}`); res.Status != 200 {
+		t.Fatal(res.Status, res.Text())
+	}
+	same(t, violations(t, send(`{"links":{"BAD":"ftp://x","good":"ftp://y","OK":"https://z"}}`)),
+		`body $.links.BAD: key "BAD" does not match pattern ^[a-z]+$`,
+		`body $.links.BAD: "ftp://x" does not match pattern ^https://`,
+		`body $.links.OK: key "OK" does not match pattern ^[a-z]+$`,
+		`body $.links.good: "ftp://y" does not match pattern ^https://`)
+	same(t, violations(t, send(`{"links":{},"pick":{"c":-1},"rows":[{"abc":"z"}],"deep":{"d":{"a":10}},"mail":{"nope":-1}}`)),
+		`body $.pick.c: key "c" is not one of a, b`,
+		`body $.pick.c: -1 is less than minimum 0`,
+		`body $.rows[0].abc: key length 3 exceeds maxLength 2`,
+		`body $.rows[0].abc: "z" is not one of x, y`,
+		`body $.deep.d.a: key length 1 is shorter than minLength 2`,
+		`body $.deep.d.a: 10 is greater than maximum 9`,
+		`body $.mail.nope: key "nope" is not a valid email`,
+		`body $.mail.nope: -1 is less than minimum 0`)
+	// A value's own method runs under a key the keys' schema refuses, and
+	// under a key its own method refuses; each refusal is listed after the
+	// schema's violations.
+	if got := strings.Join(paths(t, send(`{"links":{},"money":{"abcd":"1.234"},"keys":{"bad":null}}`)), " "); got != "$.money.abcd $.money.abcd $.keys.bad $.keys.bad" {
+		t.Errorf("methods: %s", got)
+	}
+	// A key past the backstop leaves its value unchecked: the MaxStringLength
+	// backstop, and the pattern ceiling where a pattern applies.
+	long := strings.Repeat("k", 4097)
+	cut := "…" + long[:253]
+	same(t, violations(t, send(`{"links":{},"free":{"`+long+`":-1}}`)), "body "+cut+": key length 4097 exceeds the ceiling of 4096 code points")
+	lim := geta.DefaultLimits
+	lim.MaxStringLength = 5000
+	cc := getatest.New(t, one("/c", post(func(context.Context, *kvCeiling) (*ok, error) { return &ok{true}, nil })), geta.WithLimits(lim))
+	same(t, violations(t, cc.Post("/c", `{"m":{"`+long+`":-1,"x":-1}}`)),
+		"body "+cut+": key length 4097 exceeds the pattern-validation ceiling of 4096 code points",
+		`body $.m.x: key "x" does not match pattern ^k+$`,
+		"body $.m.x: -1 is less than minimum 0")
+
+	// A response is held to both, as a request is.
+	c.Get("/o")
+	err := c.App().Conforms(geta.Match{Template: "/o", Method: "GET"}, http.StatusOK, nil, []byte(`{"links":{"BAD":"ftp://x"}}`))
+	if err == nil || !strings.Contains(err.Error(), `key "BAD" does not match pattern ^[a-z]+$`) || !strings.Contains(err.Error(), `"ftp://x" does not match pattern ^https://`) {
+		t.Errorf("Conforms: %v", err)
+	}
+}
+
 type KeyedCounts struct {
 	M map[string]int `json:"m"`
 }
