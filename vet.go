@@ -33,6 +33,7 @@ func init() {
 	vet.CheckEnvelopeStatus = checkEnvelopeStatus
 	vet.CheckDocTimeout = checkDocTimeout
 	vet.CheckMethodBody = checkMethodBody
+	vet.CheckConditionalWrite = checkConditionalWrite
 	vet.CheckSuccessStatus = checkSuccessStatus
 	vet.CheckBodylessStatus = checkBodylessStatus
 	vet.CheckSpecialStatus = checkSpecialStatus
@@ -912,6 +913,46 @@ func checkMethodBody(method string) error {
 		return nil
 	}
 	return fmt.Errorf("the input has a body, which a %s request does not take; use %s", method, instead)
+}
+
+// checkConditionalWrite reports whether geta.New accepts an operation of
+// method on a route whose GET declares get, when its input does or does not
+// (conditional) embed geta.Conditional or geta.RequireConditional.
+//
+// PUT, PATCH, and DELETE are defined on the state of the target resource,
+// which the route's GET selects a representation of: PUT "requests that the
+// state of the target resource be created or replaced" (RFC 9110 §9.3.4),
+// PATCH is "defined for partial updates" (§14.5), and DELETE removes "the
+// association between the target resource and its current functionality"
+// (§9.3.5). Where the GET declares a validator, such an operation must
+// evaluate the preconditions against it: without Conditional, geta evaluates
+// them against none, so If-Match with the tag the GET sent fails (412,
+// §13.1.1) and If-Unmodified-Since is ignored (§13.1.4). POST processes its
+// content "according to the resource's own specific semantics" (§9.3.3), so
+// its method does not say it writes what the GET selects; QUERY is safe like
+// GET (§9.2.1). Neither is judged. It applies geta.New's rule.
+func checkConditionalWrite(method string, get vet.Validator, conditional bool) error {
+	switch method {
+	case http.MethodPut, http.MethodPatch, http.MethodDelete:
+	default:
+		return nil
+	}
+	var declares string
+	switch {
+	case get.Input:
+		declares = "its input embeds geta.Conditional"
+	case get.Header != "":
+		declares = fmt.Sprintf("its output's %s header field", get.Header)
+	case get.Chain:
+		declares = "geta.ETag tags it"
+	default:
+		return nil
+	}
+	if conditional {
+		return nil
+	}
+	return fmt.Errorf("the route's GET declares a validator (%s), but the input embeds neither geta.Conditional nor geta.RequireConditional, "+
+		"so geta would evaluate its preconditions against none; embed one and call Check with the current validators", declares)
 }
 
 // retiredStatus returns why 305 or 306 cannot be a success status, or "".

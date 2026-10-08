@@ -102,6 +102,10 @@ type compiledOp struct {
 	// window is the time the request body has to arrive: the shortest
 	// Timeout length in chain, 0 for none.
 	window time.Duration
+	// selecting is set on a GET whose preconditions are evaluated against
+	// its response (selects); answering, on one geta evaluates so before
+	// writing, which geta.ETag does not tag.
+	selecting, answering bool
 }
 
 // operation returns the operation m names, or nil if none of a's does.

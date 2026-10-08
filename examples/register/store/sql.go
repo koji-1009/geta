@@ -293,20 +293,26 @@ func (s *SQL) Replace(ctx context.Context, u model.User, check func(current mode
 // be deleted. It first writes every admin row and the user's own, as SetRole
 // does, so a concurrent deletion or demotion waits and then counts what this
 // one left, and a concurrent promotion of the user lands before its role is
-// read.
-func (s *SQL) Delete(ctx context.Context, id string) error {
+// read. check, if not nil, is given the stored user so read, and an error
+// from it is Delete's, with nothing removed.
+func (s *SQL) Delete(ctx context.Context, id string, check func(current model.User) error) error {
 	return s.tx(ctx, func(tx *sql.Tx) error {
 		if _, err := tx.ExecContext(ctx, "update users set role = role where role = $1 or id = $2", string(model.RoleAdmin), id); err != nil {
 			return err
 		}
-		var current string
-		if err := tx.QueryRowContext(ctx, "select role from users where id = $1", id).Scan(&current); err != nil {
-			if errors.Is(err, sql.ErrNoRows) {
-				return ErrNotFound
-			}
+		current, err := scanUser(tx.QueryRowContext(ctx, "select "+columns+" from users where id = $1", id))
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrNotFound
+		}
+		if err != nil {
 			return err
 		}
-		if current == string(model.RoleAdmin) {
+		if check != nil {
+			if err := check(current); err != nil {
+				return err
+			}
+		}
+		if current.Role == model.RoleAdmin {
 			var admins int
 			if err := tx.QueryRowContext(ctx, "select count(*) from users where role = $1", string(model.RoleAdmin)).Scan(&admins); err != nil {
 				return err

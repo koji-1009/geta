@@ -16,6 +16,14 @@ import (
 // If-None-Match is read as [Conditional.Check] reads it. A value that is
 // neither "*" nor a list of one or more entity tags, an empty one included,
 // answers 400 in place of the 200; the document lists it beside the 304.
+//
+// On an operation whose input does not embed [Conditional], ETag evaluates
+// every precondition, in RFC 9110 §13.2.2's order, as Check would against
+// the tag it sends and the Last-Modified the handler set: If-Match with that
+// tag holds and any other is 412, If-None-Match matching it is 304. On
+// another 2xx it evaluates them against the handler's own ETag and
+// Last-Modified, answering no 304. geta does not evaluate them before the
+// handler there: the tag is known only once the body is.
 func ETag() Middleware {
 	m := Ordered(OrderValidate, func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -37,7 +45,18 @@ func ETag() Middleware {
 				return
 			}
 			h := b.header
+			// An operation without Conditional has its preconditions read
+			// here, against what it answered (selected); one with Conditional
+			// has evaluated them, and only If-None-Match is read again.
+			own := selectingAt(r)
 			if b.status != http.StatusOK {
+				if own {
+					if pe := selected(r, b.status, h.Get("ETag"), lastModified(h)); pe != nil {
+						b.lost()
+						pe.write(w, r)
+						return
+					}
+				}
 				b.send(r, b.status, b.body.Bytes())
 				return
 			}
@@ -47,7 +66,21 @@ func ETag() Middleware {
 				tag = `"` + base64.RawURLEncoding.EncodeToString(sum[:18]) + `"`
 				h.Set("ETag", tag)
 			}
-			if len(inm) > 0 {
+			if own {
+				switch pe := selected(r, b.status, strings.TrimSpace(tag), lastModified(h)); {
+				case pe == nil:
+				case pe.status == http.StatusNotModified:
+					for _, k := range []string{"Content-Type", "Content-Length", "Content-Encoding", "Content-Language", "Content-Range"} {
+						h.Del(k)
+					}
+					b.send(r, http.StatusNotModified, nil)
+					return
+				default:
+					b.lost()
+					pe.write(w, r)
+					return
+				}
+			} else if len(inm) > 0 {
 				tags, star, ok := conditionTags(*conditionField(inm))
 				if !ok {
 					b.lost()

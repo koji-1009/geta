@@ -553,6 +553,19 @@ func (c *compiledOp) responses() map[string]any {
 		if c.in.required {
 			add(http.StatusPreconditionRequired, "The request carries no precondition, and this operation requires one")
 		}
+	} else if c.selecting {
+		// geta, or geta.ETag, evaluates them against the validators the
+		// response carries (selected). geta.ETag lists its own 304 and 400.
+		const against = ", against the validators the response carries (its input does not embed geta.Conditional)"
+		if c.answering {
+			if slices.Contains(c.successes(), http.StatusOK) {
+				add(http.StatusNotModified, "The representation has not changed: If-None-Match, or If-Modified-Since"+against)
+			}
+			add(http.StatusBadRequest, `If-Match or If-None-Match is neither "*" nor a list of one or more entity tags`)
+		} else {
+			add(http.StatusBadRequest, `If-Match is neither "*" nor a list of one or more entity tags`)
+		}
+		add(http.StatusPreconditionFailed, "A precondition failed: If-Match, or If-Unmodified-Since"+against)
 	} else if !c.options {
 		// geta evaluates the preconditions itself (unvalidated): the operation
 		// has no entity tag for If-Match to name, and If-None-Match: * finds a
@@ -656,6 +669,15 @@ func (c *compiledOp) responses() map[string]any {
 		case status == http.StatusNotModified && c.in.cond != nil:
 			state("ETag", "The entity tag given to Conditional.Check, when one was")
 			state("Last-Modified", "The modification date given to Conditional.Check, an HTTP-date, when no entity tag was")
+		case status == http.StatusNotModified && c.answering:
+			for _, h := range c.out.headers {
+				switch http.CanonicalHeaderKey(h.name) {
+				case "Etag":
+					state("ETag", "The entity tag the 200 would carry, when it carries one")
+				case "Last-Modified":
+					state("Last-Modified", "The modification date the 200 would carry, when it carries no entity tag")
+				}
+			}
 		case status == http.StatusUpgradeRequired && upgrade:
 			state("Upgrade", "The protocol to switch to, sent with geta's own 426")
 			state("Connection", "upgrade, sent with geta's own 426")

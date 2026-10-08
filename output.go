@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/koji-1009/geta/internal/vet"
 )
@@ -213,6 +214,51 @@ func (p *outPlan) checkLocation(status int, v reflect.Value) error {
 		return fmt.Errorf("status %d: Location field %s is empty", status, p.location.field)
 	}
 	return nil
+}
+
+// validators returns what an envelope v answers, the operation's status
+// being status: its status, and the entity tag and modification date its
+// ETag and Last-Modified header fields carry, "" and the zero Time where it
+// carries none or one a field cannot render. A status its status field does
+// not declare is 0: write refuses it.
+func (p *outPlan) validators(status int, v reflect.Value) (int, string, time.Time) {
+	if p.statusIdx != nil {
+		if s := int(v.FieldByIndex(p.statusIdx).Int()); s != 0 {
+			if !slices.Contains(p.statuses, s) {
+				return 0, "", time.Time{}
+			}
+			status = s
+		}
+	}
+	h := http.Header{}
+	for _, ho := range p.headers {
+		k := http.CanonicalHeaderKey(ho.name)
+		if k != "Etag" && k != "Last-Modified" {
+			continue
+		}
+		fv := v.FieldByIndex(ho.index)
+		if ho.optional {
+			if fv.IsNil() {
+				continue
+			}
+			fv = fv.Elem()
+		}
+		if s, err := scalarText(ho.c, fv); err == nil {
+			h.Set(k, s)
+		}
+	}
+	return status, h.Get("Etag"), lastModified(h)
+}
+
+// close closes an envelope's raw io.Reader body, for an output that is not
+// written.
+func (p *outPlan) close(out any) {
+	if p.kind != outEnvelope || p.raw == nil || !p.raw.reader {
+		return
+	}
+	if c, ok := reflect.ValueOf(out).Elem().FieldByIndex(p.raw.index).Interface().(io.Closer); ok {
+		c.Close()
+	}
 }
 
 // hasBody reports whether the plan can write a body.

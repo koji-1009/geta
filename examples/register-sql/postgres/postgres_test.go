@@ -246,7 +246,7 @@ func TestLastAdminUnderConcurrentDeletions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	remove := func(id string) error { return users.Delete(ctx, id) }
+	remove := func(id string) error { return users.Delete(ctx, id, nil) }
 	demote := func(id string) error {
 		_, err := users.SetRole(ctx, id, model.RoleMember)
 		return err

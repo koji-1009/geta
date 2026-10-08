@@ -1459,7 +1459,7 @@
                 }
               }
             },
-            "description": "The request does not match its contract; If-None-Match is neither \"*\" nor a list of one or more entity tags",
+            "description": "The request does not match its contract; If-None-Match is neither \"*\" nor a list of one or more entity tags; If-Match is neither \"*\" nor a list of one or more entity tags",
             "summary": "Bad Request"
           },
           "401": {
@@ -1501,7 +1501,7 @@
                 }
               }
             },
-            "description": "A precondition failed: If-Match other than *; the operation declares no validator (its input does not embed geta.Conditional)",
+            "description": "A precondition failed: If-Match, or If-Unmodified-Since, against the validators the response carries (its input does not embed geta.Conditional)",
             "summary": "Precondition Failed"
           },
           "415": {
@@ -1757,7 +1757,7 @@
                 }
               }
             },
-            "description": "If-None-Match is neither \"*\" nor a list of one or more entity tags",
+            "description": "If-None-Match is neither \"*\" nor a list of one or more entity tags; If-Match is neither \"*\" nor a list of one or more entity tags",
             "summary": "Bad Request"
           },
           "412": {
@@ -1768,7 +1768,7 @@
                 }
               }
             },
-            "description": "A precondition failed: If-Match other than *; the operation declares no validator (its input does not embed geta.Conditional)",
+            "description": "A precondition failed: If-Match, or If-Unmodified-Since, against the validators the response carries (its input does not embed geta.Conditional)",
             "summary": "Precondition Failed"
           },
           "415": {
@@ -2009,7 +2009,7 @@
                 }
               }
             },
-            "description": "If-None-Match is neither \"*\" nor a list of one or more entity tags",
+            "description": "If-None-Match is neither \"*\" nor a list of one or more entity tags; If-Match is neither \"*\" nor a list of one or more entity tags",
             "summary": "Bad Request"
           },
           "401": {
@@ -2040,7 +2040,7 @@
                 }
               }
             },
-            "description": "A precondition failed: If-Match other than *; the operation declares no validator (its input does not embed geta.Conditional)",
+            "description": "A precondition failed: If-Match, or If-Unmodified-Since, against the validators the response carries (its input does not embed geta.Conditional)",
             "summary": "Precondition Failed"
           },
           "415": {
@@ -2363,7 +2363,7 @@
                 }
               }
             },
-            "description": "The request does not match its contract; If-None-Match is neither \"*\" nor a list of one or more entity tags",
+            "description": "The request does not match its contract; If-None-Match is neither \"*\" nor a list of one or more entity tags; If-Match is neither \"*\" nor a list of one or more entity tags",
             "summary": "Bad Request"
           },
           "401": {
@@ -2394,7 +2394,7 @@
                 }
               }
             },
-            "description": "A precondition failed: If-Match other than *; the operation declares no validator (its input does not embed geta.Conditional)",
+            "description": "A precondition failed: If-Match, or If-Unmodified-Since, against the validators the response carries (its input does not embed geta.Conditional)",
             "summary": "Precondition Failed"
           },
           "415": {
@@ -2872,7 +2872,7 @@
                 }
               }
             },
-            "description": "The request does not match its contract; If-None-Match is neither \"*\" nor a list of one or more entity tags",
+            "description": "The request does not match its contract; If-None-Match is neither \"*\" nor a list of one or more entity tags; If-Match is neither \"*\" nor a list of one or more entity tags",
             "summary": "Bad Request"
           },
           "401": {
@@ -2914,7 +2914,7 @@
                 }
               }
             },
-            "description": "A precondition failed: If-Match other than *; the operation declares no validator (its input does not embed geta.Conditional)",
+            "description": "A precondition failed: If-Match, or If-Unmodified-Since, against the validators the response carries (its input does not embed geta.Conditional)",
             "summary": "Precondition Failed"
           },
           "415": {
@@ -3188,7 +3188,7 @@
                 }
               }
             },
-            "description": "The request does not match its contract; If-None-Match is neither \"*\" nor a list of one or more entity tags",
+            "description": "The request does not match its contract; If-None-Match is neither \"*\" nor a list of one or more entity tags; If-Match is neither \"*\" nor a list of one or more entity tags",
             "summary": "Bad Request"
           },
           "401": {
@@ -3230,7 +3230,7 @@
                 }
               }
             },
-            "description": "A precondition failed: If-Match other than *; the operation declares no validator (its input does not embed geta.Conditional)",
+            "description": "A precondition failed: If-Match, or If-Unmodified-Since, against the validators the response carries (its input does not embed geta.Conditional)",
             "summary": "Precondition Failed"
           },
           "415": {

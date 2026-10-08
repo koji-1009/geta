@@ -26,6 +26,8 @@ var TeamNotFound = geta.On(teams.ErrTeamNotFound, http.StatusNotFound, "team not
 //     Merge Patch (RFC 7396) does: a member left out is kept, null clears an
 //     optional member, and a value sets it. If-Match makes it a change of the
 //     version the client read.
+//   - DELETE removes an empty team. If-Match makes it a delete of the version
+//     the client read.
 func Route(env *app.Env) geta.Route {
 	h := Handler{Teams: env.Teams}
 	admin := geta.Scope{auth.RequireAdmin()}
@@ -61,7 +63,7 @@ type Store interface {
 	Find(ctx context.Context, id string) (*teams.Team, string, error)
 	Put(ctx context.Context, t teams.Team, check func(current *teams.Team, tag string) error) (*teams.Team, string, bool, error)
 	Update(ctx context.Context, id string, apply func(current teams.Team, tag string) (teams.Team, error)) (*teams.Team, string, error)
-	Delete(ctx context.Context, id string) error
+	Delete(ctx context.Context, id string, check func(current teams.Team, tag string) error) error
 }
 
 type Handler struct{ Teams Store }
@@ -105,7 +107,10 @@ type PatchIn struct {
 	Body TeamPatch `body:"json"`
 }
 
-type DeleteIn struct{ Path }
+type DeleteIn struct {
+	geta.Conditional
+	Path
+}
 
 // Tagged is a team and its entity tag.
 type Tagged struct {
@@ -164,5 +169,7 @@ func (h Handler) Patch(ctx context.Context, in *PatchIn) (*Tagged, error) {
 }
 
 func (h Handler) Delete(ctx context.Context, in *DeleteIn) error {
-	return h.Teams.Delete(ctx, in.Team)
+	return h.Teams.Delete(ctx, in.Team, func(_ teams.Team, tag string) error {
+		return in.Check(tag, time.Time{})
+	})
 }

@@ -40,7 +40,10 @@ func TestETag(t *testing.T) {
 		{Path: "/x", Route: geta.Route{
 			Get:  geta.Op(http.StatusOK, textHandler("hi"), geta.Doc{}),
 			Post: geta.Op(http.StatusOK, textHandler("hi"), geta.Doc{}),
-			Put:  geta.Op(http.StatusCreated, textHandler("hi"), geta.Doc{}),
+		}},
+		// Beside a GET geta.ETag tags, a PUT would have to embed Conditional.
+		{Path: "/w", Route: geta.Route{
+			Put: geta.Op(http.StatusCreated, textHandler("hi"), geta.Doc{}),
 		}},
 	}}, geta.ETag()))
 	first := do(t, a, "GET", "/x")
@@ -60,7 +63,7 @@ func TestETag(t *testing.T) {
 	if r := do(t, a, "POST", "/x", "If-None-Match", tag); r.Code != 200 || r.Header().Get("ETag") != "" {
 		t.Fatal("POST:", r.Code, r.Header())
 	}
-	if r := do(t, a, "PUT", "/x"); r.Code != 201 || r.Header().Get("ETag") != "" {
+	if r := do(t, a, "PUT", "/w"); r.Code != 201 || r.Header().Get("ETag") != "" {
 		t.Fatal("a non-200 was tagged")
 	}
 }
@@ -194,7 +197,8 @@ func TestETagDeclaresItsNotModified(t *testing.T) {
 	if got := compact(t, at(t, m, "paths", "/x", "get", "parameters")); !strings.Contains(got, `"in":"header","name":"If-None-Match","required":false`) {
 		t.Fatal(got)
 	}
-	if got := at(t, m, "paths", "/x", "get", "responses", "400", "description"); got != `If-None-Match is neither "*" nor a list of one or more entity tags` {
+	// It reads If-Match too, the GET's input embedding no Conditional.
+	if got := at(t, m, "paths", "/x", "get", "responses", "400", "description"); got != `If-None-Match is neither "*" nor a list of one or more entity tags; If-Match is neither "*" nor a list of one or more entity tags` {
 		t.Fatal(got)
 	}
 	for _, s := range []string{"304", "400"} {

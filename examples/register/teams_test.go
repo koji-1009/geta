@@ -89,6 +89,32 @@ func TestTeamPutCreatesOrReplaces(t *testing.T) {
 	}
 }
 
+// DELETE /teams/{team} and /users/{id} check If-Match against the tag their
+// GET sends: a stale tag is a 412 deleting nothing, the current one deletes.
+func TestConditionalDelete(t *testing.T) {
+	c := client(t)
+	for _, path := range []string{"/teams/ops", "/users/u9"} {
+		if path == "/teams/ops" {
+			c.Put(path, map[string]any{"name": "Ops"})
+		} else {
+			c.Post("/users", map[string]any{"id": "u9", "name": "U", "role": "member", "tags": []string{}})
+		}
+		tag := c.Get(path).Header.Get("ETag")
+		if res := c.With("If-Match", `"stale"`).Delete(path); res.Status != http.StatusPreconditionFailed {
+			t.Fatalf("%s, a stale tag: %d %s", path, res.Status, res.Body)
+		}
+		if res := c.Get(path); res.Status != http.StatusOK {
+			t.Fatalf("%s: a refused delete removed it: %d", path, res.Status)
+		}
+		if res := c.With("If-Match", tag).Delete(path); res.Status != http.StatusNoContent {
+			t.Fatalf("%s, the tag the GET sent: %d %s", path, res.Status, res.Body)
+		}
+		if res := c.Get(path); res.Status != http.StatusNotFound {
+			t.Fatalf("%s: deleted, then %d", path, res.Status)
+		}
+	}
+}
+
 // PATCH /teams/{team} is a merge patch: a member left out is kept, null
 // clears the description, a value sets it, and a null name, which a team
 // cannot be without, is refused before the handler runs. If-Match makes the

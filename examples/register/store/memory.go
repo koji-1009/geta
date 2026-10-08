@@ -31,7 +31,7 @@ type Users interface {
 	CreateMany(ctx context.Context, us []model.User) error
 	Replace(ctx context.Context, u model.User, check func(current model.User) error) (*model.User, error)
 	SetRole(ctx context.Context, id string, role model.Role) (*model.User, error)
-	Delete(ctx context.Context, id string) error
+	Delete(ctx context.Context, id string, check func(current model.User) error) error
 }
 
 // Filter narrows a listing.
@@ -173,13 +173,20 @@ func (m *Memory) Replace(ctx context.Context, u model.User, check func(current m
 	return &u, nil
 }
 
-// Delete removes the user with id. The last admin cannot be deleted.
-func (m *Memory) Delete(ctx context.Context, id string) error {
+// Delete removes the user with id. The last admin cannot be deleted. check,
+// if not nil, is given the stored user first, under the store's lock, and an
+// error from it is Delete's, with nothing removed.
+func (m *Memory) Delete(ctx context.Context, id string, check func(current model.User) error) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	u, ok := m.users[id]
 	if !ok {
 		return ErrNotFound
+	}
+	if check != nil {
+		if err := check(u); err != nil {
+			return err
+		}
 	}
 	if u.Role == model.RoleAdmin {
 		admins := 0

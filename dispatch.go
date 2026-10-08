@@ -364,6 +364,15 @@ func (c *compiledOp) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		c.out.special.write(w, r, c.app, c, out)
 		return
 	}
+	if c.answering && (r.Method == http.MethodGet || r.Method == http.MethodHead) {
+		// The preconditions, against the validators the output answers.
+		status, etag, modified := c.out.validators(c.op.status, reflect.ValueOf(out).Elem())
+		if pe := selected(r, status, etag, modified); pe != nil {
+			c.out.close(out)
+			pe.write(w, r)
+			return
+		}
+	}
 	if err := c.out.write(w, c.op.status, out, c.limits.MaxResponseBuffer); err != nil {
 		if ce, ok := err.(*committedError); ok {
 			// The response has started: abort so the client cannot take a

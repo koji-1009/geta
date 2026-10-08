@@ -54,7 +54,7 @@ var ErrIDMismatch = errors.New("body id does not match path id")
 type Store interface {
 	Find(ctx context.Context, id string) (*model.User, error)
 	Replace(ctx context.Context, u model.User, check func(current model.User) error) (*model.User, error)
-	Delete(ctx context.Context, id string) error
+	Delete(ctx context.Context, id string, check func(current model.User) error) error
 }
 
 // Publisher announces a change on the live feed.
@@ -71,9 +71,9 @@ type Path struct {
 }
 
 // A fetch may be conditional, answering 304 to a client that holds the
-// current user; a replace may be too, so that a client replaces only the
-// user it fetched: If-Match with its ETag answers 412 once another write
-// has changed it.
+// current user; a replace or a delete may be too, so that a client replaces
+// or deletes only the user it fetched: If-Match with its ETag answers 412
+// once another write has changed it.
 type GetIn struct {
 	geta.Conditional
 	Path
@@ -85,7 +85,10 @@ type PutIn struct {
 	Body model.User `body:"json"`
 }
 
-type DeleteIn struct{ Path }
+type DeleteIn struct {
+	geta.Conditional
+	Path
+}
 
 // Tagged is a user and its entity tag, which a conditional request names.
 type Tagged struct {
@@ -133,7 +136,10 @@ func (h Handler) Put(ctx context.Context, in *PutIn) (*Tagged, error) {
 }
 
 func (h Handler) Delete(ctx context.Context, in *DeleteIn) error {
-	if err := h.Users.Delete(ctx, in.ID); err != nil {
+	// As for Put, the precondition is checked inside the store's delete.
+	if err := h.Users.Delete(ctx, in.ID, func(current model.User) error {
+		return in.Check(ETag(current), time.Time{})
+	}); err != nil {
 		return err
 	}
 	h.Events.Publish(events.UserEvent{Kind: "deleted", ID: in.ID})
