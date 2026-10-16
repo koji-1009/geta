@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/koji-1009/geta"
 	"github.com/koji-1009/geta/getatest"
@@ -75,12 +76,18 @@ func overrideTable(scopes ...geta.Scope) geta.Table {
 		},
 		Routes: []geta.Entry{
 			{Path: "/items", Scopes: scopes, Route: geta.Route{
-				Post:   geta.Op(http.StatusCreated, func(context.Context, *empty) (*createdBody, error) { return &createdBody{"a"}, nil }, geta.Doc{}),
-				Delete: geta.OpNoBody(http.StatusNoContent, func(context.Context, *empty) error { return nil }, geta.Doc{}),
+				Post: geta.Op(http.StatusCreated, func(_ context.Context, in *write) (*createdBody, error) {
+					return &createdBody{"a"}, in.Check("", time.Time{})
+				}, geta.Doc{}),
+				Delete: geta.OpNoBody(http.StatusNoContent, writeNoBody, geta.Doc{}),
 			}},
 			{Path: "/things", Route: geta.Route{
-				Post: geta.Op(http.StatusOK, func(context.Context, *empty) (*createdBody, error) { return &createdBody{"a"}, nil }, geta.Doc{}),
-				Put:  geta.Op(http.StatusOK, func(context.Context, *empty) (*countBody, error) { return &countBody{1}, nil }, geta.Doc{}),
+				Post: geta.Op(http.StatusOK, func(_ context.Context, in *write) (*createdBody, error) {
+					return &createdBody{"a"}, in.Check("", time.Time{})
+				}, geta.Doc{}),
+				Put: geta.Op(http.StatusOK, func(_ context.Context, in *write) (*countBody, error) {
+					return &countBody{1}, in.Check("", time.Time{})
+				}, geta.Doc{}),
 			}},
 		},
 	}

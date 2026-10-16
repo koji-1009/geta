@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/koji-1009/geta"
 )
@@ -15,6 +16,7 @@ type limitedNote struct {
 }
 
 type limitedNoteIn struct {
+	geta.Conditional
 	Body limitedNote `body:"json"`
 }
 
@@ -23,6 +25,7 @@ type limitedTags struct {
 }
 
 type limitedTagsIn struct {
+	geta.Conditional
 	Body limitedTags `body:"json"`
 }
 
@@ -30,7 +33,12 @@ type limitedQuery struct {
 	Q string `query:"q"`
 }
 
-func postNote(_ context.Context, in *limitedNoteIn) (*ok, error) { return &ok{true}, nil }
+func postNote(_ context.Context, in *limitedNoteIn) (*ok, error) {
+	if err := in.Check("", time.Time{}); err != nil {
+		return nil, err
+	}
+	return &ok{true}, nil
+}
 
 // raise returns a Doc.Limits that changes the App's limits by change.
 func raise(change func(*geta.Limits)) func(geta.Limits) geta.Limits {
@@ -96,7 +104,12 @@ func TestOperationLimitsAreTheOperationsOwn(t *testing.T) {
 // limits New refuses of WithLimits are refused of Doc.Limits too.
 func TestOperationLimitsKeepComponentsTruthful(t *testing.T) {
 	few := raise(func(l *geta.Limits) { l.MaxItems = 3 })
-	postTags := func(_ context.Context, in *limitedTagsIn) (*ok, error) { return &ok{true}, nil }
+	postTags := func(_ context.Context, in *limitedTagsIn) (*ok, error) {
+		if err := in.Check("", time.Time{}); err != nil {
+			return nil, err
+		}
+		return &ok{true}, nil
+	}
 	a := accepts(t, one("/tags", geta.Route{Post: geta.Op(http.StatusOK, postTags, geta.Doc{Limits: few})}))
 	if got := at(t, doc(t, a), "components", "schemas", "limitedTags", "properties", "tags", "maxItems"); got != 3.0 {
 		t.Errorf("maxItems %v", got)
@@ -120,9 +133,15 @@ func TestOperationLimitsKeepComponentsTruthful(t *testing.T) {
 		Text string `json:"text" schema:"maxLength=100"`
 	}
 	type declaredIn struct {
+		geta.Conditional
 		Body declared `body:"json"`
 	}
-	postDeclared := func(_ context.Context, in *declaredIn) (*ok, error) { return &ok{true}, nil }
+	postDeclared := func(_ context.Context, in *declaredIn) (*ok, error) {
+		if err := in.Check("", time.Time{}); err != nil {
+			return nil, err
+		}
+		return &ok{true}, nil
+	}
 	accepts(t, geta.Table{Routes: []geta.Entry{
 		{Path: "/a", Route: geta.Route{Post: geta.Op(http.StatusOK, postDeclared, geta.Doc{})}},
 		{Path: "/b", Route: geta.Route{Post: geta.Op(http.StatusOK, postDeclared, geta.Doc{Limits: long})}},

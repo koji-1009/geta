@@ -37,6 +37,7 @@ func TestFailureStatusIsTheRows(t *testing.T) {
 // A body's example the body's schema refuses is refused at assembly.
 func TestABodysExampleTheSchemaRefusesIsRefused(t *testing.T) {
 	type in struct {
+		geta.Conditional
 		N *int `body:"json" schema:"maximum=3,examples=5"`
 	}
 	rejects(t, one("/x", geta.Route{Post: geta.Op(http.StatusOK, func(context.Context, *in) (*ok, error) { return nil, nil }, geta.Doc{})}),

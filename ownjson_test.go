@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/koji-1009/geta"
 	"github.com/koji-1009/geta/getatest"
@@ -51,6 +52,7 @@ type account struct {
 }
 
 type accountIn struct {
+	geta.Conditional
 	Body account `body:"json"`
 }
 
@@ -76,6 +78,9 @@ func TestKeywordOnOwnJSONTypeNamesTheType(t *testing.T) {
 func TestOwnJSONTypesUseTheirMethods(t *testing.T) {
 	var got account
 	h := func(ctx context.Context, in *accountIn) (*account, error) {
+		if err := in.Check("", time.Time{}); err != nil {
+			return nil, err
+		}
 		got = in.Body
 		return &in.Body, nil
 	}
@@ -117,7 +122,12 @@ func TestOwnJSONTypesUseTheirMethods(t *testing.T) {
 // documented as {}, valid on input when its UnmarshalJSON takes the value,
 // valid on output when its MarshalJSON writes JSON.
 func TestOwnJSONTypesNeedNoDeclaration(t *testing.T) {
-	h := func(ctx context.Context, in *accountIn) (*account, error) { return &in.Body, nil }
+	h := func(ctx context.Context, in *accountIn) (*account, error) {
+		if err := in.Check("", time.Time{}); err != nil {
+			return nil, err
+		}
+		return &in.Body, nil
+	}
 	c := getatest.New(t, one("/x", geta.Route{Post: geta.Op(http.StatusOK, h, geta.Doc{})}))
 	body := `{"balance":"12.34","big":123456789012345678901234567890}`
 	if res := c.Post("/x", body); res.Status != 200 || res.Text() != body {

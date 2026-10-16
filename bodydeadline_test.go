@@ -27,6 +27,7 @@ type dlNote struct {
 }
 
 type dlJSONIn struct {
+	geta.Conditional
 	Body dlNote `body:"json"`
 }
 
@@ -35,31 +36,58 @@ type dlFields struct {
 }
 
 type dlFormIn struct {
+	geta.Conditional
 	Body dlFields `body:"form"`
 }
 
 type dlMultipartIn struct {
+	geta.Conditional
 	Body dlFields `body:"multipart"`
 }
 
 type dlRawIn struct {
+	geta.Conditional
 	Body []byte `body:"text/csv"`
 }
 
 type dlReaderIn struct {
+	geta.Conditional
 	Body io.Reader `body:"text/csv"`
 }
 
 func dlTable(root ...geta.Middleware) geta.Table {
-	okFor := func(context.Context, *dlJSONIn) (*ok, error) { return &ok{true}, nil }
+	okFor := func(_ context.Context, in *dlJSONIn) (*ok, error) {
+		if err := in.Check("", time.Time{}); err != nil {
+			return nil, err
+		}
+		return &ok{true}, nil
+	}
 	return withRoot(geta.Table{Routes: []geta.Entry{
 		{Path: "/json", Route: geta.Route{Post: geta.Op(http.StatusOK, okFor, geta.Doc{})}},
-		{Path: "/form", Route: geta.Route{Post: geta.Op(http.StatusOK, func(context.Context, *dlFormIn) (*ok, error) { return &ok{true}, nil }, geta.Doc{})}},
-		{Path: "/multipart", Route: geta.Route{Post: geta.Op(http.StatusOK, func(context.Context, *dlMultipartIn) (*ok, error) { return &ok{true}, nil }, geta.Doc{})}},
-		{Path: "/raw", Route: geta.Route{Post: geta.Op(http.StatusOK, func(context.Context, *dlRawIn) (*ok, error) { return &ok{true}, nil }, geta.Doc{})}},
+		{Path: "/form", Route: geta.Route{Post: geta.Op(http.StatusOK, func(_ context.Context, in *dlFormIn) (*ok, error) {
+			if err := in.Check("", time.Time{}); err != nil {
+				return nil, err
+			}
+			return &ok{true}, nil
+		}, geta.Doc{})}},
+		{Path: "/multipart", Route: geta.Route{Post: geta.Op(http.StatusOK, func(_ context.Context, in *dlMultipartIn) (*ok, error) {
+			if err := in.Check("", time.Time{}); err != nil {
+				return nil, err
+			}
+			return &ok{true}, nil
+		}, geta.Doc{})}},
+		{Path: "/raw", Route: geta.Route{Post: geta.Op(http.StatusOK, func(_ context.Context, in *dlRawIn) (*ok, error) {
+			if err := in.Check("", time.Time{}); err != nil {
+				return nil, err
+			}
+			return &ok{true}, nil
+		}, geta.Doc{})}},
 		{Path: "/reader", Route: geta.Route{Post: geta.Op(http.StatusOK, func(_ context.Context, in *dlReaderIn) (*ok, error) {
 			if _, err := io.ReadAll(in.Body); err != nil {
 				return nil, fmt.Errorf("reading the upload: %w", err)
+			}
+			if err := in.Check("", time.Time{}); err != nil {
+				return nil, err
 			}
 			return &ok{true}, nil
 		}, geta.Doc{})}},
@@ -197,6 +225,9 @@ func TestALateBodyClosesOnlyAnHTTP1Connection(t *testing.T) {
 func TestABodyInTimeLeavesTheConnectionAlone(t *testing.T) {
 	slow := func(_ context.Context, in *dlJSONIn) (*dlNote, error) {
 		time.Sleep(300 * time.Millisecond)
+		if err := in.Check("", time.Time{}); err != nil {
+			return nil, err
+		}
 		return &in.Body, nil
 	}
 	tbl := withRoot(one("/slow", geta.Route{Post: geta.Op(http.StatusOK, slow, geta.Doc{})}), geta.Timeout(100*time.Millisecond))
@@ -442,7 +473,13 @@ func TestADeclaredLengthLeavesAReaderToItsHandler(t *testing.T) {
 	prefix := func(_ context.Context, in *dlReaderIn) (*ok, error) {
 		b := make([]byte, 3)
 		_, err := io.ReadFull(in.Body, b)
-		return &ok{string(b) == "a,b"}, err
+		if err != nil {
+			return nil, err
+		}
+		if err := in.Check("", time.Time{}); err != nil {
+			return nil, err
+		}
+		return &ok{string(b) == "a,b"}, nil
 	}
 	small := func(l geta.Limits) geta.Limits { l.MaxBodyBytes = 8; return l }
 	a := accepts(t, one("/r", geta.Route{Post: geta.Op(http.StatusOK, prefix, geta.Doc{Limits: small})}))
@@ -466,8 +503,12 @@ func TestAReplacedBodyIsReadNotJudgedByItsHeaders(t *testing.T) {
 	})
 	a := accepts(t, withRoot(geta.Table{Routes: []geta.Entry{{Path: "/json", Route: geta.Route{Post: geta.Op(http.StatusOK,
 		func(_ context.Context, in *struct {
+			geta.Conditional
 			Body *dlNote `body:"json"`
 		}) (*ok, error) {
+			if err := in.Check("", time.Time{}); err != nil {
+				return nil, err
+			}
 			return &ok{in.Body == nil}, nil
 		}, geta.Doc{})}}}}, replace))
 	req := httptest.NewRequest(http.MethodPost, "/json", strings.NewReader("xxxxxxxxxx"))

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/koji-1009/geta"
 )
@@ -78,12 +79,12 @@ func TestRewrittenMethodReachesTheGate(t *testing.T) {
 	app, err := geta.New(geta.Table{
 		Root: geta.Scope{override, gate},
 		Routes: []geta.Entry{{Path: "/items", Route: geta.Route{
-			Post: geta.Op(http.StatusOK, okHandler, geta.Doc{Security: []geta.Scheme{}}),
-			Delete: geta.OpNoBody(http.StatusNoContent, func(ctx context.Context, _ *empty) error {
+			Post: geta.Op(http.StatusOK, writeHandler, geta.Doc{Security: []geta.Scheme{}}),
+			Delete: geta.OpNoBody(http.StatusNoContent, func(ctx context.Context, in *write) error {
 				m, _ := geta.Matched(ctx)
 				seen.Store(m.Method + " " + m.Template)
 				deleted.Store(true)
-				return nil
+				return in.Check("", time.Time{})
 			}, geta.Doc{}),
 		}}},
 	}, geta.WithLogger(quietLogger()))
@@ -161,10 +162,10 @@ func TestRewriteAfterTheGateIsRefused(t *testing.T) {
 	app, err := geta.New(geta.Table{
 		Root: geta.Scope{bearerGate(), methodOverride},
 		Routes: []geta.Entry{{Path: "/items", Route: geta.Route{
-			Post: geta.Op(http.StatusOK, okHandler, geta.Doc{Security: []geta.Scheme{}}),
-			Delete: geta.OpNoBody(http.StatusNoContent, func(context.Context, *empty) error {
+			Post: geta.Op(http.StatusOK, writeHandler, geta.Doc{Security: []geta.Scheme{}}),
+			Delete: geta.OpNoBody(http.StatusNoContent, func(_ context.Context, in *write) error {
 				deleted.Store(true)
-				return nil
+				return in.Check("", time.Time{})
 			}, geta.Doc{}),
 		}}},
 	}, geta.WithLogger(slog.New(slog.NewTextHandler(&logs, nil))))
@@ -240,8 +241,8 @@ func TestRewriteBeforeTheGateStillChecks(t *testing.T) {
 	app, err := geta.New(geta.Table{
 		Root: geta.Scope{methodOverride, bearerGate()},
 		Routes: []geta.Entry{{Path: "/items", Route: geta.Route{
-			Post:   geta.Op(http.StatusOK, okHandler, geta.Doc{Security: []geta.Scheme{}}),
-			Delete: geta.OpNoBody(http.StatusNoContent, func(context.Context, *empty) error { return nil }, geta.Doc{}),
+			Post:   geta.Op(http.StatusOK, writeHandler, geta.Doc{Security: []geta.Scheme{}}),
+			Delete: geta.OpNoBody(http.StatusNoContent, writeNoBody, geta.Doc{}),
 		}}},
 	}, geta.WithLogger(quietLogger()))
 	if err != nil {
@@ -259,7 +260,7 @@ func TestRewriteBeforeTheGateStillChecks(t *testing.T) {
 func TestRefusedRewriteStatusIsDocumented(t *testing.T) {
 	app, err := geta.New(geta.Table{
 		Root:   geta.Scope{bearerGate(), methodOverride},
-		Routes: []geta.Entry{{Path: "/items", Route: geta.Route{Delete: geta.OpNoBody(http.StatusNoContent, func(context.Context, *empty) error { return nil }, geta.Doc{})}}},
+		Routes: []geta.Entry{{Path: "/items", Route: geta.Route{Delete: geta.OpNoBody(http.StatusNoContent, writeNoBody, geta.Doc{})}}},
 	}, geta.WithLogger(quietLogger()))
 	if err != nil {
 		t.Fatal(err)
@@ -286,6 +287,22 @@ func reportMatched(ran *atomic.Bool) func(context.Context, *empty) (*matchedOut,
 	}
 }
 
+// reportMatchedWrite is reportMatched for a write, which checks its
+// preconditions before it answers.
+func reportMatchedWrite(ran *atomic.Bool) func(context.Context, *write) (*matchedOut, error) {
+	return func(ctx context.Context, in *write) (*matchedOut, error) {
+		ran.Store(true)
+		if err := in.Check("", time.Time{}); err != nil {
+			return nil, err
+		}
+		mt, ok := geta.Matched(ctx)
+		if !ok {
+			return &matchedOut{}, nil
+		}
+		return &matchedOut{Method: mt.Method, Template: mt.Template}, nil
+	}
+}
+
 // Once dispatch has chosen the operation, it is fixed: a middleware in the
 // operation's own scopes that changes the method does not make the gate after
 // it check another operation's requirement, and the handler's match is still
@@ -296,8 +313,8 @@ func TestRewriteInsideTheOperationDoesNotMoveTheGate(t *testing.T) {
 		Routes: []geta.Entry{{
 			Path: "/items",
 			Route: geta.Route{
-				Post:   geta.Op(http.StatusOK, reportMatched(&posted), geta.Doc{}),
-				Delete: geta.Op(http.StatusOK, reportMatched(&deleted), geta.Doc{Security: []geta.Scheme{}}),
+				Post:   geta.Op(http.StatusOK, reportMatchedWrite(&posted), geta.Doc{}),
+				Delete: geta.Op(http.StatusOK, reportMatchedWrite(&deleted), geta.Doc{Security: []geta.Scheme{}}),
 			},
 			Scopes: []geta.Scope{{methodOverride, bearerGate()}},
 		}},
@@ -372,10 +389,10 @@ func TestRewriteAfterADetachingGateIsRefused(t *testing.T) {
 	app, err := geta.New(geta.Table{
 		Root: geta.Scope{detachedGate(), methodOverride},
 		Routes: []geta.Entry{{Path: "/items", Route: geta.Route{
-			Post: geta.Op(http.StatusOK, okHandler, geta.Doc{Security: []geta.Scheme{geta.Bearer}}),
-			Delete: geta.OpNoBody(http.StatusNoContent, func(context.Context, *empty) error {
+			Post: geta.Op(http.StatusOK, writeHandler, geta.Doc{Security: []geta.Scheme{geta.Bearer}}),
+			Delete: geta.OpNoBody(http.StatusNoContent, func(_ context.Context, in *write) error {
 				deleted.Store(true)
-				return nil
+				return in.Check("", time.Time{})
 			}, geta.Doc{Security: []geta.Scheme{geta.Bearer}}),
 		}}},
 	}, geta.WithLogger(quietLogger()))
@@ -409,10 +426,10 @@ func TestADetachedContextIsRefused(t *testing.T) {
 	app, err := geta.New(geta.Table{
 		Root: geta.Scope{bearerGate(), detachContext, methodOverride},
 		Routes: []geta.Entry{{Path: "/items", Route: geta.Route{
-			Post: geta.Op(http.StatusOK, okHandler, geta.Doc{Security: []geta.Scheme{}}),
-			Delete: geta.OpNoBody(http.StatusNoContent, func(context.Context, *empty) error {
+			Post: geta.Op(http.StatusOK, writeHandler, geta.Doc{Security: []geta.Scheme{}}),
+			Delete: geta.OpNoBody(http.StatusNoContent, func(_ context.Context, in *write) error {
 				deleted.Store(true)
-				return nil
+				return in.Check("", time.Time{})
 			}, geta.Doc{}),
 		}}},
 	}, geta.WithLogger(slog.New(slog.NewTextHandler(&logs, nil))))

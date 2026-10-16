@@ -436,13 +436,17 @@ func TestCORSExposesMiddlewareAndDescribedHeaders(t *testing.T) {
 		Body   ok           `body:"json"`
 	}
 	a = accepts(t, withRoot(one("/session", geta.Route{Post: geta.Op(http.StatusOK,
-		func(context.Context, *empty) (*session, error) {
+		func(_ context.Context, in *write) (*session, error) {
+			if err := in.Check("", time.Time{}); err != nil {
+				return nil, err
+			}
 			return &session{Cookie: &http.Cookie{Name: "sid", Value: "v"}, Body: ok{true}}, nil
 		}, geta.Doc{})}), cors, busy(), setCookie))
 	r = do(t, a, "POST", "/session", origin...)
 	if r.Code != 200 || r.Header().Get("Set-Cookie") == "" {
 		t.Fatal(r.Code, r.Header())
 	}
+	// A write answers no 304, so Conditional in its input exposes no ETag.
 	sameHeaders(t, "POST /session", r.Header().Get("Access-Control-Expose-Headers"), "Retry-After")
 	r = do(t, a, "POST", "/session", "Origin", "https://a.example", "X-Busy", "1")
 	if r.Code != 503 || r.Header().Get("Retry-After") != "5" {

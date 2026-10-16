@@ -119,6 +119,46 @@
         "operationId": "postF",
         "parameters": [
           {
+            "description": "\"*\" or a list of one or more entity tags (RFC 9110 §13.1.1), compared strongly; a failed match answers 412",
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "pattern": "^(?:[^\\x00-\\x20\\x7F](?:[^\\x00-\\x08\\x0A-\\x1F\\x7F]*[^\\x00-\\x20\\x7F])?)?$",
+              "type": "string"
+            }
+          },
+          {
+            "description": "\"*\" or a list of one or more entity tags (RFC 9110 §13.1.2), compared weakly; a match answers 304 to a GET or HEAD and 412 otherwise",
+            "in": "header",
+            "name": "If-None-Match",
+            "required": false,
+            "schema": {
+              "pattern": "^(?:[^\\x00-\\x20\\x7F](?:[^\\x00-\\x08\\x0A-\\x1F\\x7F]*[^\\x00-\\x20\\x7F])?)?$",
+              "type": "string"
+            }
+          },
+          {
+            "description": "An HTTP-date (RFC 9110 §13.1.3), read on a GET or HEAD without If-None-Match; an unmodified representation answers 304. A value that is not one HTTP-date is ignored",
+            "in": "header",
+            "name": "If-Modified-Since",
+            "required": false,
+            "schema": {
+              "pattern": "^(?:[^\\x00-\\x20\\x7F](?:[^\\x00-\\x08\\x0A-\\x1F\\x7F]*[^\\x00-\\x20\\x7F])?)?$",
+              "type": "string"
+            }
+          },
+          {
+            "description": "An HTTP-date (RFC 9110 §13.1.4), read without If-Match; a representation modified since answers 412. A value that is not one HTTP-date is ignored",
+            "in": "header",
+            "name": "If-Unmodified-Since",
+            "required": false,
+            "schema": {
+              "pattern": "^(?:[^\\x00-\\x20\\x7F](?:[^\\x00-\\x08\\x0A-\\x1F\\x7F]*[^\\x00-\\x20\\x7F])?)?$",
+              "type": "string"
+            }
+          },
+          {
             "in": "query",
             "name": "id",
             "required": true,
@@ -195,7 +235,7 @@
                 }
               }
             },
-            "description": "A precondition failed: If-Match other than *, or If-None-Match: *; the operation declares no validator (its input does not embed geta.Conditional)"
+            "description": "A precondition failed: If-Match, If-Unmodified-Since, or If-None-Match"
           },
           "413": {
             "content": {
@@ -304,6 +344,48 @@
       },
       "post": {
         "operationId": "postM",
+        "parameters": [
+          {
+            "description": "\"*\" or a list of one or more entity tags (RFC 9110 §13.1.1), compared strongly; a failed match answers 412",
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "pattern": "^(?:[^\\x00-\\x20\\x7F](?:[^\\x00-\\x08\\x0A-\\x1F\\x7F]*[^\\x00-\\x20\\x7F])?)?$",
+              "type": "string"
+            }
+          },
+          {
+            "description": "\"*\" or a list of one or more entity tags (RFC 9110 §13.1.2), compared weakly; a match answers 304 to a GET or HEAD and 412 otherwise",
+            "in": "header",
+            "name": "If-None-Match",
+            "required": false,
+            "schema": {
+              "pattern": "^(?:[^\\x00-\\x20\\x7F](?:[^\\x00-\\x08\\x0A-\\x1F\\x7F]*[^\\x00-\\x20\\x7F])?)?$",
+              "type": "string"
+            }
+          },
+          {
+            "description": "An HTTP-date (RFC 9110 §13.1.3), read on a GET or HEAD without If-None-Match; an unmodified representation answers 304. A value that is not one HTTP-date is ignored",
+            "in": "header",
+            "name": "If-Modified-Since",
+            "required": false,
+            "schema": {
+              "pattern": "^(?:[^\\x00-\\x20\\x7F](?:[^\\x00-\\x08\\x0A-\\x1F\\x7F]*[^\\x00-\\x20\\x7F])?)?$",
+              "type": "string"
+            }
+          },
+          {
+            "description": "An HTTP-date (RFC 9110 §13.1.4), read without If-Match; a representation modified since answers 412. A value that is not one HTTP-date is ignored",
+            "in": "header",
+            "name": "If-Unmodified-Since",
+            "required": false,
+            "schema": {
+              "pattern": "^(?:[^\\x00-\\x20\\x7F](?:[^\\x00-\\x08\\x0A-\\x1F\\x7F]*[^\\x00-\\x20\\x7F])?)?$",
+              "type": "string"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "multipart/form-data": {
@@ -370,7 +452,7 @@
                 }
               }
             },
-            "description": "A precondition failed: If-Match other than *, or If-None-Match: *; the operation declares no validator (its input does not embed geta.Conditional)"
+            "description": "A precondition failed: If-Match, If-Unmodified-Since, or If-None-Match"
           },
           "413": {
             "content": {

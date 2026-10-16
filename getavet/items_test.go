@@ -24,7 +24,8 @@ type Out struct {
 }
 
 type Sound struct {
-	Q    []string     `+"`query:\"q\" schema:\"maxItems=2,items.enum=a|b\"`"+`
+	geta.Conditional
+	Q   []string     `+"`query:\"q\" schema:\"maxItems=2,items.enum=a|b\"`"+`
 	H    *[]string    `+"`header:\"X-H\" schema:\"items.enum=a|b c\"`"+`
 	N    []geta.Date  `+"`query:\"n\" schema:\"items.enum=2026-01-01\"`"+`
 	Body struct {
@@ -53,6 +54,7 @@ type Member struct {
 }
 
 type MemberIn struct {
+	geta.Conditional
 	Body Member `+"`body:\"json\"`"+`
 }
 
@@ -71,6 +73,7 @@ type Shapes struct {
 }
 
 type Upload struct {
+	geta.Conditional
 	Body struct {
 		Files []geta.File `+"`form:\"files\" schema:\"items.maxLength=1\"`"+`
 	} `+"`body:\"multipart\"`"+`
@@ -86,17 +89,19 @@ type Written struct {
 	Dates []geta.Date `+"`json:\"dates\" schema:\"items.enum=2026-02-30\"`"+`
 }
 
+func write[In any](context.Context, *In) (*Out, error) { return nil, nil }
+
 func Build() (*geta.App, error) {
 	return geta.New(geta.Table{Routes: []geta.Entry{
-		{Path: "/a", Route: geta.Route{Post: geta.Op(http.StatusOK, func(context.Context, *Sound) (*Out, error) { return nil, nil }, geta.Doc{})}},
+		{Path: "/a", Route: geta.Route{Post: geta.Op(http.StatusOK, write[Sound], geta.Doc{})}},
 		{Path: "/b", Route: geta.Route{Get: geta.Op(http.StatusOK, func(context.Context, *OnAString) (*Out, error) { return nil, nil }, geta.Doc{})}},
 		{Path: "/c", Route: geta.Route{Get: geta.Op(http.StatusOK, func(context.Context, *WrongType) (*Out, error) { return nil, nil }, geta.Doc{})}},
 		{Path: "/d", Route: geta.Route{Get: geta.Op(http.StatusOK, func(context.Context, *Annotation) (*Out, error) { return nil, nil }, geta.Doc{})}},
 		{Path: "/e", Route: geta.Route{Get: geta.Op(http.StatusOK, func(context.Context, *Comma) (*Out, error) { return nil, nil }, geta.Doc{})}},
-		{Path: "/f", Route: geta.Route{Post: geta.Op(http.StatusOK, func(context.Context, *MemberIn) (*Out, error) { return nil, nil }, geta.Doc{})}},
+		{Path: "/f", Route: geta.Route{Post: geta.Op(http.StatusOK, write[MemberIn], geta.Doc{})}},
 		{Path: "/g", Route: geta.Route{Get: geta.Op(http.StatusOK, func(context.Context, *struct{}) (*Written, error) { return nil, nil }, geta.Doc{})}},
 		{Path: "/h", Route: geta.Route{Get: geta.Op(http.StatusOK, func(context.Context, *struct{}) (*Shapes, error) { return nil, nil }, geta.Doc{})}},
-		{Path: "/i", Route: geta.Route{Post: geta.Op(http.StatusOK, func(context.Context, *Upload) (*Out, error) { return nil, nil }, geta.Doc{})}},
+		{Path: "/i", Route: geta.Route{Post: geta.Op(http.StatusOK, write[Upload], geta.Doc{})}},
 		{Path: "/j", Route: geta.Route{Get: geta.Op(http.StatusOK, func(context.Context, *struct{}) (*Pointers, error) { return nil, nil }, geta.Doc{})}},
 	}}, geta.WithSchema[Money]("string", ""))
 }

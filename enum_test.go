@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/koji-1009/geta"
 	"github.com/koji-1009/geta/getatest"
@@ -21,6 +22,7 @@ type enumBody struct {
 }
 
 type enumIn struct {
+	geta.Conditional
 	Level int8     `query:"level" schema:"enum=-1|2|3"`
 	Port  *uint16  `header:"X-Port" schema:"enum=80|443"`
 	Body  enumBody `body:"json"`
@@ -31,7 +33,12 @@ type enumOut struct {
 }
 
 func enumTable() geta.Table {
-	h := func(_ context.Context, in *enumIn) (*enumOut, error) { return &enumOut{Level: in.Level}, nil }
+	h := func(_ context.Context, in *enumIn) (*enumOut, error) {
+		if err := in.Check("", time.Time{}); err != nil {
+			return nil, err
+		}
+		return &enumOut{Level: in.Level}, nil
+	}
 	return one("/e", geta.Route{Post: geta.Op(http.StatusOK, h, geta.Doc{})})
 }
 

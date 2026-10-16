@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"time"
 
 	"github.com/koji-1009/geta"
 )
@@ -25,6 +26,7 @@ type StockError struct{ Item string }
 func (e *StockError) Error() string { return "out of stock: " + e.Item }
 
 type CancelIn struct {
+	geta.Conditional
 	ID string `path:"id" schema:"maxLength=16"`
 }
 
@@ -33,7 +35,7 @@ type CancelIn struct {
 func cancelOrder(ctx context.Context, in *CancelIn) error {
 	switch in.ID {
 	case "1":
-		return nil
+		return in.Check("", time.Time{}) // the order has no validator
 	case "2":
 		return fmt.Errorf("cancel %s: %w", in.ID, errOrderShipped)
 	case "3":

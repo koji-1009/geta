@@ -1001,20 +1001,23 @@ func checkMethodBody(method string) error {
 
 // checkConditionalWrite reports whether geta.New accepts an operation of
 // method on a route whose GET declares get, when its input does or does not
-// (conditional) embed geta.Conditional or geta.RequireConditional.
+// (conditional) embed geta.Conditional, geta.RequireConditional, or
+// geta.RequireAbsent.
 //
+// A write whose input embeds none of them takes no precondition: geta
+// refuses a request that carries one with a 400 (refusesPreconditions).
 // PUT, PATCH, and DELETE are defined on the state of the target resource,
 // which the route's GET selects a representation of: PUT "requests that the
 // state of the target resource be created or replaced" (RFC 9110 §9.3.4),
 // PATCH is "defined for partial updates" (§14.5), and DELETE removes "the
 // association between the target resource and its current functionality"
-// (§9.3.5). Where the GET declares a validator, such an operation must
-// evaluate the preconditions against it: without Conditional, geta evaluates
-// them against none, so If-Match with the tag the GET sent fails (412,
-// §13.1.1) and If-Unmodified-Since is ignored (§13.1.4). POST processes its
-// content "according to the resource's own specific semantics" (§9.3.3), so
-// its method does not say it writes what the GET selects; QUERY is safe like
-// GET (§9.2.1). Neither is judged. It applies geta.New's rule.
+// (§9.3.5). Where the GET declares a validator, a client holds the tag it
+// sent and may send it back in If-Match "to prevent the 'lost update'
+// problem" (§13.1.1); such a write must take it, and evaluate it against the
+// current validators. POST processes its content "according to the
+// resource's own specific semantics" (§9.3.3), so its method does not say it
+// writes what the GET selects; QUERY is safe like GET (§9.2.1). Neither is
+// judged. It applies geta.New's rule.
 func checkConditionalWrite(method string, get vet.Validator, conditional bool) error {
 	switch method {
 	case http.MethodPut, http.MethodPatch, http.MethodDelete:
@@ -1035,8 +1038,9 @@ func checkConditionalWrite(method string, get vet.Validator, conditional bool) e
 	if conditional {
 		return nil
 	}
-	return fmt.Errorf("the route's GET declares a validator (%s), but the input embeds neither geta.Conditional nor geta.RequireConditional, "+
-		"so geta would evaluate its preconditions against none; embed one and call Check with the current validators", declares)
+	return fmt.Errorf("the route's GET declares a validator (%s), so a client may send its tag in If-Match, "+
+		"but the input embeds none of geta.Conditional, geta.RequireConditional, geta.RequireAbsent, so the operation takes no precondition and answers it 400; "+
+		"embed geta.Conditional and call Check with the current validators", declares)
 }
 
 // checkRequireAbsent reports whether geta.New accepts an input embedding

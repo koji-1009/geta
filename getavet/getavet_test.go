@@ -233,9 +233,10 @@ func TestEachMistakeIsNamed(t *testing.T) {
 		// M4: a malformed constraint, in a body type from another package,
 		// on a POST, which takes a body.
 		"model/model.go": "package model\n\ntype Body struct {\n\tName string `json:\"name\" schema:\"maxLength=abc\"`\n}\n",
-		"routes/things/route.go": strings.Replace(strings.Replace(route("things", "type In struct{ Body model.Body `body:\"json\"` }\n"),
-			"\"github.com/koji-1009/geta\"", "\"github.com/koji-1009/geta\"\n\t\"example.com/app/model\"", 1),
+		"routes/things/route.go": strings.Replace(strings.Replace(strings.Replace(route("things", "type In struct{ geta.Conditional; Body model.Body `body:\"json\"` }\n"),
+			"\"github.com/koji-1009/geta\"", "\"github.com/koji-1009/geta\"\n\t\"example.com/app/model\"\n\t\"time\"", 1),
 			"geta.Route{Get:", "geta.Route{Post:", 1),
+			"func(context.Context, *In) (*Out, error) { return &Out{}, nil }", "func(_ context.Context, in *In) (*Out, error) { return &Out{}, in.Check(\"\", time.Time{}) }", 1),
 		// M5: a constraint on the wrong type, outside any route tree.
 		"lib/lib.go": strings.Replace(route("lib", "type In struct{ Age int `query:\"age\" schema:\"maxLength=3\"` }\n"),
 			"func Route", "func Build", 1),
@@ -276,6 +277,7 @@ func TestSchemaTagOnEmbeddedStruct(t *testing.T) {
 import (
 	"context"
 	"net/http"
+	"time"
 
 	"github.com/koji-1009/geta"
 )
@@ -295,12 +297,13 @@ type Body struct {
 }
 
 type In struct {
+	geta.Conditional
 	Body Body ` + "`body:\"json\"`" + `
 }
 
 func Build() (*geta.App, error) {
 	return geta.New(geta.Table{Routes: []geta.Entry{{Path: "/x", Route: geta.Route{
-		Post: geta.Op(http.StatusOK, func(context.Context, *In) (*In, error) { return nil, nil }, geta.Doc{}),
+		Post: geta.Op(http.StatusOK, func(_ context.Context, in *In) (*In, error) { return nil, in.Check("", time.Time{}) }, geta.Doc{}),
 	}}}})
 }
 `,
@@ -333,6 +336,7 @@ func TestUnexportedMembersAndOutputHeaders(t *testing.T) {
 import (
 	"context"
 	"net/http"
+	"time"
 
 	"github.com/koji-1009/geta"
 )
@@ -348,18 +352,19 @@ type Body struct {
 }
 
 type In struct {
+	geta.Conditional
 	Body Body ` + "`body:\"json\"`" + `
 }
 
 type Env struct {
-	Count   int          ` + "`header:\"X-Count\" schema:\"minimum=1\"`" + `
+	Count  int          ` + "`header:\"X-Count\" schema:\"minimum=1\"`" + `
 	Session *http.Cookie ` + "`cookie:\"sid\" schema:\"maxLength=3\"`" + `
 	Body    Body         ` + "`body:\"json\"`" + `
 }
 
 func Build() (*geta.App, error) {
 	return geta.New(geta.Table{Routes: []geta.Entry{{Path: "/x", Route: geta.Route{
-		Post: geta.Op(http.StatusOK, func(context.Context, *In) (*Env, error) { return &Env{}, nil }, geta.Doc{}),
+		Post: geta.Op(http.StatusOK, func(_ context.Context, in *In) (*Env, error) { return &Env{}, in.Check("", time.Time{}) }, geta.Doc{}),
 	}}}})
 }
 
@@ -393,6 +398,7 @@ func TestEnvelopeAndInputFieldRefusals(t *testing.T) {
 import (
 	"context"
 	"net/http"
+	"time"
 
 	"github.com/koji-1009/geta"
 )
@@ -402,7 +408,7 @@ type Body struct {
 }
 
 type Env struct {
-	CT     *string      ` + "`header:\"Content-Type\"`" + `
+	CT    *string      ` + "`header:\"Content-Type\"`" + `
 	CL     string       ` + "`header:\"content-length\"`" + `
 	XC     string       ` + "`header:\"X-Content-Type-Options\"`" + `
 	Bad    string       ` + "`header:\"X Bad\"`" + `
@@ -424,6 +430,7 @@ type auth struct {
 }
 
 type In struct {
+	geta.Conditional
 	Two    string ` + "`query:\"a\" header:\"A\"`" + `
 	Loose  string
 	hidden string ` + "`query:\"h\"`" + `
@@ -447,7 +454,7 @@ var _ = In{}.hidden
 func Build() (*geta.App, error) {
 	return geta.New(geta.Table{Routes: []geta.Entry{{Path: "/x", Route: geta.Route{
 		Get:  geta.Op(http.StatusOK, func(context.Context, *int) (*Body, error) { return nil, nil }, geta.Doc{}),
-		Post: geta.Op(http.StatusOK, func(context.Context, *In) (*Env, error) { return nil, nil }, geta.Doc{}),
+		Post: geta.Op(http.StatusOK, func(_ context.Context, in *In) (*Env, error) { return nil, in.Check("", time.Time{}) }, geta.Doc{}),
 	}}}})
 }
 `,
@@ -504,6 +511,7 @@ func TestInputEmbeddedAndEnvelopeBody(t *testing.T) {
 import (
 	"context"
 	"net/http"
+	"time"
 
 	"github.com/koji-1009/geta"
 )
@@ -517,6 +525,7 @@ type auth struct {
 }
 
 type In struct {
+	geta.Conditional
 	Paging ` + "`schema:\"minimum=1\"`" + `
 	auth   ` + "`schema:\"maxLength=3\"`" + `
 }
@@ -532,7 +541,7 @@ type Env struct {
 
 func Build() (*geta.App, error) {
 	return geta.New(geta.Table{Routes: []geta.Entry{{Path: "/x", Route: geta.Route{
-		Post: geta.Op(http.StatusOK, func(context.Context, *In) (*Env, error) { return &Env{}, nil }, geta.Doc{}),
+		Post: geta.Op(http.StatusOK, func(_ context.Context, in *In) (*Env, error) { return &Env{}, in.Check("", time.Time{}) }, geta.Doc{}),
 	}}}})
 }
 `,

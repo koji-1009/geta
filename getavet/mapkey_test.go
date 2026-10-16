@@ -247,15 +247,18 @@ type SizedEmpty struct {
 }
 
 type SizedBody struct {
+	geta.Conditional
 	B Sized `+"`body:\"json\"`"+`
 }
+
+func write[In, Result any](context.Context, *In) (*Result, error) { return nil, nil }
 
 func Build() (*geta.App, error) {
 	return geta.New(geta.Table{Routes: []geta.Entry{
 		{Path: "/a", Route: geta.Route{Get: geta.Op(http.StatusOK, func(context.Context, *struct{}) (*OnMap, error) { return nil, nil }, geta.Doc{})}},
 		{Path: "/b", Route: geta.Route{Get: geta.Op(http.StatusOK, func(context.Context, *struct{}) (*OnStruct, error) { return nil, nil }, geta.Doc{})}},
 		{Path: "/c", Route: geta.Route{Get: geta.Op(http.StatusOK, func(context.Context, *struct{}) (*OnAnonymous, error) { return nil, nil }, geta.Doc{})}},
-		{Path: "/d", Route: geta.Route{Post: geta.Op(http.StatusOK, func(context.Context, *SizedBody) (*Sized, error) { return nil, nil }, geta.Doc{})}},
+		{Path: "/d", Route: geta.Route{Post: geta.Op(http.StatusOK, write[SizedBody, Sized], geta.Doc{})}},
 		{Path: "/e", Route: geta.Route{Get: geta.Op(http.StatusOK, func(context.Context, *struct{}) (*SizedAnonymous, error) { return nil, nil }, geta.Doc{})}},
 		{Path: "/f", Route: geta.Route{Get: geta.Op(http.StatusOK, func(context.Context, *struct{}) (*SizedEmpty, error) { return nil, nil }, geta.Doc{})}},
 	}})

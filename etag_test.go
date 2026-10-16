@@ -13,22 +13,21 @@ import (
 )
 
 // A stream passes through geta.ETag untouched, so its document states none
-// of ETag's answers, its header, or its parameter.
+// of ETag's answers or its header: what it answers and reads is what it
+// answers and reads without geta.ETag, geta evaluating the preconditions
+// itself.
 func TestETagLeavesAStreamsDocumentAlone(t *testing.T) {
 	h := func(ctx context.Context, _ *empty) (*geta.Stream[change], error) { return &geta.Stream[change]{}, nil }
 	m := doc(t, accepts(t, withRoot(one("/s", geta.Route{Get: geta.Op(http.StatusOK, h, geta.Doc{})}), geta.ETag())))
 	op := at(t, m, "paths", "/s", "get").(map[string]any)
-	// What it answers is what it answers without geta.ETag: the 304 is
-	// geta's own, to If-None-Match: *.
 	bare := doc(t, accepts(t, one("/s", geta.Route{Get: geta.Op(http.StatusOK, h, geta.Doc{})})))
-	if got, want := compact(t, op["responses"]), compact(t, at(t, bare, "paths", "/s", "get", "responses")); got != want {
-		t.Errorf("a stream documents %s, want %s", got, want)
+	for _, key := range []string{"responses", "parameters"} {
+		if got, want := compact(t, op[key]), compact(t, at(t, bare, "paths", "/s", "get", key)); got != want {
+			t.Errorf("a stream documents %s %s, want %s", key, got, want)
+		}
 	}
-	if _, has := op["responses"].(map[string]any)["400"]; has {
-		t.Error("a stream documents a 400")
-	}
-	if _, has := op["parameters"]; has {
-		t.Errorf("a stream documents If-None-Match")
+	if got := at(t, op, "responses", "400", "description"); got != `If-Match or If-None-Match is neither "*" nor a list of one or more entity tags` {
+		t.Errorf("a stream's 400: %q", got)
 	}
 	if _, has := at(t, op, "responses", "200").(map[string]any)["headers"]; has {
 		t.Errorf("a stream's 200 states an ETag")
@@ -36,14 +35,19 @@ func TestETagLeavesAStreamsDocumentAlone(t *testing.T) {
 }
 
 func TestETag(t *testing.T) {
+	written := func(_ context.Context, in *write) (*text, error) {
+		if err := in.Check("", time.Time{}); err != nil {
+			return nil, err
+		}
+		return &text{"hi"}, nil
+	}
 	a := accepts(t, withRoot(geta.Table{Routes: []geta.Entry{
 		{Path: "/x", Route: geta.Route{
 			Get:  geta.Op(http.StatusOK, textHandler("hi"), geta.Doc{}),
-			Post: geta.Op(http.StatusOK, textHandler("hi"), geta.Doc{}),
+			Post: geta.Op(http.StatusOK, written, geta.Doc{}),
 		}},
-		// Beside a GET geta.ETag tags, a PUT would have to embed Conditional.
 		{Path: "/w", Route: geta.Route{
-			Put: geta.Op(http.StatusCreated, textHandler("hi"), geta.Doc{}),
+			Put: geta.Op(http.StatusCreated, written, geta.Doc{}),
 		}},
 	}}, geta.ETag()))
 	first := do(t, a, "GET", "/x")
@@ -84,7 +88,7 @@ func TestETagKeepsTheHandlersTag(t *testing.T) {
 func TestETagSkipsPost(t *testing.T) {
 	app, err := geta.New(geta.Table{
 		Root:   geta.Scope{geta.ETag()},
-		Routes: []geta.Entry{{Path: "/x", Route: geta.Route{Post: geta.Op(http.StatusOK, okHandler, geta.Doc{})}}},
+		Routes: []geta.Entry{{Path: "/x", Route: geta.Route{Post: geta.Op(http.StatusOK, writeHandler, geta.Doc{})}}},
 	}, geta.WithLogger(quietLogger()))
 	if err != nil {
 		t.Fatal(err)
@@ -167,7 +171,7 @@ func TestETagAndCheckReadIfNoneMatchAlike(t *testing.T) {
 func TestETagDeclaresItsNotModified(t *testing.T) {
 	tbl := withRoot(geta.Table{Routes: []geta.Entry{{Path: "/x", Route: geta.Route{
 		Get:  geta.Op(http.StatusOK, okHandler, geta.Doc{}),
-		Post: geta.Op(http.StatusOK, okHandler, geta.Doc{}),
+		Post: geta.Op(http.StatusOK, writeHandler, geta.Doc{}),
 	}}}}, geta.ETag())
 	rec := &recorder{TB: t}
 	c := getatest.New(rec, tbl)
@@ -201,9 +205,11 @@ func TestETagDeclaresItsNotModified(t *testing.T) {
 	if got := at(t, m, "paths", "/x", "get", "responses", "400", "description"); got != `If-None-Match is neither "*" nor a list of one or more entity tags; If-Match is neither "*" nor a list of one or more entity tags` {
 		t.Fatal(got)
 	}
-	for _, s := range []string{"304", "400"} {
-		if _, has := at(t, m, "paths", "/x", "post", "responses").(map[string]any)[s]; has {
-			t.Fatal("a POST documents a " + s)
-		}
+	// The POST lists no 304, and its 400 is Check's, not ETag's.
+	if _, has := at(t, m, "paths", "/x", "post", "responses").(map[string]any)["304"]; has {
+		t.Fatal("a POST documents a 304")
+	}
+	if got := at(t, m, "paths", "/x", "post", "responses", "400", "description").(string); strings.Contains(got, "If-None-Match is neither") {
+		t.Fatal("a POST documents ETag's 400:", got)
 	}
 }

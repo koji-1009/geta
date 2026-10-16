@@ -96,6 +96,7 @@ type Out struct {
 }
 
 type In struct {
+	geta.Conditional
 	Body Out `+"`body:\"json\" mediatype:\"text/plain\"`"+`
 }
 
@@ -103,9 +104,11 @@ type Query struct {
 	Q string `+"`query:\"q\" mediatype:\"application/json\"`"+`
 }
 
+func write[In any](context.Context, *In) (*Out, error) { return nil, nil }
+
 func Build() (*geta.App, error) {
 	return geta.New(geta.Table{Routes: []geta.Entry{
-		{Path: "/a", Route: geta.Route{Post: geta.Op(http.StatusOK, func(context.Context, *In) (*Out, error) { return nil, nil }, geta.Doc{})}},
+		{Path: "/a", Route: geta.Route{Post: geta.Op(http.StatusOK, write[In], geta.Doc{})}},
 		{Path: "/b", Route: geta.Route{Get: geta.Op(http.StatusOK, func(context.Context, *Query) (*Out, error) { return nil, nil }, geta.Doc{})}},
 	}})
 }

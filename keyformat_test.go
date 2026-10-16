@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/koji-1009/geta"
 	"github.com/koji-1009/geta/getatest"
@@ -49,6 +50,7 @@ type keyFormats struct {
 }
 
 type keyFormatsBody struct {
+	geta.Conditional
 	Body keyFormats `body:"json"`
 }
 
@@ -64,7 +66,12 @@ type keyFormatsOut struct {
 func TestAKeyTypesFormatIsStatedAndHeld(t *testing.T) {
 	out := &keyFormatsOut{Mail: map[keyMail]int{"a@b": 1}}
 	c := getatest.New(t, geta.Table{Routes: []geta.Entry{
-		{Path: "/b", Route: post(func(context.Context, *keyFormatsBody) (*ok, error) { return &ok{true}, nil })},
+		{Path: "/b", Route: post(func(_ context.Context, in *keyFormatsBody) (*ok, error) {
+			if err := in.Check("", time.Time{}); err != nil {
+				return nil, err
+			}
+			return &ok{true}, nil
+		})},
 		{Path: "/o", Route: get(func(context.Context, *empty) (*keyFormatsOut, error) { return out, nil })},
 	}})
 	d := doc(t, c.App())

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/koji-1009/geta"
 	"github.com/koji-1009/geta/getatest"
@@ -25,6 +26,7 @@ type sizedBody struct {
 }
 
 type sizedIn struct {
+	geta.Conditional
 	Body sizedBody `body:"json"`
 }
 
@@ -35,7 +37,12 @@ var ownObjectSchema = geta.WithSchema[ownObject]("object", "minProperties=1,maxP
 // maxItems are; an array of maps bounds each by items.; the document states
 // them.
 func TestMapSizeKeywordsHoldARequest(t *testing.T) {
-	app, err := geta.New(one("/s", post(func(context.Context, *sizedIn) (*ok, error) { return &ok{true}, nil })), ownObjectSchema)
+	app, err := geta.New(one("/s", post(func(_ context.Context, in *sizedIn) (*ok, error) {
+		if err := in.Check("", time.Time{}); err != nil {
+			return nil, err
+		}
+		return &ok{true}, nil
+	})), ownObjectSchema)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -90,8 +97,12 @@ type sizedGolden struct {
 
 func sizeTable() geta.Table {
 	return one("/s", post(func(_ context.Context, in *struct {
+		geta.Conditional
 		B sizedGolden `body:"json"`
 	}) (*sizedGolden, error) {
+		if err := in.Check("", time.Time{}); err != nil {
+			return nil, err
+		}
 		return &in.B, nil
 	}))
 }
@@ -131,6 +142,7 @@ func sizedRoute[T any](read bool, opts ...geta.Option) error {
 	r := geta.Route{Get: geta.Op(http.StatusOK, func(context.Context, *struct{}) (*T, error) { return nil, nil }, geta.Doc{})}
 	if read {
 		r = geta.Route{Post: geta.Op(http.StatusOK, func(context.Context, *struct {
+			geta.Conditional
 			B T `body:"json"`
 		}) (*ok, error) {
 			return nil, nil
@@ -187,8 +199,12 @@ func TestADeclaredObjectIsHeldToTheBackstop(t *testing.T) {
 	lim := geta.DefaultLimits
 	lim.MaxItems = 2
 	echo := one("/x", post(func(_ context.Context, in *struct {
+		geta.Conditional
 		B DeclaredObjects `body:"json"`
 	}) (*DeclaredObjects, error) {
+		if err := in.Check("", time.Time{}); err != nil {
+			return nil, err
+		}
 		return &in.B, nil
 	}))
 	app, err := geta.New(echo, geta.WithLimits(lim), geta.WithSchema[ownObject]("object", ""))
@@ -241,6 +257,7 @@ func TestADeclaredObjectIsHeldToTheBackstop(t *testing.T) {
 
 	few := func(l geta.Limits) geta.Limits { l.MaxItems = 3; return l }
 	read := func(context.Context, *struct {
+		geta.Conditional
 		B DeclaredObjects `body:"json"`
 	}) (*ok, error) {
 		return nil, nil
@@ -312,8 +329,12 @@ func TestADeclaredMaxPropertiesLeavesOneComponent(t *testing.T) {
 		return at(t, doc(t, app), "components", "schemas").(map[string]any)
 	}
 	schemas := echo(one("/x", post(func(_ context.Context, in *struct {
+		geta.Conditional
 		B SplitCounts `body:"json"`
 	}) (*SplitCounts, error) {
+		if err := in.Check("", time.Time{}); err != nil {
+			return nil, err
+		}
 		return &in.B, nil
 	})))
 	if got := compact(t, at(t, schemas, "SplitCounts-Input", "properties", "m")); got != `{"additionalProperties":{"format":"int64","type":"integer"},"maxProperties":8192,"propertyNames":{"maxLength":4096},"type":"object"}` {
@@ -323,8 +344,12 @@ func TestADeclaredMaxPropertiesLeavesOneComponent(t *testing.T) {
 		t.Errorf("response: %s", got)
 	}
 	schemas = echo(one("/x", post(func(_ context.Context, in *struct {
+		geta.Conditional
 		B SameCounts `body:"json"`
 	}) (*SameCounts, error) {
+		if err := in.Check("", time.Time{}); err != nil {
+			return nil, err
+		}
 		return &in.B, nil
 	})))
 	if _, split := schemas["SameCounts-Input"]; split {

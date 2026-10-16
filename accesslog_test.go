@@ -42,8 +42,8 @@ func TestAccessLogRecordsWhatWasServed(t *testing.T) {
 		Root: geta.Scope{geta.AccessLog(slog.New(slog.NewTextHandler(&logs, nil))), methodOverride},
 		Routes: []geta.Entry{
 			{Path: "/items", Route: geta.Route{
-				Post:   geta.Op(http.StatusOK, okHandler, geta.Doc{}),
-				Delete: geta.OpNoBody(http.StatusNoContent, func(context.Context, *empty) error { return nil }, geta.Doc{}),
+				Post:   geta.Op(http.StatusOK, writeHandler, geta.Doc{}),
+				Delete: geta.OpNoBody(http.StatusNoContent, writeNoBody, geta.Doc{}),
 			}},
 			{Path: "/posts/{id}", Route: geta.Route{Get: geta.Op(http.StatusOK, func(context.Context, *idIn) (*ok, error) { return &ok{true}, nil }, geta.Doc{})}},
 		},

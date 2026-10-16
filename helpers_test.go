@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/koji-1009/geta"
 )
@@ -27,6 +28,25 @@ type ok struct {
 }
 
 func okHandler(ctx context.Context, _ *empty) (*ok, error) { return &ok{true}, nil }
+
+// write is the input of a write (POST, PUT, PATCH, DELETE) that binds
+// nothing else and takes the preconditions, evaluating them in its handler
+// (geta.Conditional).
+type write struct{ geta.Conditional }
+
+// writeHandler answers ok to a write whose target has no validators, once
+// its preconditions hold.
+func writeHandler(ctx context.Context, in *write) (*ok, error) {
+	if err := in.Check("", time.Time{}); err != nil {
+		return nil, err
+	}
+	return &ok{true}, nil
+}
+
+// writeNoBody is writeHandler for geta.OpNoBody.
+func writeNoBody(ctx context.Context, in *write) error {
+	return in.Check("", time.Time{})
+}
 
 func noop(next http.Handler) http.Handler { return next }
 

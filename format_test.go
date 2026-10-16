@@ -411,6 +411,7 @@ type formatBody struct {
 }
 
 type formatIn struct {
+	geta.Conditional
 	Day      geta.Date                 `path:"day"`
 	At       *geta.TimeOfDay           `query:"at"`
 	Since    *geta.DateTime            `header:"X-Since"`
@@ -435,6 +436,9 @@ type formatOut struct {
 func formatApp(t *testing.T, got **formatIn) geta.Table {
 	t.Helper()
 	h := func(ctx context.Context, in *formatIn) (*formatOut, error) {
+		if err := in.Check("", time.Time{}); err != nil {
+			return nil, err
+		}
 		*got = in
 		out := &formatOut{Next: in.Day, Wait: in.For}
 		if len(in.Addrs) > 0 {
@@ -658,6 +662,7 @@ type formatsStamp struct {
 }
 
 type formatsIn struct {
+	geta.Conditional
 	At    *time.Time    `query:"at"`
 	Str   *string       `query:"str" schema:"format=date-time"`
 	Addr  *string       `query:"addr" schema:"format=ipv4"`
@@ -669,6 +674,9 @@ type formatsIn struct {
 func formatsApp(t *testing.T, got **formatsIn) *geta.App {
 	t.Helper()
 	h := func(ctx context.Context, in *formatsIn) (*ok, error) {
+		if err := in.Check("", time.Time{}); err != nil {
+			return nil, err
+		}
 		*got = in
 		return &ok{true}, nil
 	}

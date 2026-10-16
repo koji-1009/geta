@@ -5,7 +5,10 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"net/http"
+	"net/url"
+	"slices"
 	"time"
 )
 
@@ -203,7 +206,8 @@ func (c *requestContext) refuseUnchecked(w http.ResponseWriter, r *http.Request,
 
 // Matched returns what the request matched. Matching happens before the root
 // scope runs, so every middleware can read it. ok is false for a URL that
-// matches no route.
+// matches no route, and for one served only under other methods, which
+// [Allowed] tells apart.
 //
 // When a root middleware changes the method or path, the match follows from
 // the next [Secure] gate on, and from dispatch on at the latest. Once
@@ -217,6 +221,35 @@ func Matched(ctx context.Context) (Match, bool) {
 		return Match{}, false
 	}
 	return *rc.match, true
+}
+
+// Allowed reports, for a request whose URL is served under other methods
+// than its own, the methods it is served under, sorted, as the 405 geta
+// answers lists them in Allow (RFC 9110 §15.5.6). ok is false where
+// [Matched] reports a match, and for a URL that no route serves (a 404).
+// Like Matched, it reads the method and path the request was last matched
+// on, so a root middleware that answers an unmatched request itself, in
+// place of geta's 404 and 405, can tell them apart:
+//
+//	if _, ok := geta.Matched(r.Context()); !ok {
+//		if methods, ok := geta.Allowed(r.Context()); ok {
+//			w.Header().Set("Allow", strings.Join(methods, ", "))
+//			// answer 405
+//		}
+//		// answer 404
+//	}
+func Allowed(ctx context.Context) (methods []string, ok bool) {
+	rc := requestFrom(ctx)
+	if rc == nil || rc.match != nil {
+		return nil, false
+	}
+	escaped := escapedPath(&url.URL{Path: rc.path, RawPath: rc.rawPath})
+	var m match
+	rc.app.router.lookup(rc.method, cleanPath(rc.method, escaped), &m)
+	if m.route != nil || len(m.allowed) == 0 {
+		return nil, false
+	}
+	return slices.Sorted(maps.Keys(m.allowed)), true
 }
 
 // Observe returns ctx carrying a record of how an [App] serves the request

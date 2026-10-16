@@ -33,6 +33,7 @@ type fuzzBody struct {
 }
 
 type fuzzIn struct {
+	geta.Conditional
 	Seg   int64      `path:"seg" schema:"minimum=-5"`
 	Limit *uint8     `query:"limit"`
 	Mode  *string    `query:"mode" schema:"enum=a|b"`
@@ -51,7 +52,12 @@ type fuzzIn struct {
 // the body limit (fzCut), a 413 as one just past the limit is.
 func FuzzBinding(f *testing.F) {
 	const fuzzTextMax = 128
-	h := func(ctx context.Context, in *fuzzIn) (*ok, error) { return &ok{true}, nil }
+	h := func(ctx context.Context, in *fuzzIn) (*ok, error) {
+		if err := in.Check("", time.Time{}); err != nil {
+			return nil, err
+		}
+		return &ok{true}, nil
+	}
 	limits := geta.DefaultLimits
 	limits.MaxBodyBytes = 192
 	limits.MaxStringLength = 64

@@ -41,7 +41,7 @@ type ItemPath struct {
 	ID string `path:"id" schema:"maxLength=64"`
 }
 type CreateIn struct {
-	Body NewItem `body:"json"`
+	Body NewItem `body:"json"` // no geta.Conditional: takes no precondition (If-Match etc. are a 400)
 }
 type ListIn struct {
 	Kind  *string `query:"kind" schema:"enum=book|tool"`                    // pointer: optional
@@ -164,7 +164,7 @@ func TestItems(t *testing.T) {
 }
 ```
 
-What geta answers on its own, with no code: 400 listing every violation (an array or object past its bound is reported by its count alone), unknown members included (`errors`: `{"in":"body","path":"$.name","message":"…"}`; a parameter's path is its name, `limit`), 404 and 405 (with `Allow`), 415 for a body that is not `application/json` (on PATCH, `application/merge-patch+json`), 428 and 412 for `RequireConditional`, 412 (and 304 on a GET) to `If-Match` or `If-None-Match: *` sent to an operation without `Conditional` (on a GET sending an `ETag` or `Last-Modified`, against those), 500 for an error no failure row matches, all as `application/problem+json`. The OpenAPI document is an artifact, not a route: `getatest.Golden` writes it to a file and fails the test when it changes, and `a.OpenAPI()` returns its bytes. geta serves no route of its own for it.
+What geta answers on its own, with no code: 400 listing every violation (an array or object past its bound is reported by its count alone), unknown members included (`errors`: `{"in":"body","path":"$.name","message":"…"}`; a parameter's path is its name, `limit`), 404 and 405 (with `Allow`), 415 for a body that is not `application/json` (on PATCH, `application/merge-patch+json`), 428 and 412 for `RequireConditional`, 400 for `If-Match` or another precondition field sent to a write without `Conditional`, 412 and 304 on a GET or QUERY without `Conditional`, evaluated once its handler has answered 2xx, against the `ETag` and `Last-Modified` it sends (a 304 carrying its Cache-Control and the other fields RFC 9110 §15.4.5 names), 500 for an error no failure row matches, all as `application/problem+json`. The OpenAPI document is derived from the same declarations: `getatest.Golden` writes it to a file and fails the test when it changes, and `a.OpenAPI()` returns its bytes. geta adds no route for it; to serve it, declare one (the last rule below).
 
 ## Rules that are easy to get wrong
 
@@ -175,8 +175,21 @@ What geta answers on its own, with no code: 400 listing every violation (an arra
 - `format=` names only `date date-time time duration ipv4 ipv6 uuid` (and json-pointer, relative-json-pointer, password), each checked (`2026-02-30` is 400); there is no `email`: use a `pattern` or your own text type ([Format types](docs/guide/formats.md)). The same formats exist as types (`geta.Date`, `geta.DateTime`, `geta.Duration`, `geta.IPv4`, …).
 - Handlers return the lower layer's errors unchanged; `Doc.Failures` maps them (`geta.On(sentinel, status, detail)`, `geta.OnAs[*MyErr](status, detail)`). An error no row matches is a logged 500; `err.Error()` never reaches the client.
 - A 201 with `Location`, a redirect, an `ETag`, or several success statuses need an output envelope (fields tagged `header:"…"`, `body:"json"`, `status:"200|201"`). A raw body may list several media types the handler chooses among, as a status field does: ``Body io.Reader `body:"image/png|application/pdf"` `` beside ``Type string `header:"Content-Type"` ``; the document lists each, and a type not listed is a 500. `Accept` is not read.
-- Embed `geta.Conditional` (or `geta.RequireConditional`, which answers 428 when no precondition is sent: on a write, unless `If-Match` lists entity tags; `If-Match: *`, `If-None-Match`, and `If-Unmodified-Since` do not stand for it, and the document states `If-Match` required) to bind If-Match and the other precondition headers; call `in.Check(etag, modified)` (or `in.CheckAbsent()` where the target has no representation) before acting and return its error as is (a 304 or 412). A 2xx answered without calling either, or after either returned an error, is a logged 500. A write that only creates its target embeds `geta.RequireAbsent`: 428 unless `If-None-Match: *`, documented required, refused on GET and QUERY. Without `Conditional`, geta answers 412 to any `If-Match` but `*`, before the handler runs, so where a route's GET declares a validator (an `ETag` or `Last-Modified` output header, `Conditional` in its input, or `geta.ETag`), `geta.New` refuses its PUT, PATCH, and DELETE without `Conditional`. Such a GET without `Conditional` is the exception: its handler runs, and the preconditions are evaluated against the `ETag` and `Last-Modified` it answers (412, 304). A body is validated before the handler, so before `Check`; declare it `geta.Deferred[T]` and call `in.Body.Value()` after `Check` to answer 404 and 412 before a body's 400 (RFC 9110 §13.2.1).
+- Embed `geta.Conditional` (or `geta.RequireConditional`, which answers 428 when no precondition is sent: on a write, unless `If-Match` lists entity tags; `If-Match: *`, `If-None-Match`, and `If-Unmodified-Since` do not stand for it, and the document states `If-Match` required) to bind If-Match and the other precondition headers; call `in.Check(etag, modified)` (or `in.CheckAbsent()` where the target has no representation) before acting and return its error as is (a 304 or 412). A 2xx answered without calling either, or after either returned an error, is a logged 500. A write that only creates its target embeds `geta.RequireAbsent`: 428 unless `If-None-Match: *`, documented required, refused on GET and QUERY. A write (POST, PUT, PATCH, DELETE) without any of the three takes no precondition: a request carrying `If-Match`, `If-None-Match`, `If-Modified-Since`, or `If-Unmodified-Since` is a 400 naming the field, before the handler runs, and the document lists none of them. Where a route's GET declares a validator (an `ETag` or `Last-Modified` output header, `Conditional` in its input, or `geta.ETag`), clients send its tag back, so `geta.New` and getavet refuse its PUT, PATCH, and DELETE without `Conditional`; there, embed it, return the 404 first, and call `Check` before acting. A header field named `If-Match` (or the other three) bound as a plain field fails `geta.New`. A GET or QUERY without `Conditional` needs nothing: its handler runs, and the preconditions are evaluated against what it answered (412, 304; a 404 stands). For a 304 from `Check`, return the output with the error (`return &Tagged{ETag: tag, CacheControl: "max-age=60"}, err`): its Cache-Control, Vary, Expires, Date, Content-Location, and ETag go on the 304; where the output declares one of them but ETag, a 304 without it is a logged 500. A body is validated before the handler, so before `Check`; declare it `geta.Deferred[T]` and call `in.Body.Value()` after `Check` to answer 404 and 412 before a body's 400 (RFC 9110 §13.2.1).
 - Named struct types are components named after the type, so `users.Path` and `items.Path` in two route packages fail `geta.New`; give route-local types unique names.
+- What geta provides is a document derived from your declarations that matches what goes on the wire. Changing responses or the document outside geta works against that: a middleware or wrapper that rewrites geta's answers (a 415 or 413 into a 400, the `type` of a 404), edits the bytes of `a.OpenAPI()`, or adds paths to it by hand leaves a document that no longer describes the wire. To get a different answer or document, change the declarations so geta outputs it: input and output types, `schema` tags, `Doc.Failures` rows, the other `Doc` fields, `geta.WithSchema`. Where a SPEC asks for what geta's behaviour does not do, report the difference; do not patch around it.
+- To serve the document, declare a route whose handler returns `a.OpenAPI()` of the assembled App; it is then documented and checked like any other operation:
+
+```go
+var a *geta.App
+tbl.Routes = append(tbl.Routes, geta.Entry{Path: "/openapi.json", Route: geta.Route{
+	Get: geta.Op(http.StatusOK, func(context.Context, *struct{}) (*json.RawMessage, error) {
+		doc := json.RawMessage(a.OpenAPI()) // encoding/json
+		return &doc, nil
+	}, geta.Doc{OperationID: "getOpenAPIDocument", Security: []geta.Scheme{}}), // Security: public behind a gate
+}})
+a, err := geta.New(tbl, geta.WithSchema[json.RawMessage]("object", "")) // documents the body as an object
+```
 
 Not in geta: DI containers, string route registration, HTTP error types, static files, sessions, templates, rate limiting, doc UI, security headers (set them in a root middleware of your own; geta sets only `X-Content-Type-Options: nosniff`). A cookie-session app's CSRF, proxy client address, and idempotency keys: see `examples/bookmarks`.
 
@@ -191,7 +204,7 @@ Not in geta: DI containers, string route registration, HTTP error types, static 
 - [Format types](docs/guide/formats.md): date, date-time, time, duration, ipv4, ipv6, uuid, and formats your application decides
 - [Sealed types](docs/guide/sealed.md): oneOf with a discriminator
 - [Output envelopes](docs/guide/outputs.md): headers, cookies, several statuses, several media types, redirects
-- [Conditional requests](docs/guide/conditional.md): ETag, If-Match, 304, 412, 428, operations without `Conditional`, `geta.Deferred` bodies
+- [Conditional requests](docs/guide/conditional.md): ETag, If-Match, 304, 412, 428, writes without `Conditional` (none) and beside a validated GET, GET and QUERY without it, `geta.Deferred` bodies
 - [Errors](docs/guide/errors.md): failure rows, problems, problems that carry the error's data
 - [Scopes and middleware](docs/guide/middleware.md): order, timeouts, CORS, compression, ETag, where your own rate limiter goes
 - [Security](docs/guide/security.md): the gate, schemes, cookie sessions, JWT

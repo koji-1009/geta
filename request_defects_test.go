@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 	"unicode/utf8"
 	"uuid"
 
@@ -134,12 +135,14 @@ type rqManyBody struct {
 }
 
 type rqManyIn struct {
+	geta.Conditional
 	P    int        `query:"p"`
 	Q    int        `query:"q"`
 	Body rqManyBody `body:"json"`
 }
 
 type rqManyFormIn struct {
+	geta.Conditional
 	P    int `query:"p"`
 	Body struct {
 		A string `form:"a"`
@@ -150,8 +153,8 @@ type rqManyFormIn struct {
 // hold them: the parameters', then the body's.
 func TestAtMostFiftyViolationsPerResponse(t *testing.T) {
 	c := getatest.New(t, geta.Table{Routes: []geta.Entry{
-		{Path: "/j", Route: geta.Route{Post: geta.Op(http.StatusOK, func(context.Context, *rqManyIn) (*ok, error) { return &ok{true}, nil }, geta.Doc{})}},
-		{Path: "/f", Route: geta.Route{Post: geta.Op(http.StatusOK, func(context.Context, *rqManyFormIn) (*ok, error) { return &ok{true}, nil }, geta.Doc{})}},
+		{Path: "/j", Route: post(checkedOK[rqManyIn])},
+		{Path: "/f", Route: post(checkedOK[rqManyFormIn])},
 	}})
 	var members []string
 	form := url.Values{"a": {"x"}}
@@ -183,10 +186,12 @@ type rqTree struct {
 }
 
 type rqTreeIn struct {
+	geta.Conditional
 	Body rqTree `body:"json"`
 }
 
 type rqLongIn struct {
+	geta.Conditional
 	Body struct {
 		Picks []string `json:"picks" schema:"items.enum=a|b"`
 	} `body:"json"`
@@ -198,9 +203,9 @@ type rqLongIn struct {
 // problem under both caps are as before, byte for byte.
 func TestViolationListsAreBounded(t *testing.T) {
 	tbl := geta.Table{Routes: []geta.Entry{
-		{Path: "/t", Route: geta.Route{Post: geta.Op(http.StatusOK, func(context.Context, *rqTreeIn) (*ok, error) { return &ok{true}, nil }, geta.Doc{})}},
-		{Path: "/l", Route: geta.Route{Post: geta.Op(http.StatusOK, func(context.Context, *rqLongIn) (*ok, error) { return &ok{true}, nil }, geta.Doc{})}},
-		{Path: "/j", Route: geta.Route{Post: geta.Op(http.StatusOK, func(context.Context, *rqManyIn) (*ok, error) { return &ok{true}, nil }, geta.Doc{})}},
+		{Path: "/t", Route: post(checkedOK[rqTreeIn])},
+		{Path: "/l", Route: post(checkedOK[rqLongIn])},
+		{Path: "/j", Route: post(checkedOK[rqManyIn])},
 	}}
 	c := getatest.New(t, tbl)
 
@@ -327,6 +332,7 @@ type rqTextIn struct {
 }
 
 type rqTextFormIn struct {
+	geta.Conditional
 	Body struct {
 		F *string `form:"f"`
 	} `body:"form"`
@@ -359,6 +365,9 @@ func TestTextThatIsNotUTF8IsRefused(t *testing.T) {
 			return &rqEcho{}, nil
 		})},
 		{Path: "/f", Route: geta.Route{Post: geta.Op(http.StatusOK, func(_ context.Context, in *rqTextFormIn) (*rqEcho, error) {
+			if err := in.Check("", time.Time{}); err != nil {
+				return nil, err
+			}
 			return &rqEcho{Q: *in.Body.F}, nil
 		}, geta.Doc{})}},
 		{Path: "/p/{s}", Route: get(func(_ context.Context, in *rqTextPathIn) (*rqEcho, error) { return &rqEcho{Q: in.S}, nil })},
@@ -476,6 +485,7 @@ func (rqNarrowKind) isRqShape()  {}
 func (rqPlainKind) isRqShape()   {}
 
 type rqShapeIn struct {
+	geta.Conditional
 	Body struct {
 		S rqShape `json:"s"`
 	} `body:"json"`
@@ -486,7 +496,7 @@ type rqShapeIn struct {
 // schema that refuses the variant's own tag, which no request of the
 // variant would then meet, are refused.
 func TestDiscriminatorsAreTruthful(t *testing.T) {
-	tbl := one("/s", geta.Route{Post: geta.Op(http.StatusOK, func(context.Context, *rqShapeIn) (*ok, error) { return &ok{true}, nil }, geta.Doc{})})
+	tbl := one("/s", post(checkedOK[rqShapeIn]))
 	for _, c := range []struct {
 		u    geta.Union
 		want string
@@ -517,6 +527,7 @@ type rqNumIn struct {
 }
 
 type rqNumFormIn struct {
+	geta.Conditional
 	Body struct {
 		N *int `form:"n"`
 	} `body:"form"`
@@ -532,7 +543,7 @@ func TestIntegerParametersAreJSONIntegers(t *testing.T) {
 			got = in
 			return &ok{true}, nil
 		})},
-		{Path: "/f", Route: geta.Route{Post: geta.Op(http.StatusOK, func(context.Context, *rqNumFormIn) (*ok, error) { return &ok{true}, nil }, geta.Doc{})}},
+		{Path: "/f", Route: post(checkedOK[rqNumFormIn])},
 	}})
 	for _, q := range []string{"n=007", "n=-07", "n=00", "n=+7", "u=01", "e=007", "f=007", "f=01.5", "d[m]=010"} {
 		p := c.Get("/n?" + q).Problem()
@@ -555,16 +566,19 @@ func TestIntegerParametersAreJSONIntegers(t *testing.T) {
 }
 
 type rqOrderIn struct {
+	geta.Conditional
 	N    int        `query:"n"`
 	Body rqManyBody `body:"json"`
 }
 
 type rqOrderRawIn struct {
+	geta.Conditional
 	N    int    `query:"n"`
 	Body []byte `body:"text/csv"`
 }
 
 type rqOrderFormIn struct {
+	geta.Conditional
 	N    int `query:"n"`
 	Body struct {
 		A string `form:"a"`
@@ -580,9 +594,9 @@ func TestABodyAnsweredOnItsOwnComesBeforeParameterViolations(t *testing.T) {
 	limits := geta.DefaultLimits
 	limits.MaxBodyBytes = 16
 	c := getatest.New(t, geta.Table{Routes: []geta.Entry{
-		{Path: "/j", Route: geta.Route{Post: geta.Op(http.StatusOK, func(context.Context, *rqOrderIn) (*ok, error) { return &ok{true}, nil }, geta.Doc{})}},
-		{Path: "/r", Route: geta.Route{Post: geta.Op(http.StatusOK, func(context.Context, *rqOrderRawIn) (*ok, error) { return &ok{true}, nil }, geta.Doc{})}},
-		{Path: "/f", Route: geta.Route{Post: geta.Op(http.StatusOK, func(context.Context, *rqOrderFormIn) (*ok, error) { return &ok{true}, nil }, geta.Doc{})}},
+		{Path: "/j", Route: post(checkedOK[rqOrderIn])},
+		{Path: "/r", Route: post(checkedOK[rqOrderRawIn])},
+		{Path: "/f", Route: post(checkedOK[rqOrderFormIn])},
 	}}, geta.WithLimits(limits))
 	for _, path := range []string{"/j?n=x", "/r?n=x", "/f?n=x"} {
 		res := c.Content(http.MethodPost, path, "text/plain", []byte("a"))

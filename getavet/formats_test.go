@@ -36,7 +36,8 @@ type Body struct {
 }
 
 type In struct {
-	Day    geta.Date        ` + "`path:\"day\" schema:\"enum=2026-01-01|2026-01-02\"`" + `
+	geta.Conditional
+	Day   geta.Date        ` + "`path:\"day\" schema:\"enum=2026-01-01|2026-01-02\"`" + `
 	Addrs  []geta.IPv4      ` + "`query:\"addr\"`" + `
 	At     *geta.TimeOfDay  ` + "`header:\"X-At\"`" + `
 	Secret *geta.Password   ` + "`cookie:\"s\"`" + `
@@ -57,6 +58,7 @@ type Bad struct {
 }
 
 type BadIn struct {
+	geta.Conditional
 	For  time.Duration ` + "`query:\"for\"`" + `
 	Body Bad           ` + "`body:\"json\"`" + `
 }
@@ -64,10 +66,10 @@ type BadIn struct {
 func Build() (*geta.App, error) {
 	return geta.New(geta.Table{Routes: []geta.Entry{
 		{Path: "/days/{day}", Route: geta.Route{
-			Post: geta.Op(http.StatusOK, func(context.Context, *In) (*Out, error) { return nil, nil }, geta.Doc{}),
+			Post: geta.Op(http.StatusOK, func(_ context.Context, in *In) (*Out, error) { return nil, in.Check("", time.Time{}) }, geta.Doc{}),
 		}},
 		{Path: "/bad", Route: geta.Route{
-			Post: geta.Op(http.StatusOK, func(context.Context, *BadIn) (*Bad, error) { return nil, nil }, geta.Doc{}),
+			Post: geta.Op(http.StatusOK, func(_ context.Context, in *BadIn) (*Bad, error) { return nil, in.Check("", time.Time{}) }, geta.Doc{}),
 		}},
 	}})
 }

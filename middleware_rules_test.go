@@ -172,7 +172,7 @@ func TestBeforeGateBesideAnOperationScopeGate(t *testing.T) {
 // the operation the rewritten request reaches.
 func TestBeforeGateFollowsARewriteBeforeTheGate(t *testing.T) {
 	tbl := limitedTable(geta.Scope{pathMove, gate()})
-	tbl.Routes = append(tbl.Routes, geta.Entry{Path: "/elsewhere", Route: geta.Route{Post: geta.Op(http.StatusOK, okHandler, geta.Doc{Security: []geta.Scheme{}})}})
+	tbl.Routes = append(tbl.Routes, geta.Entry{Path: "/elsewhere", Route: geta.Route{Post: geta.Op(http.StatusOK, writeHandler, geta.Doc{Security: []geta.Scheme{}})}})
 	a := accepts(t, tbl)
 	for range 3 {
 		if r := do(t, a, "POST", "/elsewhere"); r.Code != 200 {

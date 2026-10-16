@@ -26,7 +26,8 @@ type Body struct {
 }
 
 type In struct {
-	Mode   *string        ` + "`header:\"X-Mode\" schema:\"enum=a| b\"`" + `
+	geta.Conditional
+	Mode   *string       ` + "`header:\"X-Mode\" schema:\"enum=a| b\"`" + `
 	Token  *string        ` + "`cookie:\"token\" schema:\"enum=a|b;c\"`" + `
 	Query  *string        ` + "`query:\"q\" schema:\"enum=a| b\"`" + `
 	Since  *geta.DateTime ` + "`header:\"X-Since\"`" + `
@@ -37,7 +38,7 @@ type In struct {
 func Build() (*geta.App, error) {
 	return geta.New(geta.Table{Routes: []geta.Entry{
 		{Path: "/x", Route: geta.Route{
-			Post: geta.Op(http.StatusOK, func(context.Context, *In) (*struct{}, error) { return nil, nil }, geta.Doc{}),
+			Post: geta.Op(http.StatusOK, func(_ context.Context, in *In) (*struct{}, error) { return nil, in.Check("", time.Time{}) }, geta.Doc{}),
 		}},
 	}})
 }

@@ -1,7 +1,6 @@
 package geta_test
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -162,7 +161,7 @@ func TestCompressRefusedIdentityCodesAnyBody(t *testing.T) {
 		t.Error(r.Header(), r.Body)
 	}
 	a = accepts(t, withRoot(geta.Table{Routes: []geta.Entry{{Path: "/none", Route: geta.Route{
-		Delete: geta.OpNoBody(http.StatusNoContent, func(context.Context, *empty) error { return nil }, geta.Doc{}),
+		Delete: geta.OpNoBody(http.StatusNoContent, writeNoBody, geta.Doc{}),
 	}}}}, geta.Compress(br.coding())))
 	if r := do(t, a, "DELETE", "/none", "Accept-Encoding", "identity;q=0, br"); r.Code != 204 || r.Header().Get("Content-Encoding") != "" || r.Body.Len() != 0 {
 		t.Error(r.Code, r.Header())

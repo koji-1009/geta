@@ -341,7 +341,7 @@ func TestMatchingIgnoresTableOrder(t *testing.T) {
 		{Path: "/users/{id}/name", Route: echoIDRoute("id-name")},
 		{Path: "/users/{id}", Route: echoIDRoute("id")},
 		{Path: "/users/events", Route: answers("events")},
-		{Path: "/a/b", Route: geta.Route{Put: geta.OpNoBody(http.StatusNoContent, func(context.Context, *empty) error { return nil }, geta.Doc{})}},
+		{Path: "/a/b", Route: geta.Route{Put: geta.OpNoBody(http.StatusNoContent, writeNoBody, geta.Doc{})}},
 		{Path: "/a/{id}", Route: echoIDRoute("a")},
 	}
 	reversed := slices.Clone(entries)
@@ -407,11 +407,11 @@ func TestRefusedRewriteAfterTheGateForEachMethod(t *testing.T) {
 	a, err := geta.New(geta.Table{Root: geta.Scope{bearerGate(), pathMove}, Routes: []geta.Entry{
 		{Path: "/pub", Route: geta.Route{
 			Get:    geta.Op(http.StatusOK, okHandler, geta.Doc{Security: []geta.Scheme{}}),
-			Delete: geta.OpNoBody(http.StatusNoContent, func(context.Context, *empty) error { return nil }, geta.Doc{Security: []geta.Scheme{}}),
+			Delete: geta.OpNoBody(http.StatusNoContent, writeNoBody, geta.Doc{Security: []geta.Scheme{}}),
 		}},
 		{Path: "/admin", Route: geta.Route{
 			Get:    geta.Op(http.StatusOK, okHandler, geta.Doc{}),
-			Delete: geta.OpNoBody(http.StatusNoContent, func(context.Context, *empty) error { return nil }, geta.Doc{}),
+			Delete: geta.OpNoBody(http.StatusNoContent, writeNoBody, geta.Doc{}),
 		}},
 	}}, geta.WithLogger(log))
 	if err != nil {

@@ -106,6 +106,9 @@ type compiledOp struct {
 	// its response (selects); answering, on one geta evaluates so before
 	// writing, which geta.ETag does not tag.
 	selecting, answering bool
+	// precondition is the schema of a precondition field a selecting
+	// operation reads, as Conditional's parameters state it.
+	precondition *schema
 }
 
 // operation returns the operation m names, or nil if none of a's does.

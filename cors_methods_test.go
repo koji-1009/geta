@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/koji-1009/geta"
 )
@@ -17,19 +18,39 @@ type corsMethodsID struct {
 	ID string `path:"id"`
 }
 
+type corsMethodsWriteID struct {
+	geta.Conditional
+	ID string `path:"id"`
+}
+
 func corsMethodsApp(t *testing.T, opts ...geta.CORSOption) *geta.App {
 	t.Helper()
 	h := func(context.Context, *struct{}) (*corsMethodsOut, error) { return &corsMethodsOut{true}, nil }
 	op := func() geta.Operation { return geta.Op(http.StatusOK, h, geta.Doc{}) }
 	byID := func(context.Context, *corsMethodsID) (*corsMethodsOut, error) { return &corsMethodsOut{true}, nil }
 	idOp := func() geta.Operation { return geta.Op(http.StatusOK, byID, geta.Doc{}) }
+	// A write embeds Conditional, and checks it before it answers.
+	wh := func(_ context.Context, in *write) (*corsMethodsOut, error) {
+		if err := in.Check("", time.Time{}); err != nil {
+			return nil, err
+		}
+		return &corsMethodsOut{true}, nil
+	}
+	wop := func() geta.Operation { return geta.Op(http.StatusOK, wh, geta.Doc{}) }
+	wbyID := func(_ context.Context, in *corsMethodsWriteID) (*corsMethodsOut, error) {
+		if err := in.Check("", time.Time{}); err != nil {
+			return nil, err
+		}
+		return &corsMethodsOut{true}, nil
+	}
+	widOp := func() geta.Operation { return geta.Op(http.StatusOK, wbyID, geta.Doc{}) }
 	a, err := geta.New(geta.Table{
 		Root: geta.Scope{geta.CORS(append([]geta.CORSOption{geta.AllowOrigins("*")}, opts...)...)},
 		Routes: []geta.Entry{
-			{Path: "/users", Route: geta.Route{Get: op(), Post: op()}},
-			{Path: "/users/{id}", Route: geta.Route{Get: idOp(), Put: idOp(), Delete: idOp()}},
+			{Path: "/users", Route: geta.Route{Get: op(), Post: wop()}},
+			{Path: "/users/{id}", Route: geta.Route{Get: idOp(), Put: widOp(), Delete: widOp()}},
 			// /users/me overlaps /users/{id}: its path is served by both.
-			{Path: "/users/me", Route: geta.Route{Patch: op()}},
+			{Path: "/users/me", Route: geta.Route{Patch: wop()}},
 		},
 	})
 	if err != nil {

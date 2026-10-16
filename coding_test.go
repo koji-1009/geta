@@ -9,10 +9,25 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/koji-1009/geta"
 	"github.com/koji-1009/geta/getatest"
 )
+
+// codedIn is bodyIn for a write: it embeds geta.Conditional.
+type codedIn struct {
+	geta.Conditional
+	Body item `body:"json"`
+}
+
+// codedEcho answers the name in the body, once the preconditions hold.
+func codedEcho(ctx context.Context, in *codedIn) (*echoed, error) {
+	if err := in.Check("", time.Time{}); err != nil {
+		return nil, err
+	}
+	return &echoed{Got: in.Body.Name}, nil
+}
 
 func gzipped(t *testing.T, s string) []byte {
 	t.Helper()
@@ -43,9 +58,9 @@ func refusedCoding(t *testing.T, res *getatest.Response, detail string) {
 // for the coded bytes read as JSON or as a form; the handler never runs.
 func TestContentCodingIs415(t *testing.T) {
 	ran := false
-	h := func(ctx context.Context, in *bodyIn) (*echoed, error) {
+	h := func(ctx context.Context, in *codedIn) (*echoed, error) {
 		ran = true
-		return &echoed{Got: in.Body.Name}, nil
+		return codedEcho(ctx, in)
 	}
 	c := getatest.New(t, one("/x", geta.Route{
 		Post:  geta.Op(http.StatusOK, h, geta.Doc{}),
@@ -102,7 +117,7 @@ func TestContentCodingIs415(t *testing.T) {
 // invalid UTF-8 counts as one, and "…" marks the cut. A header is as long as
 // MaxHeaderBytes allows, so a whole one made the problem as long.
 func TestRefusedHeaderValuesAreClipped(t *testing.T) {
-	h := func(ctx context.Context, in *bodyIn) (*echoed, error) { return &echoed{Got: in.Body.Name}, nil }
+	h := codedEcho
 	c := getatest.New(t, one("/x", geta.Route{Post: geta.Op(http.StatusOK, h, geta.Doc{})}))
 	body := `{"name":"a","price":1}`
 	odd := "application/x" + strings.Repeat("é", 100) // the 128th byte begins an é
@@ -132,7 +147,7 @@ func TestRefusedHeaderValuesAreClipped(t *testing.T) {
 func TestRefusedContentIs415PastTheBodyLimit(t *testing.T) {
 	lim := geta.DefaultLimits
 	lim.MaxBodyBytes = 64
-	h := func(ctx context.Context, in *bodyIn) (*echoed, error) { return &echoed{Got: in.Body.Name}, nil }
+	h := codedEcho
 	c := getatest.New(t, one("/x", geta.Route{Post: geta.Op(http.StatusOK, h, geta.Doc{})}), geta.WithLimits(lim))
 	f := getatest.New(t, one("/f", geta.Route{Post: geta.Op(http.StatusOK, echoForm, geta.Doc{})}), geta.WithLimits(lim))
 	big := `{"name":"` + strings.Repeat("a", 200) + `","price":1}`
@@ -177,7 +192,7 @@ func TestDecodedContentIsTaken(t *testing.T) {
 			next.ServeHTTP(w, r)
 		})
 	})
-	h := func(ctx context.Context, in *bodyIn) (*echoed, error) { return &echoed{Got: in.Body.Name}, nil }
+	h := codedEcho
 	tbl := withRoot(one("/x", geta.Route{Post: geta.Op(http.StatusOK, h, geta.Doc{})}), gunzip)
 	lim := geta.DefaultLimits
 	lim.MaxBodyBytes = 64

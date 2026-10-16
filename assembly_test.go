@@ -26,7 +26,7 @@ func TestRejectsURLParameterNotBound(t *testing.T) {
 func TestRejectsUnboundURLParameterOnEveryOperation(t *testing.T) {
 	r := geta.Route{
 		Get:    geta.Op(http.StatusOK, idHandler, geta.Doc{}),
-		Delete: geta.OpNoBody(http.StatusNoContent, func(context.Context, *empty) error { return nil }, geta.Doc{}),
+		Delete: geta.OpNoBody(http.StatusNoContent, writeNoBody, geta.Doc{}),
 	}
 	rejects(t, one("/users/{id}", r), "DELETE /users/{id}", "does not bind")
 }
@@ -252,17 +252,17 @@ func TestRejectsInvalidFailureRows(t *testing.T) {
 // Status and body must agree.
 
 func TestRejects204WithBody(t *testing.T) {
-	r := geta.Route{Delete: geta.Op(http.StatusNoContent, okHandler, geta.Doc{})}
+	r := geta.Route{Delete: geta.Op(http.StatusNoContent, writeHandler, geta.Doc{})}
 	rejects(t, one("/x", r), "DELETE /x", "204 takes no body")
 }
 
 func TestAccepts204WithoutBody(t *testing.T) {
-	r := geta.Route{Delete: geta.OpNoBody(http.StatusNoContent, func(context.Context, *empty) error { return nil }, geta.Doc{})}
+	r := geta.Route{Delete: geta.OpNoBody(http.StatusNoContent, writeNoBody, geta.Doc{})}
 	accepts(t, one("/x", r))
 	type headersOnly struct {
 		Loc string `header:"Location"`
 	}
-	r = geta.Route{Post: geta.Op(http.StatusNoContent, func(context.Context, *empty) (*headersOnly, error) { return nil, nil }, geta.Doc{})}
+	r = geta.Route{Post: geta.Op(http.StatusNoContent, func(context.Context, *write) (*headersOnly, error) { return nil, nil }, geta.Doc{})}
 	accepts(t, one("/x", r))
 }
 
@@ -359,6 +359,9 @@ func TestRejectsDerivedOperationIDCollision(t *testing.T) {
 		{Path: "/user/list", Route: get(okHandler)},
 	}}
 	rejects(t, tbl, `operationId "getUserList"`)
-	tbl.Routes = []geta.Entry{{Path: "/user~list", Route: get(okHandler)}, {Path: "/userlist", Route: get(okHandler)}}
-	rejects(t, tbl, `operationId "getUserlist"`)
+	tbl.Routes = []geta.Entry{{Path: "/user~list", Route: get(okHandler)}, {Path: "/userList", Route: get(okHandler)}}
+	rejects(t, tbl, `operationId "getUserList"`)
+	// A character no identifier holds starts a word: /a-b and /a/b are one.
+	tbl.Routes = []geta.Entry{{Path: "/a-b", Route: get(okHandler)}, {Path: "/a/b", Route: get(okHandler)}}
+	rejects(t, tbl, `operationId "getAB"`)
 }

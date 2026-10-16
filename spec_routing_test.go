@@ -11,6 +11,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/koji-1009/geta"
 	"github.com/koji-1009/geta/getatest"
@@ -212,8 +213,8 @@ func TestRoutingQueryReadsAMultipartBody(t *testing.T) {
 func TestRoutingRewriteInsideADocScopeIsFixed(t *testing.T) {
 	var posted, deleted atomic.Bool
 	app, err := geta.New(geta.Table{Routes: []geta.Entry{{Path: "/items", Route: geta.Route{
-		Post:   geta.Op(http.StatusOK, reportMatched(&posted), geta.Doc{Scope: geta.Scope{methodOverride, bearerGate()}}),
-		Delete: geta.Op(http.StatusOK, reportMatched(&deleted), geta.Doc{Security: []geta.Scheme{}}),
+		Post:   geta.Op(http.StatusOK, reportMatchedWrite(&posted), geta.Doc{Scope: geta.Scope{methodOverride, bearerGate()}}),
+		Delete: geta.Op(http.StatusOK, reportMatchedWrite(&deleted), geta.Doc{Security: []geta.Scheme{}}),
 	}}}}, geta.WithLogger(quietLogger()))
 	if err != nil {
 		t.Fatal(err)
@@ -273,11 +274,20 @@ func TestRoutingTemplateConflictsWaitForEntryMistakes(t *testing.T) {
 // each run of letters and digits of the path, capitalised; / is Root.
 func TestRoutingDerivedOperationIDs(t *testing.T) {
 	posts := func(context.Context, *idNameIn) (*ok, error) { return &ok{true}, nil }
+	removePosts := func(_ context.Context, in *struct {
+		geta.Conditional
+		idNameIn
+	}) (*ok, error) {
+		if err := in.Check("", time.Time{}); err != nil {
+			return nil, err
+		}
+		return &ok{true}, nil
+	}
 	m := doc(t, accepts(t, geta.Table{Routes: []geta.Entry{
 		{Path: "/", Route: get(okHandler)},
 		{Path: "/users/{id}/posts", Route: geta.Route{
 			Get:    geta.Op(http.StatusOK, posts, geta.Doc{}),
-			Delete: geta.Op(http.StatusOK, posts, geta.Doc{OperationID: "removePosts"}),
+			Delete: geta.Op(http.StatusOK, removePosts, geta.Doc{OperationID: "removePosts"}),
 		}},
 		{Path: "/v2/café-menu", Route: get(okHandler)},
 	}}))
@@ -287,7 +297,7 @@ func TestRoutingDerivedOperationIDs(t *testing.T) {
 		{"/users/{id}/posts", "get", "getUsersByIdPosts"},
 		{"/users/{id}/posts", "delete", "removePosts"},
 		{"/users/{id}/posts", "options", "optionsUsersByIdPosts"},
-		{"/v2/café-menu", "get", "getV2Café-menu"},
+		{"/v2/café-menu", "get", "getV2CaféMenu"},
 	} {
 		if got := at(t, m, "paths", c.path, c.method, "operationId"); got != c.want {
 			t.Errorf("%s %s: operationId %v, want %s", c.method, c.path, got, c.want)

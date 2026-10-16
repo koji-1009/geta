@@ -21,8 +21,8 @@ func TestObserveReportsWhatWasServed(t *testing.T) {
 	app, err := geta.New(geta.Table{
 		Root: geta.Scope{methodOverride},
 		Routes: []geta.Entry{{Path: "/items", Route: geta.Route{
-			Post:   geta.Op(http.StatusOK, okHandler, geta.Doc{}),
-			Delete: geta.OpNoBody(http.StatusNoContent, func(context.Context, *empty) error { return nil }, geta.Doc{}),
+			Post:   geta.Op(http.StatusOK, writeHandler, geta.Doc{}),
+			Delete: geta.OpNoBody(http.StatusNoContent, writeNoBody, geta.Doc{}),
 		}}},
 	}, geta.WithLogger(quietLogger()))
 	if err != nil {
@@ -71,7 +71,7 @@ func TestObserveInsideTheApp(t *testing.T) {
 	})
 	app, err := geta.New(geta.Table{
 		Root:   geta.Scope{inside, methodOverride},
-		Routes: []geta.Entry{{Path: "/items", Route: geta.Route{Post: geta.Op(http.StatusOK, okHandler, geta.Doc{})}}},
+		Routes: []geta.Entry{{Path: "/items", Route: geta.Route{Post: geta.Op(http.StatusOK, writeHandler, geta.Doc{})}}},
 	}, geta.WithLogger(quietLogger()))
 	if err != nil {
 		t.Fatal(err)
@@ -84,7 +84,7 @@ func TestObserveInsideTheApp(t *testing.T) {
 // Documented and Conforms take the operation served.
 func TestDocumentedTakesTheMatch(t *testing.T) {
 	app, err := geta.New(geta.Table{
-		Routes: []geta.Entry{{Path: "/items", Route: geta.Route{Post: geta.Op(http.StatusCreated, okHandler, geta.Doc{})}}},
+		Routes: []geta.Entry{{Path: "/items", Route: geta.Route{Post: geta.Op(http.StatusCreated, writeHandler, geta.Doc{})}}},
 	}, geta.WithLogger(quietLogger()))
 	if err != nil {
 		t.Fatal(err)

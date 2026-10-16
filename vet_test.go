@@ -282,6 +282,7 @@ func TestInputRefusalsAreCheckInputFields(t *testing.T) {
 // What geta.New accepts, CheckInputField and CheckEnvelopeField accept.
 func TestVetFieldAcceptsWhatNewAccepts(t *testing.T) {
 	type in struct {
+		geta.Conditional
 		VetPaging
 		vetAuth
 		ID    string    `path:"id"`

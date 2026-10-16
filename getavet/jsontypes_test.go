@@ -142,6 +142,7 @@ type meta struct {
 }
 
 type In struct {
+	geta.Conditional
 	Q    **int   ` + "`query:\"q\"`" + `
 	Ch   chan int ` + "`query:\"ch\"`" + `
 	Ck   string  ` + "`cookie:\"a b\"`" + `
@@ -179,12 +180,14 @@ type EnvInside struct {
 	tagsInside
 }
 
+type write struct{ geta.Conditional }
+
 func Build() (*geta.App, error) {
 	return geta.New(geta.Table{Routes: []geta.Entry{{Path: "/x", Route: geta.Route{
 		Get:    geta.Op(http.StatusOK, func(context.Context, *InTime) (*EnvEmbedded, error) { return nil, nil }, geta.Doc{}),
-		Put:    geta.Op(http.StatusOK, func(context.Context, *struct{}) (*EnvInside, error) { return nil, nil }, geta.Doc{}),
-		Post:   geta.Op(http.StatusOK, func(context.Context, *In) (*Env, error) { return nil, nil }, geta.Doc{}),
-		Delete: geta.Op(http.StatusOK, func(context.Context, *struct{}) (*map[int]Item, error) { return nil, nil }, geta.Doc{}),
+		Put:    geta.Op(http.StatusOK, func(_ context.Context, in *write) (*EnvInside, error) { return nil, in.Check("", time.Time{}) }, geta.Doc{}),
+		Post:   geta.Op(http.StatusOK, func(_ context.Context, in *In) (*Env, error) { return nil, in.Check("", time.Time{}) }, geta.Doc{}),
+		Delete: geta.Op(http.StatusOK, func(_ context.Context, in *write) (*map[int]Item, error) { return nil, in.Check("", time.Time{}) }, geta.Doc{}),
 	}}}}, geta.WithUnion(geta.Sealed[Event]("kind", geta.Case[Created]("created"))))
 }
 `,
@@ -354,8 +357,11 @@ type Node struct {
 }
 
 type TreeIn struct {
+	geta.Conditional
 	Body Tree `+"`body:\"json\"`"+`
 }
+
+func write[In any](context.Context, *In) (*Node, error) { return nil, nil }
 
 func Build() (*geta.App, error) {
 	return geta.New(geta.Table{Routes: []geta.Entry{
@@ -363,7 +369,7 @@ func Build() (*geta.App, error) {
 		{Path: "/b", Route: geta.Route{Get: geta.Op(http.StatusOK, func(context.Context, *struct{}) (*Chain, error) { return nil, nil }, geta.Doc{})}},
 		{Path: "/c", Route: geta.Route{Get: geta.Op(http.StatusOK, func(context.Context, *struct{}) (*Anon, error) { return nil, nil }, geta.Doc{})}},
 		{Path: "/d", Route: geta.Route{Get: geta.Op(http.StatusOK, func(context.Context, *struct{}) (*Node, error) { return nil, nil }, geta.Doc{})}},
-		{Path: "/e", Route: geta.Route{Post: geta.Op(http.StatusOK, func(context.Context, *TreeIn) (*Node, error) { return nil, nil }, geta.Doc{})}},
+		{Path: "/e", Route: geta.Route{Post: geta.Op(http.StatusOK, write[TreeIn], geta.Doc{})}},
 	}})
 }
 `)

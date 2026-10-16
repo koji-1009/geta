@@ -29,22 +29,27 @@ type Bad struct {
 }
 
 type QueryIn struct {
+	geta.Conditional
 	Q geta.Deferred[string] `+"`query:\"q\"`"+`
 }
 
 type FormIn struct {
+	geta.Conditional
 	Body geta.Deferred[Item] `+"`body:\"form\"`"+`
 }
 
 type PointerIn struct {
+	geta.Conditional
 	Body *geta.Deferred[Item] `+"`body:\"json\"`"+`
 }
 
 type EmbeddedIn struct {
+	geta.Conditional
 	geta.Deferred[Item]
 }
 
 type BadIn struct {
+	geta.Conditional
 	Body geta.Deferred[Bad] `+"`body:\"json\"`"+`
 }
 
@@ -54,6 +59,7 @@ type SoundIn struct {
 }
 
 type OptionalIn struct {
+	geta.Conditional
 	Body geta.Deferred[*Item] `+"`body:\"json\"`"+`
 }
 

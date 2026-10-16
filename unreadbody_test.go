@@ -31,19 +31,30 @@ import (
 // bubble would report its goroutines blocked.
 
 type ubCountIn struct {
+	geta.Conditional
 	N    int       `query:"n"`
 	Body io.Reader `body:"text/csv"`
 }
 
 func ubApp(t *testing.T) *geta.App {
 	small := func(l geta.Limits) geta.Limits { l.MaxBodyBytes = 16; return l }
-	okFor := func(context.Context, *dlJSONIn) (*ok, error) { return &ok{true}, nil }
+	okFor := func(_ context.Context, in *dlJSONIn) (*ok, error) {
+		if err := in.Check("", time.Time{}); err != nil {
+			return nil, err
+		}
+		return &ok{true}, nil
+	}
 	return accepts(t, geta.Table{Routes: []geta.Entry{
 		{Path: "/json", Route: geta.Route{Post: geta.Op(http.StatusOK, okFor, geta.Doc{})}},
 		{Path: "/small", Route: geta.Route{Post: geta.Op(http.StatusOK, okFor, geta.Doc{Limits: small})}},
-		{Path: "/count", Route: geta.Route{Post: geta.Op(http.StatusOK, func(context.Context, *ubCountIn) (*ok, error) { return &ok{true}, nil }, geta.Doc{})}},
+		{Path: "/count", Route: geta.Route{Post: geta.Op(http.StatusOK, func(_ context.Context, in *ubCountIn) (*ok, error) {
+			if err := in.Check("", time.Time{}); err != nil {
+				return nil, err
+			}
+			return &ok{true}, nil
+		}, geta.Doc{})}},
 		{Path: "/get", Route: get(okHandler)},
-		{Path: "/none", Route: geta.Route{Post: geta.Op(http.StatusOK, okHandler, geta.Doc{})}},
+		{Path: "/none", Route: geta.Route{Post: geta.Op(http.StatusOK, writeHandler, geta.Doc{})}},
 	}})
 }
 

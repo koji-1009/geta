@@ -147,6 +147,28 @@
     "/device": {
       "get": {
         "operationId": "getDevice",
+        "parameters": [
+          {
+            "description": "\"*\" or a list of one or more entity tags (RFC 9110 §13.1.1), compared strongly with the ETag the response carries; a failed match answers 412. Evaluated once the handler has answered, and only on a 2xx: the handler's own answers, such as a 404, come first (§13.2.1)",
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "pattern": "^(?:[^\\x00-\\x20\\x7F](?:[^\\x00-\\x08\\x0A-\\x1F\\x7F]*[^\\x00-\\x20\\x7F])?)?$",
+              "type": "string"
+            }
+          },
+          {
+            "description": "\"*\" or a list of one or more entity tags (RFC 9110 §13.1.2), compared weakly with the ETag the response carries; a match answers 304 in place of a 200 to a GET or HEAD, and 412 otherwise. Evaluated once the handler has answered, and only on a 2xx (§13.2.1)",
+            "in": "header",
+            "name": "If-None-Match",
+            "required": false,
+            "schema": {
+              "pattern": "^(?:[^\\x00-\\x20\\x7F](?:[^\\x00-\\x08\\x0A-\\x1F\\x7F]*[^\\x00-\\x20\\x7F])?)?$",
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -160,8 +182,19 @@
             "summary": "OK"
           },
           "304": {
-            "description": "If-None-Match: *; the operation declares no validator (its input does not embed geta.Conditional)",
+            "description": "The representation has not changed: If-None-Match, against the validators the response carries (its input does not embed geta.Conditional)",
             "summary": "Not Modified"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetaProblem"
+                }
+              }
+            },
+            "description": "If-Match or If-None-Match is neither \"*\" nor a list of one or more entity tags",
+            "summary": "Bad Request"
           },
           "401": {
             "content": {
@@ -202,7 +235,7 @@
                 }
               }
             },
-            "description": "A precondition failed: If-Match other than *; the operation declares no validator (its input does not embed geta.Conditional)",
+            "description": "A precondition failed: If-Match, against the validators the response carries (its input does not embed geta.Conditional)",
             "summary": "Precondition Failed"
           },
           "415": {
@@ -343,6 +376,28 @@
     "/mixed": {
       "get": {
         "operationId": "getMixed",
+        "parameters": [
+          {
+            "description": "\"*\" or a list of one or more entity tags (RFC 9110 §13.1.1), compared strongly with the ETag the response carries; a failed match answers 412. Evaluated once the handler has answered, and only on a 2xx: the handler's own answers, such as a 404, come first (§13.2.1)",
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "pattern": "^(?:[^\\x00-\\x20\\x7F](?:[^\\x00-\\x08\\x0A-\\x1F\\x7F]*[^\\x00-\\x20\\x7F])?)?$",
+              "type": "string"
+            }
+          },
+          {
+            "description": "\"*\" or a list of one or more entity tags (RFC 9110 §13.1.2), compared weakly with the ETag the response carries; a match answers 304 in place of a 200 to a GET or HEAD, and 412 otherwise. Evaluated once the handler has answered, and only on a 2xx (§13.2.1)",
+            "in": "header",
+            "name": "If-None-Match",
+            "required": false,
+            "schema": {
+              "pattern": "^(?:[^\\x00-\\x20\\x7F](?:[^\\x00-\\x08\\x0A-\\x1F\\x7F]*[^\\x00-\\x20\\x7F])?)?$",
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -356,8 +411,19 @@
             "summary": "OK"
           },
           "304": {
-            "description": "If-None-Match: *; the operation declares no validator (its input does not embed geta.Conditional)",
+            "description": "The representation has not changed: If-None-Match, against the validators the response carries (its input does not embed geta.Conditional)",
             "summary": "Not Modified"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetaProblem"
+                }
+              }
+            },
+            "description": "If-Match or If-None-Match is neither \"*\" nor a list of one or more entity tags",
+            "summary": "Bad Request"
           },
           "401": {
             "content": {
@@ -398,7 +464,7 @@
                 }
               }
             },
-            "description": "A precondition failed: If-Match other than *; the operation declares no validator (its input does not embed geta.Conditional)",
+            "description": "A precondition failed: If-Match, against the validators the response carries (its input does not embed geta.Conditional)",
             "summary": "Precondition Failed"
           },
           "415": {
@@ -540,6 +606,28 @@
     "/oauth": {
       "get": {
         "operationId": "getOauth",
+        "parameters": [
+          {
+            "description": "\"*\" or a list of one or more entity tags (RFC 9110 §13.1.1), compared strongly with the ETag the response carries; a failed match answers 412. Evaluated once the handler has answered, and only on a 2xx: the handler's own answers, such as a 404, come first (§13.2.1)",
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "pattern": "^(?:[^\\x00-\\x20\\x7F](?:[^\\x00-\\x08\\x0A-\\x1F\\x7F]*[^\\x00-\\x20\\x7F])?)?$",
+              "type": "string"
+            }
+          },
+          {
+            "description": "\"*\" or a list of one or more entity tags (RFC 9110 §13.1.2), compared weakly with the ETag the response carries; a match answers 304 in place of a 200 to a GET or HEAD, and 412 otherwise. Evaluated once the handler has answered, and only on a 2xx (§13.2.1)",
+            "in": "header",
+            "name": "If-None-Match",
+            "required": false,
+            "schema": {
+              "pattern": "^(?:[^\\x00-\\x20\\x7F](?:[^\\x00-\\x08\\x0A-\\x1F\\x7F]*[^\\x00-\\x20\\x7F])?)?$",
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -553,8 +641,19 @@
             "summary": "OK"
           },
           "304": {
-            "description": "If-None-Match: *; the operation declares no validator (its input does not embed geta.Conditional)",
+            "description": "The representation has not changed: If-None-Match, against the validators the response carries (its input does not embed geta.Conditional)",
             "summary": "Not Modified"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetaProblem"
+                }
+              }
+            },
+            "description": "If-Match or If-None-Match is neither \"*\" nor a list of one or more entity tags",
+            "summary": "Bad Request"
           },
           "401": {
             "content": {
@@ -595,7 +694,7 @@
                 }
               }
             },
-            "description": "A precondition failed: If-Match other than *; the operation declares no validator (its input does not embed geta.Conditional)",
+            "description": "A precondition failed: If-Match, against the validators the response carries (its input does not embed geta.Conditional)",
             "summary": "Precondition Failed"
           },
           "415": {
@@ -737,6 +836,28 @@
     "/oidc": {
       "get": {
         "operationId": "getOidc",
+        "parameters": [
+          {
+            "description": "\"*\" or a list of one or more entity tags (RFC 9110 §13.1.1), compared strongly with the ETag the response carries; a failed match answers 412. Evaluated once the handler has answered, and only on a 2xx: the handler's own answers, such as a 404, come first (§13.2.1)",
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "pattern": "^(?:[^\\x00-\\x20\\x7F](?:[^\\x00-\\x08\\x0A-\\x1F\\x7F]*[^\\x00-\\x20\\x7F])?)?$",
+              "type": "string"
+            }
+          },
+          {
+            "description": "\"*\" or a list of one or more entity tags (RFC 9110 §13.1.2), compared weakly with the ETag the response carries; a match answers 304 in place of a 200 to a GET or HEAD, and 412 otherwise. Evaluated once the handler has answered, and only on a 2xx (§13.2.1)",
+            "in": "header",
+            "name": "If-None-Match",
+            "required": false,
+            "schema": {
+              "pattern": "^(?:[^\\x00-\\x20\\x7F](?:[^\\x00-\\x08\\x0A-\\x1F\\x7F]*[^\\x00-\\x20\\x7F])?)?$",
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -750,8 +871,19 @@
             "summary": "OK"
           },
           "304": {
-            "description": "If-None-Match: *; the operation declares no validator (its input does not embed geta.Conditional)",
+            "description": "The representation has not changed: If-None-Match, against the validators the response carries (its input does not embed geta.Conditional)",
             "summary": "Not Modified"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetaProblem"
+                }
+              }
+            },
+            "description": "If-Match or If-None-Match is neither \"*\" nor a list of one or more entity tags",
+            "summary": "Bad Request"
           },
           "401": {
             "content": {
@@ -792,7 +924,7 @@
                 }
               }
             },
-            "description": "A precondition failed: If-Match other than *; the operation declares no validator (its input does not embed geta.Conditional)",
+            "description": "A precondition failed: If-Match, against the validators the response carries (its input does not embed geta.Conditional)",
             "summary": "Precondition Failed"
           },
           "415": {
@@ -934,6 +1066,28 @@
     "/plain": {
       "get": {
         "operationId": "getPlain",
+        "parameters": [
+          {
+            "description": "\"*\" or a list of one or more entity tags (RFC 9110 §13.1.1), compared strongly with the ETag the response carries; a failed match answers 412. Evaluated once the handler has answered, and only on a 2xx: the handler's own answers, such as a 404, come first (§13.2.1)",
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "pattern": "^(?:[^\\x00-\\x20\\x7F](?:[^\\x00-\\x08\\x0A-\\x1F\\x7F]*[^\\x00-\\x20\\x7F])?)?$",
+              "type": "string"
+            }
+          },
+          {
+            "description": "\"*\" or a list of one or more entity tags (RFC 9110 §13.1.2), compared weakly with the ETag the response carries; a match answers 304 in place of a 200 to a GET or HEAD, and 412 otherwise. Evaluated once the handler has answered, and only on a 2xx (§13.2.1)",
+            "in": "header",
+            "name": "If-None-Match",
+            "required": false,
+            "schema": {
+              "pattern": "^(?:[^\\x00-\\x20\\x7F](?:[^\\x00-\\x08\\x0A-\\x1F\\x7F]*[^\\x00-\\x20\\x7F])?)?$",
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -947,8 +1101,19 @@
             "summary": "OK"
           },
           "304": {
-            "description": "If-None-Match: *; the operation declares no validator (its input does not embed geta.Conditional)",
+            "description": "The representation has not changed: If-None-Match, against the validators the response carries (its input does not embed geta.Conditional)",
             "summary": "Not Modified"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetaProblem"
+                }
+              }
+            },
+            "description": "If-Match or If-None-Match is neither \"*\" nor a list of one or more entity tags",
+            "summary": "Bad Request"
           },
           "401": {
             "content": {
@@ -978,7 +1143,7 @@
                 }
               }
             },
-            "description": "A precondition failed: If-Match other than *; the operation declares no validator (its input does not embed geta.Conditional)",
+            "description": "A precondition failed: If-Match, against the validators the response carries (its input does not embed geta.Conditional)",
             "summary": "Precondition Failed"
           },
           "415": {
@@ -1120,6 +1285,28 @@
     "/public": {
       "get": {
         "operationId": "getPublic",
+        "parameters": [
+          {
+            "description": "\"*\" or a list of one or more entity tags (RFC 9110 §13.1.1), compared strongly with the ETag the response carries; a failed match answers 412. Evaluated once the handler has answered, and only on a 2xx: the handler's own answers, such as a 404, come first (§13.2.1)",
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "pattern": "^(?:[^\\x00-\\x20\\x7F](?:[^\\x00-\\x08\\x0A-\\x1F\\x7F]*[^\\x00-\\x20\\x7F])?)?$",
+              "type": "string"
+            }
+          },
+          {
+            "description": "\"*\" or a list of one or more entity tags (RFC 9110 §13.1.2), compared weakly with the ETag the response carries; a match answers 304 in place of a 200 to a GET or HEAD, and 412 otherwise. Evaluated once the handler has answered, and only on a 2xx (§13.2.1)",
+            "in": "header",
+            "name": "If-None-Match",
+            "required": false,
+            "schema": {
+              "pattern": "^(?:[^\\x00-\\x20\\x7F](?:[^\\x00-\\x08\\x0A-\\x1F\\x7F]*[^\\x00-\\x20\\x7F])?)?$",
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -1133,8 +1320,19 @@
             "summary": "OK"
           },
           "304": {
-            "description": "If-None-Match: *; the operation declares no validator (its input does not embed geta.Conditional)",
+            "description": "The representation has not changed: If-None-Match, against the validators the response carries (its input does not embed geta.Conditional)",
             "summary": "Not Modified"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetaProblem"
+                }
+              }
+            },
+            "description": "If-Match or If-None-Match is neither \"*\" nor a list of one or more entity tags",
+            "summary": "Bad Request"
           },
           "412": {
             "content": {
@@ -1144,7 +1342,7 @@
                 }
               }
             },
-            "description": "A precondition failed: If-Match other than *; the operation declares no validator (its input does not embed geta.Conditional)",
+            "description": "A precondition failed: If-Match, against the validators the response carries (its input does not embed geta.Conditional)",
             "summary": "Precondition Failed"
           },
           "415": {
@@ -1268,6 +1466,28 @@
     "/roles": {
       "get": {
         "operationId": "getRoles",
+        "parameters": [
+          {
+            "description": "\"*\" or a list of one or more entity tags (RFC 9110 §13.1.1), compared strongly with the ETag the response carries; a failed match answers 412. Evaluated once the handler has answered, and only on a 2xx: the handler's own answers, such as a 404, come first (§13.2.1)",
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "pattern": "^(?:[^\\x00-\\x20\\x7F](?:[^\\x00-\\x08\\x0A-\\x1F\\x7F]*[^\\x00-\\x20\\x7F])?)?$",
+              "type": "string"
+            }
+          },
+          {
+            "description": "\"*\" or a list of one or more entity tags (RFC 9110 §13.1.2), compared weakly with the ETag the response carries; a match answers 304 in place of a 200 to a GET or HEAD, and 412 otherwise. Evaluated once the handler has answered, and only on a 2xx (§13.2.1)",
+            "in": "header",
+            "name": "If-None-Match",
+            "required": false,
+            "schema": {
+              "pattern": "^(?:[^\\x00-\\x20\\x7F](?:[^\\x00-\\x08\\x0A-\\x1F\\x7F]*[^\\x00-\\x20\\x7F])?)?$",
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -1281,8 +1501,19 @@
             "summary": "OK"
           },
           "304": {
-            "description": "If-None-Match: *; the operation declares no validator (its input does not embed geta.Conditional)",
+            "description": "The representation has not changed: If-None-Match, against the validators the response carries (its input does not embed geta.Conditional)",
             "summary": "Not Modified"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetaProblem"
+                }
+              }
+            },
+            "description": "If-Match or If-None-Match is neither \"*\" nor a list of one or more entity tags",
+            "summary": "Bad Request"
           },
           "401": {
             "content": {
@@ -1323,7 +1554,7 @@
                 }
               }
             },
-            "description": "A precondition failed: If-Match other than *; the operation declares no validator (its input does not embed geta.Conditional)",
+            "description": "A precondition failed: If-Match, against the validators the response carries (its input does not embed geta.Conditional)",
             "summary": "Precondition Failed"
           },
           "415": {

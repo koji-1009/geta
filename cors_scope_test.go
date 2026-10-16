@@ -22,7 +22,7 @@ func TestCORSBelowTheRootIsRefused(t *testing.T) {
 	rejects(t, one("/x", geta.Route{Get: geta.Op(http.StatusOK, okHandler, geta.Doc{BeforeGate: geta.Scope{cors}})}),
 		"GET /x: Doc.BeforeGate: middleware 0 (cors) "+why)
 	// In the root scope it answers the preflight itself.
-	a := accepts(t, withRoot(one("/x", geta.Route{Put: geta.OpNoBody(http.StatusNoContent, func(context.Context, *empty) error { return nil }, geta.Doc{})}), cors))
+	a := accepts(t, withRoot(one("/x", geta.Route{Put: geta.OpNoBody(http.StatusNoContent, writeNoBody, geta.Doc{})}), cors))
 	r := do(t, a, "OPTIONS", "/x", "Origin", "https://a.example", "Access-Control-Request-Method", "PUT")
 	if r.Code != 204 || r.Header().Get("Access-Control-Allow-Methods") != "PUT" || r.Header().Get("Allow") != "" {
 		t.Fatal(r.Code, r.Header())
@@ -43,7 +43,7 @@ func TestCORSQueryPreflightBehindTheGate(t *testing.T) {
 	if r.Code != 204 || r.Header().Get("Access-Control-Allow-Methods") != "QUERY" || r.Header().Get("Access-Control-Max-Age") != "90" {
 		t.Fatal(r.Code, r.Header())
 	}
-	sameHeaders(t, "preflight", r.Header().Get("Access-Control-Allow-Headers"), "Authorization", "Content-Type")
+	sameHeaders(t, "preflight", r.Header().Get("Access-Control-Allow-Headers"), "Authorization", "Content-Type", "If-Match", "If-None-Match")
 	r = do(t, a, "QUERY", "/search", "Origin", "https://a.example")
 	if r.Code != 401 {
 		t.Fatal(r.Code)

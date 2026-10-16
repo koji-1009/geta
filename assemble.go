@@ -179,9 +179,8 @@ func New(t Table, opts ...Option) (*App, error) {
 			a.ops = append(a.ops, op)
 			compiled[m.method] = op
 		}
-		// Where the GET declares a validator, an operation that changes the
-		// state it selects a representation of evaluates the preconditions
-		// against it (checkConditionalWrite).
+		// Where the GET declares a validator, a write on the state it selects
+		// a representation of takes the preconditions (checkConditionalWrite).
 		if get := compiled[http.MethodGet]; get != nil {
 			for _, m := range methods {
 				op := compiled[m.method]
@@ -553,8 +552,16 @@ func (a *App) compile(reg *registry, path string, params []string, m methodOp, c
 	if c.opID == "" {
 		c.opID = operationID(m.method, path)
 	}
+	c.in.refuses = c.refusesPreconditions()
 	c.selecting = c.selects()
 	c.answering = c.selecting && !c.etagged()
+	if c.selecting {
+		// The precondition fields geta reads are documented as Conditional
+		// documents them.
+		if p, err := reg.inPlan(reflect.TypeFor[struct{ Conditional }]()); err == nil && len(p.params) > 0 {
+			c.precondition = p.params[0].use
+		}
+	}
 	return c, nil
 }
 
@@ -812,10 +819,14 @@ func addRequirement(reqs [][]Scheme, req []Scheme) [][]Scheme {
 	return append(reqs, req)
 }
 
-// operationID derives an identifier from the method and path, each segment
-// capitalized: a parameter after "By", a literal keeping its letters,
-// digits, '.', '-', and '_'. GET /users/{id}/posts is getUsersByIdPosts, and
-// GET /a-b/c is getA-bC.
+// operationID derives an identifier from the method and path, in lower camel
+// case as OpenAPI recommends ("it is RECOMMENDED to follow common
+// programming naming conventions", OpenAPI 3.1 §4.8.10): each segment
+// capitalized, a parameter after "By", a literal keeping its letters, digits,
+// and '_', and each run of other characters ('.', '-', '~', ...) dropped,
+// with the letter after it capitalized. GET /users/{id}/posts is
+// getUsersByIdPosts, GET /a-b/c is getABC, and GET /openapi.json is
+// getOpenapiJson.
 func operationID(method, path string) string {
 	var b strings.Builder
 	b.WriteString(strings.ToLower(method))
@@ -827,17 +838,19 @@ func operationID(method, path string) string {
 			b.WriteString("By")
 			seg = strings.Trim(seg, "{}")
 		}
-		rs := []rune(strings.Map(func(r rune) rune {
-			if unicode.IsLetter(r) || unicode.IsDigit(r) || strings.ContainsRune(".-_", r) {
-				return r
+		upper := true // the first letter of a segment, or after a dropped run
+		for _, r := range seg {
+			switch {
+			case unicode.IsLetter(r) || unicode.IsDigit(r) || r == '_':
+				if upper {
+					r = unicode.ToUpper(r)
+				}
+				b.WriteRune(r)
+				upper = false
+			default:
+				upper = true
 			}
-			return -1
-		}, seg))
-		if len(rs) == 0 {
-			continue
 		}
-		rs[0] = unicode.ToUpper(rs[0])
-		b.WriteString(string(rs))
 	}
 	return b.String()
 }

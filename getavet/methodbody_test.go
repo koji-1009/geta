@@ -29,20 +29,24 @@ type Fields struct {
 }
 
 type JSONIn struct {
+	geta.Conditional
 	Body Item `+"`body:\"json\"`"+`
 }
 
 type FormIn struct {
+	geta.Conditional
 	Body Fields `+"`body:\"form\"`"+`
 }
 
 type RawIn struct {
+	geta.Conditional
 	Body []byte `+"`body:\"text/csv\"`"+`
 }
 
 type EmbeddedIn struct{ JSONIn }
 
 type ParamsIn struct {
+	geta.Conditional
 	Q string `+"`query:\"q\"`"+`
 }
 
@@ -80,6 +84,7 @@ func TestMethodBodiesInEveryLiteralForm(t *testing.T) {
 import (
 	"context"
 	"net/http"
+	"time"
 
 	"github.com/koji-1009/geta"
 )
@@ -89,10 +94,11 @@ type Item struct {
 }
 
 type JSONIn struct {
+	geta.Conditional
 	Body Item `+"`body:\"json\"`"+`
 }
 
-func h(context.Context, *JSONIn) (*Item, error) { return nil, nil }
+func h(_ context.Context, in *JSONIn) (*Item, error) { return nil, in.Check("", time.Time{}) }
 
 var named = geta.Op(http.StatusOK, h, geta.Doc{})
 

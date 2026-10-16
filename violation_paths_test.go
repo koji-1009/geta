@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/koji-1009/geta"
 	"github.com/koji-1009/geta/getatest"
@@ -46,12 +47,18 @@ type pathBody struct {
 }
 
 type pathBodyIn struct {
+	geta.Conditional
 	Body pathBody `body:"json"`
 }
 
 func pathClient(t *testing.T) *getatest.Client {
 	t.Helper()
-	h := func(context.Context, *pathBodyIn) (*empty, error) { return &empty{}, nil }
+	h := func(_ context.Context, in *pathBodyIn) (*empty, error) {
+		if err := in.Check("", time.Time{}); err != nil {
+			return nil, err
+		}
+		return &empty{}, nil
+	}
 	return getatest.New(t, one("/x", geta.Route{Post: geta.Op(http.StatusOK, h, geta.Doc{})}), geta.WithUnion(pathShapes))
 }
 
@@ -117,7 +124,12 @@ func TestAMemberIsNamedAsJSONPathNamesIt(t *testing.T) {
 		}
 	}
 	// A method's refusal under a digit member.
-	h := func(context.Context, *ownEventIn) (*empty, error) { return &empty{}, nil }
+	h := func(_ context.Context, in *ownEventIn) (*empty, error) {
+		if err := in.Check("", time.Time{}); err != nil {
+			return nil, err
+		}
+		return &empty{}, nil
+	}
 	oc := getatest.New(t, one("/x", geta.Route{Post: geta.Op(http.StatusOK, h, geta.Doc{})}),
 		geta.WithSchema[cents]("string", `pattern=^-?[0-9]+\.[0-9]+$`))
 	if got := strings.Join(paths(t, oc.Post("/x", `{"type":"x","data":1,"map":{"0":null,"-1":null}}`)), " "); got != "$.map['-1'] $.map['0']" && got != "$.map['0'] $.map['-1']" {
@@ -128,9 +140,15 @@ func TestAMemberIsNamedAsJSONPathNamesIt(t *testing.T) {
 		Name string `form:"name"`
 	}
 	type formIn struct {
+		geta.Conditional
 		Body formBody `body:"form"`
 	}
-	fh := func(context.Context, *formIn) (*empty, error) { return &empty{}, nil }
+	fh := func(_ context.Context, in *formIn) (*empty, error) {
+		if err := in.Check("", time.Time{}); err != nil {
+			return nil, err
+		}
+		return &empty{}, nil
+	}
 	fc := getatest.New(t, one("/f", geta.Route{Post: geta.Op(http.StatusOK, fh, geta.Doc{})}))
 	res := fc.With("Content-Type", "application/x-www-form-urlencoded").Post("/f", "name=a&a.b=1&c=2")
 	if got := strings.Join(paths(t, res), " "); got != "$['a.b'] $.c" {

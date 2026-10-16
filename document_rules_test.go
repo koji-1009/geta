@@ -114,6 +114,7 @@ type note2 struct {
 }
 
 type note2In struct {
+	geta.Conditional
 	Body note2 `body:"json"`
 }
 
@@ -274,6 +275,7 @@ type nullableShape struct {
 }
 
 type nullableShapeIn struct {
+	geta.Conditional
 	Body nullableShape `body:"json"`
 }
 
@@ -300,6 +302,7 @@ type tally struct {
 }
 
 type tallyIn struct {
+	geta.Conditional
 	Body tally `body:"json"`
 }
 
@@ -325,6 +328,7 @@ type limitedPair struct {
 }
 
 type limitedPairIn struct {
+	geta.Conditional
 	Body limitedPair `body:"json"`
 }
 
@@ -352,10 +356,12 @@ type limitedNested struct {
 }
 
 type limitedOuterIn struct {
+	geta.Conditional
 	Body limitedOuter `body:"json"`
 }
 
 type limitedNestedIn struct {
+	geta.Conditional
 	Body limitedNested `body:"json"`
 }
 

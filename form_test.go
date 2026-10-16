@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/koji-1009/geta"
 	"github.com/koji-1009/geta/getatest"
@@ -23,7 +24,7 @@ import (
 // Accept-Patch (RFC 5789 section 2.2); content with no Content-Type is
 // application/octet-stream (RFC 9110 section 8.3), which no operation takes.
 func TestUnsupportedMediaTypeIs415(t *testing.T) {
-	h := func(ctx context.Context, in *bodyIn) (*echoed, error) { return &echoed{Got: in.Body.Name}, nil }
+	h := codedEcho
 	c := getatest.New(t, one("/x", geta.Route{
 		Post:  geta.Op(http.StatusOK, h, geta.Doc{}),
 		Patch: geta.Op(http.StatusOK, h, geta.Doc{}),
@@ -78,11 +79,15 @@ type applicant struct {
 }
 
 type formIn struct {
+	geta.Conditional
 	ID   string    `query:"id"`
 	Body applicant `body:"form"`
 }
 
 func echoForm(ctx context.Context, in *formIn) (*echoed, error) {
+	if err := in.Check("", time.Time{}); err != nil {
+		return nil, err
+	}
 	return &echoed{Got: fmt.Sprintf("%s %+v", in.ID, show(in.Body))}, nil
 }
 
@@ -124,11 +129,15 @@ func TestFormBinding(t *testing.T) {
 }
 
 type optionalFormIn struct {
+	geta.Conditional
 	Body *applicant `body:"form"`
 }
 
 func TestOptionalFormBody(t *testing.T) {
 	h := func(ctx context.Context, in *optionalFormIn) (*echoed, error) {
+		if err := in.Check("", time.Time{}); err != nil {
+			return nil, err
+		}
 		if in.Body == nil {
 			return &echoed{Got: "none"}, nil
 		}
@@ -152,6 +161,7 @@ type upload struct {
 }
 
 type uploadIn struct {
+	geta.Conditional
 	Body upload `body:"multipart"`
 }
 
@@ -166,6 +176,9 @@ func describe(f geta.File) string {
 }
 
 func echoUpload(ctx context.Context, in *uploadIn) (*echoed, error) {
+	if err := in.Check("", time.Time{}); err != nil {
+		return nil, err
+	}
 	s := in.Body.Title + " " + describe(in.Body.Avatar)
 	if in.Body.Extra != nil {
 		for _, f := range *in.Body.Extra {

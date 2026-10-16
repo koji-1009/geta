@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/koji-1009/geta"
 	"github.com/koji-1009/geta/getatest"
@@ -27,6 +28,7 @@ type vlMember struct {
 }
 
 type vlBody struct {
+	geta.Conditional
 	Body vlMember `body:"json"`
 }
 
@@ -36,7 +38,12 @@ type vlOut struct {
 
 func TestValueKeywordsHoldEachValue(t *testing.T) {
 	c := getatest.New(t, geta.Table{Routes: []geta.Entry{
-		{Path: "/b", Route: post(func(context.Context, *vlBody) (*ok, error) { return &ok{true}, nil })},
+		{Path: "/b", Route: post(func(_ context.Context, in *vlBody) (*ok, error) {
+			if err := in.Check("", time.Time{}); err != nil {
+				return nil, err
+			}
+			return &ok{true}, nil
+		})},
 		{Path: "/o", Route: get(func(context.Context, *empty) (*vlOut, error) { return &vlOut{Tags: map[string]string{"k": "x"}}, nil })},
 	}})
 	// A JSON body is read in one pass, which refuses what the reference path
@@ -237,6 +244,7 @@ type kwMember struct {
 }
 
 type kwBody struct {
+	geta.Conditional
 	Body kwMember `body:"json"`
 }
 
@@ -250,7 +258,12 @@ func TestKeyKeywordsHoldEachKey(t *testing.T) {
 	lim.MaxStringLength = 10
 	out := &kwOut{Tags: map[string]int{"abc": 1}, Free: map[string]int{strings.Repeat("f", 50): 1}}
 	c := getatest.New(t, geta.Table{Routes: []geta.Entry{
-		{Path: "/b", Route: post(func(context.Context, *kwBody) (*ok, error) { return &ok{true}, nil })},
+		{Path: "/b", Route: post(func(_ context.Context, in *kwBody) (*ok, error) {
+			if err := in.Check("", time.Time{}); err != nil {
+				return nil, err
+			}
+			return &ok{true}, nil
+		})},
 		{Path: "/o", Route: get(func(context.Context, *empty) (*kwOut, error) { return out, nil })},
 	}}, geta.WithLimits(lim))
 	send := func(body string) *getatest.Response {
@@ -328,6 +341,7 @@ type kvMember struct {
 }
 
 type kvBody struct {
+	geta.Conditional
 	Body kvMember `body:"json"`
 }
 
@@ -336,6 +350,7 @@ type kvOut struct {
 }
 
 type kvCeiling struct {
+	geta.Conditional
 	Body struct {
 		M map[string]int8 `json:"m" schema:"propertyNames.pattern=^k+$,additionalProperties.minimum=0"`
 	} `body:"json"`
@@ -350,7 +365,12 @@ type kvCeiling struct {
 func TestAKeysViolationLeavesItsValueChecked(t *testing.T) {
 	out := &kvOut{Links: map[string]string{"a": "https://x"}}
 	c := getatest.New(t, geta.Table{Routes: []geta.Entry{
-		{Path: "/b", Route: post(func(context.Context, *kvBody) (*ok, error) { return &ok{true}, nil })},
+		{Path: "/b", Route: post(func(_ context.Context, in *kvBody) (*ok, error) {
+			if err := in.Check("", time.Time{}); err != nil {
+				return nil, err
+			}
+			return &ok{true}, nil
+		})},
 		{Path: "/o", Route: get(func(context.Context, *empty) (*kvOut, error) { return out, nil })},
 	}}, geta.WithSchema[cents]("string", `pattern=^-?[0-9]+\.[0-9]+$`))
 	send := func(body string) *getatest.Response {
@@ -387,7 +407,12 @@ func TestAKeysViolationLeavesItsValueChecked(t *testing.T) {
 	same(t, violations(t, send(`{"links":{},"free":{"`+long+`":-1}}`)), "body "+cut+": key length 4097 exceeds the ceiling of 4096 code points")
 	lim := geta.DefaultLimits
 	lim.MaxStringLength = 5000
-	cc := getatest.New(t, one("/c", post(func(context.Context, *kvCeiling) (*ok, error) { return &ok{true}, nil })), geta.WithLimits(lim))
+	cc := getatest.New(t, one("/c", post(func(_ context.Context, in *kvCeiling) (*ok, error) {
+		if err := in.Check("", time.Time{}); err != nil {
+			return nil, err
+		}
+		return &ok{true}, nil
+	})), geta.WithLimits(lim))
 	same(t, violations(t, cc.Post("/c", `{"m":{"`+long+`":-1,"x":-1}}`)),
 		"body "+cut+": key length 4097 exceeds the pattern-validation ceiling of 4096 code points",
 		`body $.m.x: key "x" does not match pattern ^k+$`,
@@ -415,9 +440,13 @@ type KeyedCountsDeclared struct {
 // backstop.
 func TestKeysAreReadUnderTheOperationsLimits(t *testing.T) {
 	short := func(l geta.Limits) geta.Limits { l.MaxStringLength = 8; return l }
-	read := func(context.Context, *struct {
+	read := func(_ context.Context, in *struct {
+		geta.Conditional
 		B KeyedCounts `body:"json"`
 	}) (*ok, error) {
+		if err := in.Check("", time.Time{}); err != nil {
+			return nil, err
+		}
 		return &ok{true}, nil
 	}
 	_, err := geta.New(geta.Table{Routes: []geta.Entry{
@@ -427,9 +456,13 @@ func TestKeysAreReadUnderTheOperationsLimits(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "POST /a and POST /b read geta_test.KeyedCounts under conflicting limits (MaxStringLength 4096 and 8,") {
 		t.Errorf("limits: %v", err)
 	}
-	declared := func(context.Context, *struct {
+	declared := func(_ context.Context, in *struct {
+		geta.Conditional
 		B KeyedCountsDeclared `body:"json"`
 	}) (*ok, error) {
+		if err := in.Check("", time.Time{}); err != nil {
+			return nil, err
+		}
 		return &ok{true}, nil
 	}
 	if _, err := geta.New(geta.Table{Routes: []geta.Entry{

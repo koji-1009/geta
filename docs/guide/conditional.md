@@ -29,7 +29,7 @@ func (h Handler) Put(ctx context.Context, in *PutIn) (*Tagged, error) {
 ```
 
 - Order (RFC 9110 §13.2.2): If-Match (strong; no match 412), else If-Unmodified-Since (412); then If-None-Match (weak; match 304 on GET/HEAD, else 412), else on GET/HEAD If-Modified-Since (304).
-- A 304 carries the ETag (or Last-Modified) a 200 would. The document states both on the 304, optional.
+- A 304 carries the header fields a 200 would among Content-Location, Date, ETag, Vary, Cache-Control, Expires (§15.4.5 "MUST generate"). The handler returns the output it would answer beside the error, headers set, body left out: `return &Tagged{ETag: tag, CacheControl: "max-age=60"}, err`. geta sends those fields on the 304; without the output's ETag, the tag given to `Check`, else its date as Last-Modified. The output is read for a 304 alone. Where the output type declares one of these fields other than ETag (and Last-Modified), a 304 returned without the output is a logged 500. The document states, on the 304, the ETag and Last-Modified `Check` was given and the output's fields among these, typed as on the 200, all optional.
 - 400: malformed tag list; list without a tag (empty field, one or several lines, commas alone). `*` alone but for spaces and tabs (beside a no-break space: 400). Several lines are one list.
 - Non-HTTP-date: ignored. Only RFC 9110 §5.6.7 forms are read (IMF-fixdate, RFC 850, asctime; two-digit hour, minute, second; no fraction; names in their own case). 23:59:60 reads as 23:59:59.
 - The four fields are not string parameters: bound whatever their bytes and length. An obs-text (non-UTF-8) entity tag matches as any other; non-UTF-8 date ignored; long list read whole; no documented `maxLength`.
@@ -69,57 +69,54 @@ func (h Handler) Put(ctx context.Context, in *CreateIn) (*Tagged, error) {
 - Check before a 2xx: the handler of an operation whose input embeds `Conditional`, `RequireConditional`, or `RequireAbsent` calls `Check` or `CheckAbsent` on its input (or a copy of it) before it answers a 2xx, and returns the error either returns. A 2xx answered without either, or after either returned an error (304, 400, 412, 428; the first error stands, whatever a later call answers), is a defect, as the document states preconditions the response never evaluated, or a failed one it overrode, performing the write anyway: a logged 500 with an `instance`, whatever the failure rows, a catch-all included, without the body or the envelope's headers. Any other status (a missing target's 404, a 303) is sent as answered: the preconditions are ignored there (§13.2.1 "MUST ignore all received preconditions if its response ... would have been a status code other than a 2xx"). getavet reports a handler that leaves its input unnamed, names it `_`, or never uses it (a function literal, or a function or method of the package); a handler that uses its input is left to geta at run time.
 - Binding the four headers again in the same input fails `geta.New`.
 - `geta.ETag` reads `If-None-Match` as `Check` does; on a GET without `Conditional`, every precondition (below).
+- A write without one of the three takes no precondition (below).
 - Every status `Check` answers is documented.
 - Worked case: `examples/register` `/users/{id}`: GET and PUT answer `user.Tagged` with the user's `ETag`; stale `If-Match` is a 412 writing nothing, on PUT and DELETE alike.
 
-## Operations without `Conditional`
+## A write without `Conditional` takes no precondition
 
-An operation whose input does not embed `Conditional` and that declares no validator (a GET that does, below, is the exception) has geta evaluate the preconditions itself (RFC 9110 §13.1 "MUST evaluate … prior to performing the method"), against a current representation with no entity tag and no modification date, before the handler runs:
+A write (POST, PUT, PATCH, DELETE) whose input embeds none of `Conditional`, `RequireConditional`, `RequireAbsent` takes no precondition: that is its declared state, "none".
 
-- `If-Match` other than `*` (any list, any value that is no list): 412; no listed tag matches a representation with none (§13.1.1). `DELETE` with `If-Match: "x"` is a 412 deleting nothing.
-- `If-Match: *`: holds; the handler runs. A missing target is the handler's 404, which takes precedence (§13.2.1).
-- `If-None-Match: *`: 412 on any method but GET and HEAD (§13.1.2); 304 on a GET that answers 200 (§15.4.5: a 304 stands for a 200), with no body and no validator. Not evaluated on a GET answering no 200.
-- `If-None-Match` list: holds (no tag to match).
-- `If-Modified-Since`, `If-Unmodified-Since`: ignored; no modification date (§13.1.3, §13.1.4 "MUST ignore … if the resource does not have a modification date available").
-- OPTIONS: ignored (§13.2.1).
-- Several lines are one list: `*` twice is a list, not `*`.
-- Documented on every such operation: 412, and on a GET answering 200, 304. The fields are not parameters.
-- Cost: geta cannot look the target up, so a missing target answers 412 (or 304) rather than 404 to `If-Match: "x"` and `If-None-Match: *`, and an operation that creates its target (PUT) runs on `If-Match: *`. Embed `Conditional` (and `CheckAbsent`) for the full order.
-
-## A GET that declares a validator without `Conditional`
-
-A GET whose input does not embed `Conditional` but whose output has an `ETag` or `Last-Modified` header field, or that `geta.ETag` tags, has a validator: the one it sends. GET is safe (§9.2.1 "essentially read-only"), so its handler runs first, and the preconditions are evaluated against what the response carries, as `Check` would be called with it: "the condition is true if any of the listed tags match the entity tag of the selected representation" (§13.1.1). GET and HEAD alike:
-
-- Order (§13.2.2): `If-Match` (strong; no match 412), else `If-Unmodified-Since` against the `Last-Modified` (412); then `If-None-Match` (weak; match 304), else `If-Modified-Since` (304). `If-Match` with the tag the GET sent holds.
-- A 304 carries the `ETag` the 200 would, or else its `Last-Modified` (§15.4.5), no body; it answers only in place of a 200 (§15.4.5 "would have resulted in a 200 (OK) response"): another 2xx from a status field is sent as is, its `If-Match` still evaluated.
-- The handler's own answers take precedence: a missing target is its 404, whatever `If-Match` names; a status other than 2xx ignores the preconditions (§13.2.1 "MUST ignore all received preconditions if its response … would have been a status code other than a 2xx").
-- `If-Match` or `If-None-Match` that is neither `*` nor a list of entity tags: 400, as `Check` answers.
-- An output `ETag` value that is not one entity tag is no entity tag (`If-Match: "x"` is a 412); a `Last-Modified` that is not one HTTP-date is no date.
-- On a GET `geta.ETag` tags, the middleware evaluates them, against its tag (or the handler's, which it keeps): the tag is known only once the body is. geta evaluates nothing before the handler there, so nothing is evaluated twice. On a GET whose input embeds `Conditional`, `geta.ETag` reads only `If-None-Match`, as before.
-- Documented: 304 where the GET answers 200, stating the `ETag` or `Last-Modified` its output carries; 412; 400.
+- A request carrying `If-Match`, `If-None-Match`, `If-Modified-Since`, or `If-Unmodified-Since` does not match its contract: a 400 before the handler runs, its `errors` naming each field (`{"in":"header","path":"If-Match","message":"is not taken: ..."}`), listed with the request's other violations. Nothing is written.
+- RFC 9110 §13.2.1 evaluates preconditions "after it has successfully performed its normal request checks"; refusing a field the operation does not take is one of those checks, as a refused parameter is. So a write never answers 412 for a target that does not exist, nor acts on a precondition it cannot evaluate.
+- The document states none of the four as parameters, and the 400 for them; no 412.
+- To take preconditions, embed `Conditional` and call `Check` once the target is found, before acting (above). A target with no validators: `in.Check("", time.Time{})` (`If-Match` with tags 412, `*` holds; `If-None-Match: *` 412; dates ignored).
 
 ## Writes beside a GET that declares a validator
 
-A route whose GET declares a validator has one, so its writes evaluate the preconditions against it. `geta.New` refuses a PUT, PATCH, or DELETE on that route whose input embeds neither `Conditional` nor `RequireConditional`: evaluated against no validator, `If-Match` with the tag the GET sent would be a 412 (RFC 9110 §13.1.1) and `If-Unmodified-Since` would be ignored (§13.1.4). Embed one and call `Check` with the current validators, inside the store's write as `Put` above does.
+Where a route's GET declares a validator, a client holds the tag it sent and may send it back in `If-Match` "to prevent the 'lost update' problem" (§13.1.1). A PUT, PATCH, or DELETE there that takes none would answer it 400, so `geta.New` refuses it:
 
 ```
-DELETE /items/{id} (items.go:31): the route's GET declares a validator (its output's ETag header field), but the input embeds neither geta.Conditional nor geta.RequireConditional, so geta would evaluate its preconditions against none; embed one and call Check with the current validators
+DELETE /items/{id} (items.go:31): the route's GET declares a validator (its output's ETag header field), so a client may send its tag in If-Match, but the input embeds none of geta.Conditional, geta.RequireConditional, geta.RequireAbsent, so the operation takes no precondition and answers it 400; embed geta.Conditional and call Check with the current validators
 ```
 
-- The GET declares a validator when its output has an `ETag` or `Last-Modified` header field (any spelling, embedded structs included), its input embeds `Conditional` or `RequireConditional`, or `geta.ETag` tags it (a GET answering 200 whole, not a stream, with `geta.ETag` in the root, a directory's, or its own scope).
-- Judged: PUT, PATCH, DELETE, which act on the state of the target resource the GET represents (§9.3.4 "the state of the target resource be created or replaced", §14.5 "partial updates", §9.3.5 "remove the association between the target resource and its current functionality").
-- Not judged: POST, whose content is processed "according to the resource's own specific semantics" (§9.3.3), and QUERY, safe as GET is (§9.2.1). Without `Conditional`, they keep geta's own evaluation above: `If-Match` with the GET's tag is a 412.
-- A route whose GET declares no validator, or that has no GET, keeps geta's own evaluation.
-- getavet reports it where one `geta.Route` literal builds both the GET and the write in place and the GET's types declare the validator. `geta.ETag` in the chain, and an operation placed by name, are `geta.New`'s alone.
-- Neither can see a validator the GET's handler or a middleware of your own sets by writing the header itself; there, embed `Conditional` in the writes yourself.
-- `geta.ETag` computes its tag over the GET's body, which a write's handler does not have; to check it, let the GET set its own `ETag` (geta.ETag keeps it) from what the write can compute too.
+- The GET declares a validator when its output has an `ETag` or `Last-Modified` header field (any spelling, embedded structs included), its input embeds `Conditional` (or `RequireConditional`), or `geta.ETag` tags it (a GET answering 200 whole, not a stream).
+- Judged: PUT, PATCH, DELETE, which act on the state the GET represents (§9.3.4, §14.5, §9.3.5). Not judged: POST, processed "according to the resource's own specific semantics" (§9.3.3), and QUERY, safe as GET is.
+- getavet reports it where one `geta.Route` literal builds both the GET and the write in place and the GET's types declare the validator; `geta.ETag` in the chain, and an operation placed by name, are `geta.New`'s alone. Neither sees a validator a handler or middleware of your own writes by hand; embed `Conditional` in the writes there yourself.
+- A header field named `If-Match`, `If-None-Match`, `If-Modified-Since`, or `If-Unmodified-Since` bound as a plain input field (`header:"If-Match"`) fails `geta.New` on any method: only `Conditional` binds and evaluates them.
+
+## GET and QUERY without `Conditional`
+
+A GET or QUERY whose input does not embed `Conditional` is safe (§9.2.1 "essentially read-only"), so its handler runs first, and the preconditions are evaluated against what it answered: its status, and the validators its response carries (an output `ETag` or `Last-Modified` header field, or the tag `geta.ETag` computes), as `Check` would be called with them: "the condition is true if any of the listed tags match the entity tag of the selected representation" (§13.1.1). GET and HEAD alike:
+
+- The handler's own answers take precedence: a status other than 2xx ignores the preconditions (§13.2.1), so a missing target is its 404 whatever is sent; an upgrade's 101 ignores them too.
+- Order (§13.2.2): `If-Match` (strong; no match 412), else `If-Unmodified-Since` against the `Last-Modified` (412); then `If-None-Match` (weak; match 304 on GET/HEAD, 412 on QUERY), else on GET/HEAD `If-Modified-Since` (304). `If-Match` with the tag the GET sent holds; with no `ETag`, a list never matches (412), `*` holds, and `If-None-Match: *` matches (304).
+- Without a `Last-Modified`, the dates are ignored (§13.1.3, §13.1.4).
+- A 304 answers only in place of a 200 (§15.4.5 "would have resulted in a 200 (OK) response"): another 2xx from a status field is sent as is, its `If-Match` still evaluated. It carries no body, and the output's header fields among Content-Location, Date, ETag, Vary, Cache-Control, Expires (and Last-Modified where it has no ETag); a stream's 304 its `Cache-Control: no-cache`.
+- `If-Match` or `If-None-Match` that is neither `*` nor a list of entity tags (several lines are one list: `*` twice is none): 400, as `Check` answers.
+- An output `ETag` value that is not one entity tag is no entity tag; a `Last-Modified` that is not one HTTP-date is no date.
+- On a GET `geta.ETag` tags, the middleware evaluates them, against its tag (or the handler's, which it keeps): the tag is known only once the body is. Its 304 keeps the handler's other header fields. On a GET whose input embeds `Conditional`, `geta.ETag` reads only `If-None-Match`.
+- OPTIONS: ignored (§13.2.1).
+- Not refused as a write without `Conditional` is: a cache revalidates any stored GET response with `If-None-Match` or `If-Modified-Since` (RFC 9111 §4.3.1), and a GET acts on nothing, so geta evaluates them after the handler at no risk, where a 400 would fail every revalidation.
+- Documented: `If-Match` and `If-None-Match` as optional header parameters, and, where the output declares a `Last-Modified` header field, `If-Unmodified-Since` and on a GET `If-Modified-Since`; 412; 400; 304 where the GET answers 200, stating the header fields it carries, typed as on the 200. None where no 2xx is answered (an upgrade). CORS allows the same request headers.
 
 ## Order against the request content
 
 RFC 9110 §13.2.1: preconditions are evaluated "after it has successfully performed its normal request checks and just before it would process the request content". Decoding and validating a body is processing it; what the headers show is not.
 
 - Before any precondition: the route (404, 405), gates, parameters (400), and what a body's headers and first byte show: another media type or a content coding (415), a declared length past `MaxBodyBytes` (413), a missing required body (400). A request refused for any of them answers so whatever its preconditions.
-- geta's own evaluation (above): after those, before the body is read.
+- GET and QUERY without `Conditional` (above): once the handler has answered.
+- A write without `Conditional`: a precondition field sent is a 400 among the parameters' (above).
 - `Conditional`: the handler decides, so a body bound before the handler is validated first: a stale `If-Match` with an invalid body is a 400. Declare the body `geta.Deferred[T]` to have the handler's checks answer first:
 
 ```go

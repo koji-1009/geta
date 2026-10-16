@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"reflect"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"unicode"
@@ -29,6 +30,9 @@ type inPlan struct {
 	cond     []int
 	required bool
 	absent   bool
+	// refuses is set on a write that takes no precondition
+	// (refusesPreconditions): one sent is a violation.
+	refuses bool
 }
 
 type paramPlan struct {
@@ -126,6 +130,11 @@ func (r *registry) inPlan(t reflect.Type) (*inPlan, error) {
 			loc, name, _ := inputLocation(vf)
 			if loc == "" {
 				continue
+			}
+			if loc == "header" && !conditional && slices.Contains(preconditionFields, http.CanonicalHeaderKey(name)) {
+				// Read as a string, it would bypass RFC 9110 §13.2's
+				// evaluation, and a write without Conditional refuses it.
+				return fmt.Errorf("%s.%s: header %q is a precondition field (RFC 9110 §13.1); embed geta.Conditional, which binds it and evaluates it by Check", t, f.Name, name)
 			}
 			if loc == "body" && strings.Contains(name, "/") {
 				p.raw = newRawPlan(f, name, index)
@@ -254,22 +263,10 @@ type bindError struct {
 	// omitted counts the violations found past errs (decoder.omitted).
 	omitted int
 	err     error
-	// pre is a failed precondition of an operation whose input does not
-	// embed Conditional (unvalidated), answered in place of a problem.
-	pre *PreconditionError
-}
-
-// refusal returns e as the bindError that answers it.
-func (e *PreconditionError) refusal() *bindError {
-	return &bindError{status: e.status, pre: e}
 }
 
 // write answers the refusal; err must be nil.
 func (be *bindError) write(w http.ResponseWriter, r *http.Request) {
-	if be.pre != nil {
-		be.pre.write(w, r)
-		return
-	}
 	logged := be.detail
 	if be.logged != "" {
 		logged = be.logged
@@ -280,13 +277,7 @@ func (be *bindError) write(w http.ResponseWriter, r *http.Request) {
 // bind fills dst from r, collecting every violation. tmp lists the
 // temporary files of a multipart body for the caller to remove after the
 // handler returns; on failure there are none.
-//
-// pre, when not nil, is a failed precondition geta evaluated itself
-// (unvalidated). It is answered after the parameters and what the headers
-// and first byte show of the body, and before the body is read: a request
-// refused for any of those is answered so whatever its preconditions (RFC
-// 9110 §13.2.1).
-func (p *inPlan) bind(w http.ResponseWriter, r *http.Request, dst reflect.Value, limits Limits, pre *PreconditionError) (be *bindError, tmp []string) {
+func (p *inPlan) bind(w http.ResponseWriter, r *http.Request, dst reflect.Value, limits Limits) (be *bindError, tmp []string) {
 	var query url.Values
 	if p.needs("query") {
 		q, err := url.ParseQuery(r.URL.RawQuery)
@@ -335,30 +326,26 @@ func (p *inPlan) bind(w http.ResponseWriter, r *http.Request, dst reflect.Value,
 		errs = append(errs, d.errs...)
 		omitted += d.omitted
 	}
+	if p.refuses {
+		errs = append(errs, refusedPreconditions(r)...)
+	}
 	if p.cond != nil {
 		cond := dst.FieldByIndex(p.cond).Addr().Interface().(*Conditional)
-		cond.method, cond.verdict = r.Method, new(verdict)
-	}
-	if len(errs) > 0 {
-		pre = nil // a 400 whatever the preconditions
+		cond.method, cond.verdict = r.Method, &cond.bound
 	}
 	if p.body != nil {
 		var be *bindError
 		switch field := dst.FieldByIndex(p.body.index); {
 		case !p.body.deferred:
-			be = p.body.bind(w, r, field, limits, pre)
+			be = p.body.bind(w, r, field, limits)
 		case len(errs) > 0:
 			// Refused anyway: list the body's violations too.
-			be = p.body.bind(w, r, field.Addr().Interface().(deferredBody).valueOf(), limits, nil)
+			be = p.body.bind(w, r, field.Addr().Interface().(deferredBody).valueOf(), limits)
 		default:
 			// Judged now by what the headers and first byte show; read when
 			// the handler asks.
 			body, refused := p.body.admit(w, r, limits)
-			switch be = refused; {
-			case be != nil:
-			case pre != nil:
-				be = pre.refusal()
-			default:
+			if be = refused; be == nil {
 				p.body.later(field.Addr().Interface().(deferredBody), body, limits)
 			}
 		}
@@ -371,7 +358,7 @@ func (p *inPlan) bind(w http.ResponseWriter, r *http.Request, dst reflect.Value,
 		}
 	}
 	if p.form != nil {
-		be, files := p.form.bind(w, r, dst.FieldByIndex(p.form.index), limits, pre)
+		be, files := p.form.bind(w, r, dst.FieldByIndex(p.form.index), limits)
 		if be != nil {
 			if be.status != http.StatusBadRequest {
 				return be, nil
@@ -382,7 +369,7 @@ func (p *inPlan) bind(w http.ResponseWriter, r *http.Request, dst reflect.Value,
 		tmp = files
 	}
 	if p.raw != nil {
-		if be := p.raw.bind(w, r, dst.FieldByIndex(p.raw.index), limits, pre); be != nil {
+		if be := p.raw.bind(w, r, dst.FieldByIndex(p.raw.index), limits); be != nil {
 			if be.status != http.StatusBadRequest {
 				return be, nil
 			}
@@ -395,10 +382,6 @@ func (p *inPlan) bind(w http.ResponseWriter, r *http.Request, dst reflect.Value,
 		// Each decoder caps its own violations; listViolations caps the
 		// total, counting the rest in omitted.
 		return &bindError{status: http.StatusBadRequest, detail: "the request does not match its contract", errs: errs, omitted: omitted}, nil
-	}
-	if pre != nil {
-		// No body was sent, or the operation takes none.
-		return pre.refusal(), nil
 	}
 	return nil, tmp
 }
@@ -639,10 +622,8 @@ func paramValue(c *codec, s string) any {
 	return s // a type violation
 }
 
-// bind reads the body into dst. A failed precondition pre, when not nil, is
-// returned once the body is judged by its headers and first byte, before the
-// rest is read (RFC 9110 §13.2.1).
-func (b *bodyPlan) bind(w http.ResponseWriter, r *http.Request, dst reflect.Value, limits Limits, pre *PreconditionError) *bindError {
+// bind reads the body into dst.
+func (b *bodyPlan) bind(w http.ResponseWriter, r *http.Request, dst reflect.Value, limits Limits) *bindError {
 	bad := func(msg string) *bindError {
 		return &bindError{status: http.StatusBadRequest, errs: []Violation{{In: "body", Path: "$", Message: msg}}}
 	}
@@ -678,9 +659,6 @@ func (b *bodyPlan) bind(w http.ResponseWriter, r *http.Request, dst reflect.Valu
 		if be := b.judge(w, r); be != nil {
 			return be
 		}
-	}
-	if pre != nil {
-		return pre.refusal()
 	}
 	if _, err := f.body.ReadFrom(body); err != nil {
 		return readFailure(err, limits)

@@ -21,9 +21,14 @@ func optionsTable(root ...geta.Middleware) geta.Table {
 		geta.Conditional
 		idIn
 	}
-	put := func(ctx context.Context, in *writeIn) (*ok, error) { return &ok{true}, nil }
-	del := func(ctx context.Context, in *writeIn) error { return nil }
-	post := func(ctx context.Context, _ *empty) (*ok, error) { return &ok{true}, nil }
+	put := func(ctx context.Context, in *writeIn) (*ok, error) {
+		if err := in.Check("", time.Time{}); err != nil {
+			return nil, err
+		}
+		return &ok{true}, nil
+	}
+	del := func(ctx context.Context, in *writeIn) error { return in.Check("", time.Time{}) }
+	post := writeHandler
 	return geta.Table{Root: root, Routes: []geta.Entry{
 		{Path: "/x", Route: get(okHandler)},
 		{Path: "/users/{id}", Route: geta.Route{
@@ -63,12 +68,21 @@ func TestOptionsUnionsTheBranches(t *testing.T) {
 	type yIn struct {
 		Y string `path:"y"`
 	}
-	nobody := func(context.Context, *empty) error { return nil }
+	type postXIn struct {
+		geta.Conditional
+		X string `path:"x"`
+	}
+	postX := func(_ context.Context, in *postXIn) (*ok, error) {
+		if err := in.Check("", time.Time{}); err != nil {
+			return nil, err
+		}
+		return &ok{true}, nil
+	}
 	c := getatest.New(t, geta.Table{Routes: []geta.Entry{
-		{Path: "/a/b", Route: geta.Route{Put: geta.OpNoBody(http.StatusNoContent, nobody, geta.Doc{})}},
+		{Path: "/a/b", Route: geta.Route{Put: geta.OpNoBody(http.StatusNoContent, writeNoBody, geta.Doc{})}},
 		{Path: "/a/{x}", Route: geta.Route{Get: geta.Op(http.StatusOK, func(context.Context, *xIn) (*ok, error) { return &ok{true}, nil }, geta.Doc{})}},
 		{Path: "/a/b/{y}", Route: geta.Route{Get: geta.Op(http.StatusOK, func(context.Context, *yIn) (*ok, error) { return &ok{true}, nil }, geta.Doc{})}},
-		{Path: "/a/{x}/c", Route: geta.Route{Post: geta.Op(http.StatusOK, func(context.Context, *xIn) (*ok, error) { return &ok{true}, nil }, geta.Doc{})}},
+		{Path: "/a/{x}/c", Route: geta.Route{Post: geta.Op(http.StatusOK, postX, geta.Doc{})}},
 	}})
 	for path, want := range map[string]string{
 		"/a/b":   "GET, HEAD, OPTIONS, PUT",
@@ -143,9 +157,13 @@ func TestOptionsAsteriskListsEveryMethod(t *testing.T) {
 	})
 	tbl := optionsTable(seen)
 	tbl.Routes = append(tbl.Routes, geta.Entry{Path: "/{name}", Route: geta.Route{Patch: geta.Op(http.StatusOK,
-		func(context.Context, *struct {
+		func(_ context.Context, in *struct {
+			geta.Conditional
 			Name string `path:"name"`
 		}) (*ok, error) {
+			if err := in.Check("", time.Time{}); err != nil {
+				return nil, err
+			}
 			return &ok{true}, nil
 		}, geta.Doc{})}})
 	a := accepts(t, tbl)
@@ -195,9 +213,18 @@ func TestAsteriskFormOnOtherMethodsIs400(t *testing.T) {
 	}) (*ok, error) {
 		return &ok{true}, nil
 	}
+	patch := func(_ context.Context, in *struct {
+		geta.Conditional
+		Name string `path:"name"`
+	}) (*ok, error) {
+		if err := in.Check("", time.Time{}); err != nil {
+			return nil, err
+		}
+		return &ok{true}, nil
+	}
 	tbl.Routes = append(tbl.Routes, geta.Entry{Path: "/{name}", Route: geta.Route{
 		Get:   geta.Op(http.StatusOK, name, geta.Doc{}),
-		Patch: geta.Op(http.StatusOK, name, geta.Doc{}),
+		Patch: geta.Op(http.StatusOK, patch, geta.Doc{}),
 	}})
 	a := accepts(t, tbl)
 	for _, method := range []string{http.MethodGet, http.MethodHead, http.MethodPatch, http.MethodPost, "TRACE"} {

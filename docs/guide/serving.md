@@ -26,8 +26,22 @@ if err := geta.Run(ctx, &http.Server{Addr: ":8080", Handler: a}); err != nil { l
 - A tag is a name in `Doc.Tags`; no 3.2 tag fields.
 - Every status an operation can answer is listed ([Declaring what a middleware answers](middleware.md#declaring-what-a-middleware-answers)).
 - Text must be UTF-8. Non-UTF-8 `Doc.Summary`, `Description`, `OperationID`, tag, or failure row detail fails `geta.New`, naming operation and field (`GET /t (file.go:12): Doc.Summary "caf\xe9" is not UTF-8`). Other text (`doc` tag, `WithInfo`) is named by JSON Pointer (`OpenAPI document text at /components/schemas/T/properties/a/description is not UTF-8: ...`).
-- Without `Doc.OperationID`, an operation's ID is the lower-case method and each path segment capitalized: a parameter after `By`, a literal keeping its letters, digits, `.`, `-`, and `_` (`GET /users/{id}/posts` is `getUsersByIdPosts`, `GET /a-b` is `getA-b`, `GET /` is `getRoot`). Paths that differ only in other characters or in case (`/a~b` and `/ab`, `/aB` and `/a/b`) derive one ID.
+- Without `Doc.OperationID`, an operation's ID is an identifier code generators take as it is, in lower camel case as OpenAPI recommends (§4.8.10 "it is RECOMMENDED to follow common programming naming conventions"): the lower-case method and each path segment capitalized, a parameter after `By`, a literal keeping its letters, digits, and `_`, and each run of any other character (`.`, `-`, `~`) dropped, the letter after it capitalized (`GET /users/{id}/posts` is `getUsersByIdPosts`, `GET /openapi.json` is `getOpenapiJson`, `GET /a-b` is `getAB`, `GET /` is `getRoot`). Paths that differ only in such characters or in case (`/a-b` and `/a/b`, `/aB` and `/a/b`) derive one ID.
 - Duplicate operation IDs or schema names fail `geta.New`; give one of the operations a `Doc.OperationID`.
+- The document is derived from the declarations and matches the wire; that is the feature. Rewriting geta's responses outside it (a 415 or 413 into a 400, a 404's `type`), editing the bytes of `a.OpenAPI()`, or adding paths to it by hand leaves a document that no longer describes the wire. Change the declarations instead (types, `schema` tags, `Doc.Failures`, `Doc`, `geta.WithSchema`) so geta outputs the document wanted; where a specification asks for what geta does not do, report the difference rather than patch around it.
+- geta adds no route for the document. To serve it, declare one whose handler returns the assembled App's `a.OpenAPI()`; it is documented and checked like any operation (its body re-encoded, the same JSON):
+
+```go
+var a *geta.App
+tbl.Routes = append(tbl.Routes, geta.Entry{Path: "/openapi.json", Route: geta.Route{
+	Get: geta.Op(http.StatusOK, func(context.Context, *struct{}) (*json.RawMessage, error) {
+		doc := json.RawMessage(a.OpenAPI()) // encoding/json
+		return &doc, nil
+	}, geta.Doc{OperationID: "getOpenAPIDocument", Security: []geta.Scheme{}}), // public behind a gate
+}})
+a, err := geta.New(tbl, geta.WithSchema[json.RawMessage]("object", "")) // the body: an object, not {}
+```
+
 - Given `geta.Observe`'s `Match`, `App.Documented(m, status)` and `App.Conforms(m, status, header, body)` check a response against the document. `App.Types(method, template)` returns an operation's In and Out types. `Conforms` reports a non-JSON success body; it skips responses without their own schema (plain problem, raw body, upgrade, empty body).
 
 ### Other servers and HTTP/3

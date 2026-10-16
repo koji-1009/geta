@@ -46,12 +46,14 @@ type Two struct {
 	Again  int `+"`status:\"201\"`"+`
 }
 
+type write struct{ geta.Conditional }
+
 func h[In, Out any](context.Context, *In) (*Out, error) { return nil, nil }
 
 func Build() (*geta.App, error) {
 	return geta.New(geta.Table{Routes: []geta.Entry{
-		{Path: "/a", Route: geta.Route{Put: geta.Op(http.StatusOK, h[struct{}, Upserted], geta.Doc{})}},
-		{Path: "/b", Route: geta.Route{Put: geta.Op(http.StatusAccepted, h[struct{}, Upserted], geta.Doc{})}},
+		{Path: "/a", Route: geta.Route{Put: geta.Op(http.StatusOK, h[write, Upserted], geta.Doc{})}},
+		{Path: "/b", Route: geta.Route{Put: geta.Op(http.StatusAccepted, h[write, Upserted], geta.Doc{})}},
 		{Path: "/c", Route: geta.Route{Get: geta.Op(http.StatusOK, h[struct{}, NotModified], geta.Doc{})}},
 		{Path: "/d", Route: geta.Route{Get: geta.Op(http.StatusAccepted, h[struct{}, Twice], geta.Doc{})}},
 		{Path: "/e", Route: geta.Route{Get: geta.Op(http.StatusOK, h[struct{}, NotInt], geta.Doc{})}},
@@ -79,6 +81,7 @@ func TestRedirectsMatchGetaNew(t *testing.T) {
 import (
 	"context"
 	"net/http"
+	"time"
 
 	"github.com/koji-1009/geta"
 )
@@ -117,20 +120,22 @@ type Embedded struct {
 
 func h[In, Out any](context.Context, *In) (*Out, error) { return nil, nil }
 
-func n(context.Context, *struct{}) error { return nil }
+type write struct{ geta.Conditional }
+
+func n(_ context.Context, in *write) error { return in.Check("", time.Time{}) }
 
 func Build() (*geta.App, error) {
 	return geta.New(geta.Table{Routes: []geta.Entry{
 		{Path: "/a", Route: geta.Route{Post: geta.OpNoBody(http.StatusSeeOther, n, geta.Doc{})}},
-		{Path: "/b", Route: geta.Route{Post: geta.Op(http.StatusFound, h[struct{}, Item], geta.Doc{})}},
+		{Path: "/b", Route: geta.Route{Post: geta.Op(http.StatusFound, h[write, Item], geta.Doc{})}},
 		{Path: "/c", Route: geta.Route{Get: geta.Op(http.StatusOK, h[struct{}, Maybe], geta.Doc{})}},
-		{Path: "/d", Route: geta.Route{Post: geta.Op(http.StatusMovedPermanently, h[struct{}, Numeric], geta.Doc{})}},
+		{Path: "/d", Route: geta.Route{Post: geta.Op(http.StatusMovedPermanently, h[write, Numeric], geta.Doc{})}},
 		{Path: "/e", Route: geta.Route{Post: geta.OpNoBody(http.StatusUseProxy, n, geta.Doc{})}},
 		{Path: "/f", Route: geta.Route{Post: geta.OpNoBody(306, n, geta.Doc{})}},
 		{Path: "/g", Route: geta.Route{Post: geta.OpNoBody(http.StatusMultipleChoices, n, geta.Doc{})}},
-		{Path: "/h", Route: geta.Route{Post: geta.Op(http.StatusMultipleChoices, h[struct{}, Item], geta.Doc{})}},
-		{Path: "/i", Route: geta.Route{Post: geta.Op(http.StatusTemporaryRedirect, h[struct{}, Text], geta.Doc{})}},
-		{Path: "/j", Route: geta.Route{Post: geta.Op(http.StatusCreated, h[struct{}, Embedded], geta.Doc{})}},
+		{Path: "/h", Route: geta.Route{Post: geta.Op(http.StatusMultipleChoices, h[write, Item], geta.Doc{})}},
+		{Path: "/i", Route: geta.Route{Post: geta.Op(http.StatusTemporaryRedirect, h[write, Text], geta.Doc{})}},
+		{Path: "/j", Route: geta.Route{Post: geta.Op(http.StatusCreated, h[write, Embedded], geta.Doc{})}},
 		{Path: "/k", Route: geta.Route{Get: geta.Op(http.StatusOK, h[struct{}, geta.Stream[Item]], geta.Doc{})}},
 	}})
 }
@@ -175,14 +180,16 @@ var accepted = http.StatusAccepted
 
 func h[In, Out any](context.Context, *In) (*Out, error) { return nil, nil }
 
-func parts() (int, func(context.Context, *struct{}) (*Upserted, error), geta.Doc) {
-	return http.StatusAccepted, h[struct{}, Upserted], geta.Doc{}
+type write struct{ geta.Conditional }
+
+func parts() (int, func(context.Context, *write) (*Upserted, error), geta.Doc) {
+	return http.StatusAccepted, h[write, Upserted], geta.Doc{}
 }
 
 func Build() (*geta.App, error) {
 	return geta.New(geta.Table{Routes: []geta.Entry{
-		{Path: "/a", Route: geta.Route{Put: geta.Op(http.StatusAccepted, h[struct{}, Upserted], geta.Doc{})}},
-		{Path: "/b", Route: geta.Route{Put: geta.Op(accepted, h[struct{}, Upserted], geta.Doc{})}},
+		{Path: "/a", Route: geta.Route{Put: geta.Op(http.StatusAccepted, h[write, Upserted], geta.Doc{})}},
+		{Path: "/b", Route: geta.Route{Put: geta.Op(accepted, h[write, Upserted], geta.Doc{})}},
 		{Path: "/c", Route: geta.Route{Put: geta.Op(parts())}},
 	}})
 }

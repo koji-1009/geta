@@ -139,6 +139,10 @@ func Op[In, Out any](status int, h func(context.Context, *In) (*Out, error), doc
 		call: func(ctx context.Context, in any) (any, error) {
 			out, err := h(ctx, in.(*In))
 			if err != nil {
+				if out != nil {
+					// What a 304 carries (Conditional.Check); otherwise unused.
+					return out, err
+				}
 				return nil, err
 			}
 			if out == nil {

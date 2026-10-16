@@ -15,6 +15,7 @@ import (
 )
 
 type ncIn struct {
+	geta.Conditional
 	N *int `query:"n" schema:"maximum=9"`
 }
 
@@ -24,8 +25,17 @@ type ncIn struct {
 // success. Zero bytes are no content.
 func TestContentToAnOperationWithoutABodyIs415(t *testing.T) {
 	var ran atomic.Int32
-	h := func(context.Context, *ncIn) (*ok, error) { ran.Add(1); return &ok{true}, nil }
-	del := func(context.Context, *ncIn) error { ran.Add(1); return nil }
+	h := func(_ context.Context, in *ncIn) (*ok, error) {
+		ran.Add(1)
+		if err := in.Check("", time.Time{}); err != nil {
+			return nil, err
+		}
+		return &ok{true}, nil
+	}
+	del := func(_ context.Context, in *ncIn) error {
+		ran.Add(1)
+		return in.Check("", time.Time{})
+	}
 	a := accepts(t, one("/r", geta.Route{
 		Get:    geta.Op(http.StatusOK, h, geta.Doc{}),
 		Post:   geta.Op(http.StatusCreated, h, geta.Doc{}),

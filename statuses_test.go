@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/koji-1009/geta"
 	"github.com/koji-1009/geta/getatest"
@@ -16,6 +17,7 @@ type stored struct {
 }
 
 type upsertIn struct {
+	geta.Conditional
 	ID   string `path:"id"`
 	Name string `query:"name"`
 }
@@ -29,6 +31,7 @@ type upserted struct {
 }
 
 type dropIn struct {
+	geta.Conditional
 	ID    string `path:"id"`
 	Later *bool  `query:"later"`
 }
@@ -41,6 +44,9 @@ func upsertTable(seen map[string]bool) geta.Table {
 	return geta.Table{Routes: []geta.Entry{
 		{Path: "/items/{id}", Route: geta.Route{
 			Put: geta.Op(http.StatusOK, func(_ context.Context, in *upsertIn) (*upserted, error) {
+				if err := in.Check("", time.Time{}); err != nil {
+					return nil, err
+				}
 				out := &upserted{Body: stored{in.ID, in.Name}}
 				switch {
 				case in.Name == "undeclared":
@@ -53,6 +59,9 @@ func upsertTable(seen map[string]bool) geta.Table {
 				return out, nil
 			}, geta.Doc{}),
 			Delete: geta.Op(http.StatusNoContent, func(_ context.Context, in *dropIn) (*queued, error) {
+				if err := in.Check("", time.Time{}); err != nil {
+					return nil, err
+				}
 				if in.Later != nil && *in.Later {
 					return &queued{Status: http.StatusAccepted}, nil
 				}

@@ -30,18 +30,22 @@ type Good struct {
 }
 
 type GoodIn struct {
+	geta.Conditional
 	Body Good `+"`body:\"multipart\"`"+`
 }
 
 type XMLIn struct {
+	geta.Conditional
 	Body Good `+"`body:\"xml\"`"+`
 }
 
 type NotStructIn struct {
+	geta.Conditional
 	Body string `+"`body:\"form\"`"+`
 }
 
 type SchemaIn struct {
+	geta.Conditional
 	Body Good `+"`body:\"multipart\" schema:\"minLength=1\"`"+`
 }
 
@@ -50,6 +54,7 @@ type FileInForm struct {
 }
 
 type FileInFormIn struct {
+	geta.Conditional
 	Body FileInForm `+"`body:\"form\"`"+`
 }
 
@@ -58,6 +63,7 @@ type Untagged struct {
 }
 
 type UntaggedIn struct {
+	geta.Conditional
 	Body Untagged `+"`body:\"form\"`"+`
 }
 
@@ -66,6 +72,7 @@ type FileSchema struct {
 }
 
 type FileSchemaIn struct {
+	geta.Conditional
 	Body FileSchema `+"`body:\"multipart\"`"+`
 }
 
@@ -74,6 +81,7 @@ type Unique struct {
 }
 
 type UniqueIn struct {
+	geta.Conditional
 	Body Unique `+"`body:\"multipart\"`"+`
 }
 
@@ -82,6 +90,7 @@ type MapField struct {
 }
 
 type MapFieldIn struct {
+	geta.Conditional
 	Body MapField `+"`body:\"form\"`"+`
 }
 
@@ -91,10 +100,12 @@ type Twice struct {
 }
 
 type TwiceIn struct {
+	geta.Conditional
 	Body Twice `+"`body:\"form\"`"+`
 }
 
 type FileQueryIn struct {
+	geta.Conditional
 	F geta.File `+"`query:\"f\"`"+`
 }
 
@@ -103,23 +114,26 @@ type FileJSON struct {
 }
 
 type FileJSONIn struct {
+	geta.Conditional
 	Body FileJSON `+"`body:\"json\"`"+`
 }
 
+func h[In any](context.Context, *In) (*struct{}, error) { return nil, nil }
+
 func Build() (*geta.App, error) {
 	return geta.New(geta.Table{Routes: []geta.Entry{
-		{Path: "/good", Route: geta.Route{Post: geta.Op(http.StatusOK, func(context.Context, *GoodIn) (*struct{}, error) { return nil, nil }, geta.Doc{})}},
-		{Path: "/xml", Route: geta.Route{Post: geta.Op(http.StatusOK, func(context.Context, *XMLIn) (*struct{}, error) { return nil, nil }, geta.Doc{})}},
-		{Path: "/notstruct", Route: geta.Route{Post: geta.Op(http.StatusOK, func(context.Context, *NotStructIn) (*struct{}, error) { return nil, nil }, geta.Doc{})}},
-		{Path: "/schema", Route: geta.Route{Post: geta.Op(http.StatusOK, func(context.Context, *SchemaIn) (*struct{}, error) { return nil, nil }, geta.Doc{})}},
-		{Path: "/fileinform", Route: geta.Route{Post: geta.Op(http.StatusOK, func(context.Context, *FileInFormIn) (*struct{}, error) { return nil, nil }, geta.Doc{})}},
-		{Path: "/untagged", Route: geta.Route{Post: geta.Op(http.StatusOK, func(context.Context, *UntaggedIn) (*struct{}, error) { return nil, nil }, geta.Doc{})}},
-		{Path: "/fileschema", Route: geta.Route{Post: geta.Op(http.StatusOK, func(context.Context, *FileSchemaIn) (*struct{}, error) { return nil, nil }, geta.Doc{})}},
-		{Path: "/unique", Route: geta.Route{Post: geta.Op(http.StatusOK, func(context.Context, *UniqueIn) (*struct{}, error) { return nil, nil }, geta.Doc{})}},
-		{Path: "/map", Route: geta.Route{Post: geta.Op(http.StatusOK, func(context.Context, *MapFieldIn) (*struct{}, error) { return nil, nil }, geta.Doc{})}},
-		{Path: "/twice", Route: geta.Route{Post: geta.Op(http.StatusOK, func(context.Context, *TwiceIn) (*struct{}, error) { return nil, nil }, geta.Doc{})}},
-		{Path: "/filequery", Route: geta.Route{Post: geta.Op(http.StatusOK, func(context.Context, *FileQueryIn) (*struct{}, error) { return nil, nil }, geta.Doc{})}},
-		{Path: "/filejson", Route: geta.Route{Post: geta.Op(http.StatusOK, func(context.Context, *FileJSONIn) (*struct{}, error) { return nil, nil }, geta.Doc{})}},
+		{Path: "/good", Route: geta.Route{Post: geta.Op(http.StatusOK, h[GoodIn], geta.Doc{})}},
+		{Path: "/xml", Route: geta.Route{Post: geta.Op(http.StatusOK, h[XMLIn], geta.Doc{})}},
+		{Path: "/notstruct", Route: geta.Route{Post: geta.Op(http.StatusOK, h[NotStructIn], geta.Doc{})}},
+		{Path: "/schema", Route: geta.Route{Post: geta.Op(http.StatusOK, h[SchemaIn], geta.Doc{})}},
+		{Path: "/fileinform", Route: geta.Route{Post: geta.Op(http.StatusOK, h[FileInFormIn], geta.Doc{})}},
+		{Path: "/untagged", Route: geta.Route{Post: geta.Op(http.StatusOK, h[UntaggedIn], geta.Doc{})}},
+		{Path: "/fileschema", Route: geta.Route{Post: geta.Op(http.StatusOK, h[FileSchemaIn], geta.Doc{})}},
+		{Path: "/unique", Route: geta.Route{Post: geta.Op(http.StatusOK, h[UniqueIn], geta.Doc{})}},
+		{Path: "/map", Route: geta.Route{Post: geta.Op(http.StatusOK, h[MapFieldIn], geta.Doc{})}},
+		{Path: "/twice", Route: geta.Route{Post: geta.Op(http.StatusOK, h[TwiceIn], geta.Doc{})}},
+		{Path: "/filequery", Route: geta.Route{Post: geta.Op(http.StatusOK, h[FileQueryIn], geta.Doc{})}},
+		{Path: "/filejson", Route: geta.Route{Post: geta.Op(http.StatusOK, h[FileJSONIn], geta.Doc{})}},
 	}})
 }
 `)
