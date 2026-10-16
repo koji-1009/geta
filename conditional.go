@@ -28,6 +28,14 @@ import (
 // precondition answers: 412 on every method, and 304 on a GET. A field sent
 // on several lines is read as one list (RFC 9110 §5.3).
 //
+// The handler must call Check or CheckAbsent on the bound input (or a copy
+// of it) before it answers a 2xx, and return the error either returns: the
+// document states the preconditions and what a failed one answers, so a 2xx
+// that never evaluated them, or that follows a call returning an error (304,
+// 400, 412, 428), is a defect, a logged 500 whatever the failure rows. A
+// handler that answers any other status (a missing target's 404) is answered
+// as it is, since the preconditions are ignored there (RFC 9110 §13.2.1).
+//
 // A client sets the fields it sends: Conditional{IfMatch: new(`"v1"`)}.
 //
 // Check reads the request's method, which geta records when it binds the
@@ -46,6 +54,28 @@ type Conditional struct {
 	IfUnmodifiedSince *string `header:"If-Unmodified-Since"`
 
 	method string // the request's, set when geta binds the input
+	// verdict records what Check and CheckAbsent answered
+	// (compiledOp.unchecked). geta sets it when it binds the input; a copy
+	// of the Conditional shares it, so a check on the copy counts.
+	verdict *verdict
+}
+
+// verdict is what the handler's calls of Check and CheckAbsent answered.
+type verdict struct {
+	called  bool  // either was called
+	refused error // the first error either returned, or nil
+}
+
+// record notes that the preconditions were evaluated with the result err,
+// and returns err.
+func (c *Conditional) record(err error) error {
+	if v := c.verdict; v != nil {
+		v.called = true
+		if err != nil && v.refused == nil {
+			v.refused = err
+		}
+	}
+	return err
 }
 
 // RequireConditional is [Conditional] for an operation that refuses an
@@ -70,8 +100,8 @@ type Conditional struct {
 //     avoidance takes a strong one (§8.8.1).
 //
 // The document states If-Match as a required header parameter there. A
-// write that creates its target has no tag to send, so it embeds
-// [Conditional] and calls [Conditional.CheckAbsent].
+// write that creates its target has no tag to send: [RequireAbsent] requires
+// what assures it instead.
 //
 // On a GET or HEAD, any of If-Match, If-None-Match, a valid
 // If-Unmodified-Since, or a valid If-Modified-Since is one, and the four
@@ -80,9 +110,28 @@ type Conditional struct {
 // The document lists 428 on the operation.
 type RequireConditional struct{ Conditional }
 
+// RequireAbsent is [Conditional] for a write that only creates its target,
+// and refuses a request that does not say it expects none (RFC 6585 §3):
+// its Check and CheckAbsent answer 428 unless If-None-Match is "*", which
+// RFC 9110 §13.1.2 gives "to prevent an unsafe request method (e.g., PUT)
+// from inadvertently modifying an existing representation of the target
+// resource when the client believes that the resource does not have a
+// current representation", "a variation on the 'lost update' problem". A
+// list of tags is a 428 too: it holds over a representation the client
+// never saw.
+//
+// The handler calls CheckAbsent where the target has no representation (the
+// request holds) and Check with the current validators where it has one ("*"
+// matches: 412). The document states If-None-Match as a required header
+// parameter whose value is "*", and lists 428 and 412.
+//
+// geta.New refuses it on GET, HEAD, and QUERY, which modify nothing.
+type RequireAbsent struct{ Conditional }
+
 var (
 	conditionalType        = reflect.TypeFor[Conditional]()
 	requireConditionalType = reflect.TypeFor[RequireConditional]()
+	requireAbsentType      = reflect.TypeFor[RequireAbsent]()
 )
 
 // conditionalDocs describes the four parameters in the document.
@@ -167,21 +216,21 @@ var errBadETag = errors.New("geta: Conditional.Check: etag is not one entity tag
 // PreconditionError, answered as a logged 500 whatever the failure rows. A
 // failed precondition is always refused, never treated as already applied.
 func (c *Conditional) Check(etag string, modified time.Time) error {
-	return c.check(true, etag, modified)
+	return c.record(c.check(true, etag, modified))
 }
 
 // CheckAbsent evaluates the request's preconditions for a target with no
 // current representation, such as a PUT that would create it: If-Match
 // fails (412), and If-None-Match, "*" included, holds. Dates are ignored.
 func (c *Conditional) CheckAbsent() error {
-	return c.check(false, "", time.Time{})
+	return c.record(c.check(false, "", time.Time{}))
 }
 
 // Check is [Conditional.Check], but first answers 428 for a request that
 // carries no precondition.
 func (c *RequireConditional) Check(etag string, modified time.Time) error {
 	if err := c.required(); err != nil {
-		return err
+		return c.record(err)
 	}
 	return c.Conditional.Check(etag, modified)
 }
@@ -190,9 +239,83 @@ func (c *RequireConditional) Check(etag string, modified time.Time) error {
 // request that carries no precondition.
 func (c *RequireConditional) CheckAbsent() error {
 	if err := c.required(); err != nil {
-		return err
+		return c.record(err)
 	}
 	return c.Conditional.CheckAbsent()
+}
+
+// Check is [Conditional.Check], but first answers 428 for a request without
+// If-None-Match: "*". A matching "*" is 412: the target has a current
+// representation, which the request would modify (RFC 9110 §13.1.2).
+func (c *RequireAbsent) Check(etag string, modified time.Time) error {
+	if err := c.requiredAbsent(); err != nil {
+		return c.record(err)
+	}
+	return c.Conditional.Check(etag, modified)
+}
+
+// CheckAbsent is [Conditional.CheckAbsent], but first answers 428 for a
+// request without If-None-Match: "*".
+func (c *RequireAbsent) CheckAbsent() error {
+	if err := c.requiredAbsent(); err != nil {
+		return c.record(err)
+	}
+	return c.Conditional.CheckAbsent()
+}
+
+// requiredAbsent returns a 428 if the request carries no If-None-Match: "*"
+// (RequireAbsent). An If-None-Match that is neither "*" nor a list is left
+// to check, which answers 400.
+func (c *Conditional) requiredAbsent() error {
+	refuse := func(detail string) error {
+		return &PreconditionError{status: http.StatusPreconditionRequired, field: "If-None-Match", detail: detail}
+	}
+	if c.IfNoneMatch == nil {
+		return refuse(`is required as "*": the request creates its target only where it has no current representation`)
+	}
+	if _, star, ok := conditionTags(*c.IfNoneMatch); ok && !star {
+		return refuse(`is required as "*", not a list of tags: the request creates its target only where it has no current representation`)
+	}
+	return nil
+}
+
+// errUnchecked is a 2xx answered by a handler whose input embeds Conditional
+// but which called neither Check nor CheckAbsent; errOverruled, a 2xx
+// answered by one whose call of either returned an error.
+var (
+	errUnchecked = errors.New("geta: the input embeds geta.Conditional, but the handler answered a 2xx without calling Check or CheckAbsent")
+	errOverruled = errors.New("geta: the input embeds geta.Conditional, but the handler answered a 2xx although Check or CheckAbsent returned an error")
+)
+
+// unchecked returns an error if the handler of c, given in and returning
+// out, answers a 2xx that the preconditions in binds did not let through:
+// errUnchecked when it called neither Check nor CheckAbsent, errOverruled
+// when either returned an error (a 304, 400, 412, or 428, or an etag that
+// is not one), even if a later call held. The document states the
+// preconditions and what a failed one answers, so such a 2xx is a response
+// the document does not describe, and a write performed on a failed
+// precondition: a defect. Any other status is sent, since the
+// preconditions are ignored there (RFC 9110 §13.2.1). A status the output
+// does not declare is left to write, which refuses it.
+func (c *compiledOp) unchecked(in reflect.Value, out any) error {
+	if c.in.cond == nil {
+		return nil
+	}
+	v := in.Elem().FieldByIndex(c.in.cond).Addr().Interface().(*Conditional).verdict
+	if v == nil || v.called && v.refused == nil {
+		return nil
+	}
+	status := c.op.status
+	if c.out.kind == outEnvelope {
+		status, _, _ = c.out.validators(status, reflect.ValueOf(out).Elem())
+	}
+	if status < 200 || status > 299 {
+		return nil
+	}
+	if v.called {
+		return fmt.Errorf("%w (%d): %w", errOverruled, status, v.refused)
+	}
+	return fmt.Errorf("%w (%d)", errUnchecked, status)
 }
 
 // required returns a 428 if the request carries no precondition that
@@ -219,6 +342,9 @@ func (c *Conditional) required() error {
 	}
 	return refuse("is required")
 }
+
+// absentDoc describes If-None-Match where RequireAbsent requires it.
+const absentDoc = `"*" (RFC 9110 §13.1.2): the request creates its target only where it has no current representation. Required: a request without it, or with a list of tags, answers 428 (RFC 6585 §3); a target that has a representation answers 412`
 
 // requiresIfMatch reports whether c's input embeds RequireConditional and c
 // is a write, where If-Match is required (RequireConditional).

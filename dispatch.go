@@ -362,6 +362,12 @@ func (c *compiledOp) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		c.fail(w, r, err)
 		return
 	}
+	if err := c.unchecked(in, out); err != nil {
+		// A 2xx the document's preconditions did not let through.
+		c.out.close(out)
+		c.writeDefect(w, r, "geta: a 2xx the preconditions did not let through", err)
+		return
+	}
 	if c.out.kind == outSpecial {
 		c.out.special.write(w, r, c.app, c, out)
 		return

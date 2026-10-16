@@ -35,6 +35,8 @@ func init() {
 	vet.CheckDocTimeout = checkDocTimeout
 	vet.CheckMethodBody = checkMethodBody
 	vet.CheckConditionalWrite = checkConditionalWrite
+	vet.CheckRequireAbsent = checkRequireAbsent
+	vet.CheckConditionalUsed = checkConditionalUsed
 	vet.CheckSuccessStatus = checkSuccessStatus
 	vet.CheckBodylessStatus = checkBodylessStatus
 	vet.CheckSpecialStatus = checkSpecialStatus
@@ -1035,6 +1037,32 @@ func checkConditionalWrite(method string, get vet.Validator, conditional bool) e
 	}
 	return fmt.Errorf("the route's GET declares a validator (%s), but the input embeds neither geta.Conditional nor geta.RequireConditional, "+
 		"so geta would evaluate its preconditions against none; embed one and call Check with the current validators", declares)
+}
+
+// checkRequireAbsent reports whether geta.New accepts an input embedding
+// geta.RequireAbsent on an operation of method. RequireAbsent requires
+// If-None-Match: "*", which RFC 9110 §13.1.2 gives to keep "an unsafe
+// request method (e.g., PUT)" from modifying an existing representation; a
+// safe method modifies none (§9.2.1), and on GET or HEAD a matching "*" is a
+// 304, not the 412 RequireAbsent states. It applies geta.New's rule.
+func checkRequireAbsent(method string) error {
+	switch method {
+	case http.MethodGet, http.MethodHead, MethodQuery:
+		return fmt.Errorf("the input embeds geta.RequireAbsent, which requires If-None-Match: * of a request that creates its target, but %s is safe and creates nothing; embed geta.Conditional", method)
+	}
+	return nil
+}
+
+// checkConditionalUsed reports, for getavet, whether a handler whose input
+// embeds geta.Conditional can call Check or CheckAbsent: used is false when
+// its source never names the input, which geta answers as a defect (a
+// logged 500) on every 2xx the handler returns (compiledOp.unchecked). It
+// applies geta's run-time rule.
+func checkConditionalUsed(used bool) error {
+	if used {
+		return nil
+	}
+	return fmt.Errorf("the input embeds geta.Conditional, but the handler never uses it, so it calls neither Check nor CheckAbsent: geta answers each 2xx it returns with a 500")
 }
 
 // retiredStatus returns why 305 or 306 cannot be a success status, or "".

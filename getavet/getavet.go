@@ -43,6 +43,15 @@
 //     geta.RequireConditional, beside a Get built in place whose input embeds
 //     one or whose output has an ETag or Last-Modified header field
 //     (vet.CheckConditionalWrite).
+//   - an operation a geta.Route literal builds in place under Get or Query
+//     whose input embeds geta.RequireAbsent (vet.CheckRequireAbsent).
+//   - a handler whose input embeds geta.Conditional, geta.RequireConditional,
+//     or geta.RequireAbsent, written as a function literal or a function or
+//     method of the package, that leaves the input unnamed, names it _, or
+//     never uses it: it calls neither Check nor CheckAbsent, so geta answers
+//     each 2xx it returns with a 500 (vet.CheckConditionalUsed). A handler
+//     that uses its input, or whose source is elsewhere, is left to geta at
+//     run time.
 //   - a constant success status geta does not accept, the output's status
 //     field does not declare, that takes no body (204, 205) for an output
 //     with one, or that a stream (200) or an upgrade (101) does not answer,
@@ -139,6 +148,9 @@ func run(pass *analysis.Pass) (any, error) {
 			v.output(call, out)
 		}
 		v.status(call, out)
+		if embedsConditional(in) {
+			v.conditionalUsed(call)
+		}
 		// An operation built in a test is in no table.
 		if !inTree || strings.HasSuffix(pass.Fset.Position(call.Pos()).Filename, "_test.go") {
 			return
@@ -225,6 +237,11 @@ func (v *vetter) route(lit *ast.CompositeLit) {
 		if name == "Get" && (out == nil || !holdsTypeParam(out)) {
 			get = &vet.Validator{Input: embedsConditional(in), Header: validatorHeader(out)}
 		}
+		if embedsRequireAbsent(in) {
+			if err := vet.CheckRequireAbsent(routeMethods[name]); err != nil {
+				v.report(call, call.Pos(), err.Error())
+			}
+		}
 		if !hasBody(in) {
 			continue
 		}
@@ -256,7 +273,7 @@ func embedsConditional(in types.Type) bool {
 			continue
 		}
 		switch qualifiedName(f.Type()) {
-		case getaPath + ".Conditional", getaPath + ".RequireConditional":
+		case getaPath + ".Conditional", getaPath + ".RequireConditional", getaPath + ".RequireAbsent":
 			return true
 		}
 		if _, isStruct := f.Type().Underlying().(*types.Struct); isStruct && embedsConditional(f.Type()) {
@@ -264,6 +281,90 @@ func embedsConditional(in types.Type) bool {
 		}
 	}
 	return false
+}
+
+// embedsRequireAbsent reports whether an input embeds geta.RequireAbsent, in
+// itself or a struct it embeds untagged, as geta.New finds it.
+func embedsRequireAbsent(in types.Type) bool {
+	st, ok := in.Underlying().(*types.Struct)
+	if !ok {
+		return false
+	}
+	for i := range st.NumFields() {
+		f, tag := st.Field(i), reflect.StructTag(st.Tag(i))
+		if !f.Embedded() || tag != "" {
+			continue
+		}
+		if qualifiedName(f.Type()) == getaPath+".RequireAbsent" {
+			return true
+		}
+		if _, isStruct := f.Type().Underlying().(*types.Struct); isStruct && embedsRequireAbsent(f.Type()) {
+			return true
+		}
+	}
+	return false
+}
+
+// conditionalUsed checks, by vet.CheckConditionalUsed, the handler of call,
+// a geta.Op or geta.OpNoBody whose input embeds geta.Conditional: where its
+// source is in the package (a function literal, or a function or method
+// declared there), an input parameter it leaves unnamed, names _, or never
+// uses can call neither Check nor CheckAbsent. A handler that uses its input
+// in any way, or whose source is elsewhere, is left to geta at run time.
+func (v *vetter) conditionalUsed(call *ast.CallExpr) {
+	if len(call.Args) < 2 {
+		return
+	}
+	var ftype *ast.FuncType
+	var body *ast.BlockStmt
+	switch h := ast.Unparen(call.Args[1]).(type) {
+	case *ast.FuncLit:
+		ftype, body = h.Type, h.Body
+	case *ast.Ident, *ast.SelectorExpr:
+		id, _ := h.(*ast.Ident)
+		if sel, isSel := h.(*ast.SelectorExpr); isSel {
+			id = sel.Sel
+		}
+		fn, isFunc := v.pass.TypesInfo.Uses[id].(*types.Func)
+		if !isFunc {
+			return
+		}
+		for _, file := range v.pass.Files {
+			for _, d := range file.Decls {
+				if fd, isFD := d.(*ast.FuncDecl); isFD && v.pass.TypesInfo.Defs[fd.Name] == fn {
+					ftype, body = fd.Type, fd.Body
+				}
+			}
+		}
+	}
+	if ftype == nil || body == nil || ftype.Params == nil {
+		return
+	}
+	// The input is the second parameter: func(ctx, *In).
+	var params []*ast.Ident // nil for an unnamed parameter
+	for _, field := range ftype.Params.List {
+		if len(field.Names) == 0 {
+			params = append(params, nil)
+			continue
+		}
+		params = append(params, field.Names...)
+	}
+	if len(params) != 2 {
+		return
+	}
+	used := false
+	if input := params[1]; input != nil && input.Name != "_" {
+		obj := v.pass.TypesInfo.Defs[input]
+		ast.Inspect(body, func(node ast.Node) bool {
+			if id, isID := node.(*ast.Ident); isID && obj != nil && v.pass.TypesInfo.Uses[id] == obj {
+				used = true
+			}
+			return !used
+		})
+	}
+	if err := vet.CheckConditionalUsed(used); err != nil {
+		v.report(call, call.Args[1].Pos(), err.Error())
+	}
 }
 
 // validatorHeader returns an output's first header field named ETag or

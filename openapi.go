@@ -411,6 +411,12 @@ func (c *compiledOp) document(lim *Limits, split map[string]bool) map[string]any
 				param["required"] = true
 			}
 		}
+		if p.joined && c.in.absent && p.name == "If-None-Match" {
+			// RequireAbsent: "*", and nothing else, is required.
+			param["description"] = absentDoc
+			param["required"] = true
+			param["schema"] = map[string]any{"type": "string", "const": "*"}
+		}
 		if p.use.Deprecated {
 			param["deprecated"] = true
 		}
@@ -566,6 +572,8 @@ func (c *compiledOp) responses() map[string]any {
 			add(http.StatusPreconditionRequired, `The request carries no If-Match listing the entity tag of the representation it was made against ("*" names none), which this operation requires (RFC 6585 section 3)`)
 		case c.in.required:
 			add(http.StatusPreconditionRequired, "The request carries no precondition, and this operation requires one")
+		case c.in.absent:
+			add(http.StatusPreconditionRequired, `The request carries no If-None-Match: *, which this operation requires: it creates its target only where it has no current representation (RFC 6585 section 3, RFC 9110 section 13.1.2)`)
 		}
 	} else if c.selecting {
 		// geta, or geta.ETag, evaluates them against the validators the

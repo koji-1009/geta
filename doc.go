@@ -21,7 +21,8 @@
 // does not check them at run time.
 //
 // An input that embeds [Conditional] answers conditional requests (304, 412,
-// and 428 with [RequireConditional]); without one, geta evaluates If-Match and
+// and 428 with [RequireConditional] or [RequireAbsent]), and its handler
+// calls Check or CheckAbsent before any 2xx; without one, geta evaluates If-Match and
 // If-None-Match itself, for an operation that declares no validator (412, and
 // 304 on a GET). [New] refuses a PUT, PATCH, or DELETE without one on a
 // route whose GET declares a validator. A [Deferred] body is read after the

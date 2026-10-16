@@ -2,7 +2,7 @@
 
 ## Conditional requests (304, 412, 428)
 
-Embed `geta.Conditional` in an input to bind `If-Match`, `If-None-Match`, `If-Modified-Since`, `If-Unmodified-Since` (optional, documented header parameters; `RequireConditional` makes `If-Match` required on a write, below). After its own checks, before acting, the handler calls `in.Check(etag, modified)` and returns the error as is: `etag` the current entity tag (`"v1"`, `W/"v1"`, "" for none), `modified` the last modification (zero for none). `in.CheckAbsent()`: target without representation yet (a creating PUT); `If-Match` fails, `If-None-Match: *` holds.
+Embed `geta.Conditional` in an input to bind `If-Match`, `If-None-Match`, `If-Modified-Since`, `If-Unmodified-Since` (optional, documented header parameters; `RequireConditional` makes `If-Match` required on a write, `RequireAbsent` `If-None-Match: *`, below). After its own checks, before acting and before any 2xx, the handler calls `in.Check(etag, modified)` and returns the error as is: `etag` the current entity tag (`"v1"`, `W/"v1"`, "" for none), `modified` the last modification (zero for none). `in.CheckAbsent()`: target without representation yet (a creating PUT); `If-Match` fails, `If-None-Match: *` holds.
 
 ```go
 type PutIn struct {
@@ -36,9 +36,37 @@ func (h Handler) Put(ctx context.Context, in *PutIn) (*Tagged, error) {
 - Error: `*geta.PreconditionError` (`Status()` 304, 400, 412, 428), answered on operations whose input embeds `Conditional`, which document 412 (304 too on GET). Returned elsewhere, or an `etag` not one entity tag: logged 500 with an `instance`; no failure row answers them, catch-all `geta.OnAs[error]` included.
 - `geta.RequireConditional` instead of `Conditional`: 428 when the request carries no precondition that assures "clients are working with the correct copies" (RFC 6585 §3), documented there with the 428.
   - On a write (any method but GET and HEAD): `If-Match` listing one or more entity tags, the tag of the representation the request was made against (§13.1.1, "to prevent the 'lost update' problem"). The document states `If-Match` `required: true`. Nothing else stands for it, each a 428 alone: `If-Match: *` (holds for any current representation, whichever copy the client worked on); `If-None-Match` with tags (holds whenever the current tag is another, a stale copy's included); `If-None-Match: *` (holds only where there is no representation, which `If-Match` always fails); `If-Unmodified-Since` (read only without `If-Match`, §13.2.2; ignored where `Check` gets no date, §13.1.4; one second, within which two writes both hold). Its parameter says it is not read there. A malformed `If-Match` is a 400, as with `Conditional`.
-  - A write that creates its target has no tag to send: embed `Conditional` and call `CheckAbsent` (`If-None-Match: *` holds, `If-Match` fails). `RequireConditional`'s `CheckAbsent` answers 428 or 412.
+  - A write that creates its target has no tag to send: embed `RequireAbsent` (below). `RequireConditional`'s `CheckAbsent` answers 428 or 412.
   - On a GET or HEAD: any of `If-Match`, `If-None-Match`, a valid `If-Modified-Since`, a valid `If-Unmodified-Since`; the four stay optional.
   - The 428 is `Check`'s answer, so it comes after the handler's own checks (a missing target's 404), as 412 does (§13.2.1).
+- `geta.RequireAbsent` instead of `Conditional`: a write that only creates its target. 428 unless `If-None-Match` is `*`, which RFC 9110 §13.1.2 gives "to prevent an unsafe request method (e.g., PUT) from inadvertently modifying an existing representation of the target resource when the client believes that the resource does not have a current representation" (RFC 6585 §3 for the 428).
+  - The handler calls `in.CheckAbsent()` where the target has no representation (`*` holds) and `in.Check(etag, modified)` where it has one (`*` matches: 412).
+  - 428 alone: no `If-None-Match`; `If-None-Match` with tags (holds over a representation the client never saw); `If-Match` or a date alone. A malformed `If-None-Match` is a 400.
+  - The document states `If-None-Match` `required: true` with `"const": "*"`, and the 428 and 412; the other three stay optional.
+  - `geta.New` refuses it on GET and QUERY, which create nothing (§9.2.1; on a GET a matching `*` is a 304, not the 412 it states); getavet reports it where a `geta.Route` literal builds the operation in place.
+
+```go
+type CreateIn struct {
+	geta.RequireAbsent
+	Path
+	Body model.User `body:"json"`
+}
+
+func (h Handler) Put(ctx context.Context, in *CreateIn) (*Tagged, error) {
+	u, err := h.Users.Create(ctx, in.ID, in.Body, func(current *model.User) error {
+		if current != nil {
+			return in.Check(ETag(*current), time.Time{}) // If-None-Match: * matches: 412
+		}
+		return in.CheckAbsent()
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &Tagged{ETag: ETag(*u), User: *u}, nil
+}
+```
+
+- Check before a 2xx: the handler of an operation whose input embeds `Conditional`, `RequireConditional`, or `RequireAbsent` calls `Check` or `CheckAbsent` on its input (or a copy of it) before it answers a 2xx, and returns the error either returns. A 2xx answered without either, or after either returned an error (304, 400, 412, 428; the first error stands, whatever a later call answers), is a defect, as the document states preconditions the response never evaluated, or a failed one it overrode, performing the write anyway: a logged 500 with an `instance`, whatever the failure rows, a catch-all included, without the body or the envelope's headers. Any other status (a missing target's 404, a 303) is sent as answered: the preconditions are ignored there (§13.2.1 "MUST ignore all received preconditions if its response ... would have been a status code other than a 2xx"). getavet reports a handler that leaves its input unnamed, names it `_`, or never uses it (a function literal, or a function or method of the package); a handler that uses its input is left to geta at run time.
 - Binding the four headers again in the same input fails `geta.New`.
 - `geta.ETag` reads `If-None-Match` as `Check` does; on a GET without `Conditional`, every precondition (below).
 - Every status `Check` answers is documented.

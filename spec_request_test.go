@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/koji-1009/geta"
 	"github.com/koji-1009/geta/getatest"
@@ -123,7 +124,7 @@ func TestConditionalBindsItsFourHeaders(t *testing.T) {
 			}
 			out.Seen = append(out.Seen, *p)
 		}
-		return &out, nil
+		return &out, in.Check(`"a"`, time.Time{})
 	})))
 	for _, c := range []struct {
 		headers []string

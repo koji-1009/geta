@@ -24,9 +24,11 @@ type inPlan struct {
 	form   *formPlan // or a form or multipart one
 	raw    *rawPlan  // or the bytes of one media type
 	// cond is the index of the embedded [Conditional], nil without one;
-	// required is set when it is a [RequireConditional]'s.
+	// required is set when it is a [RequireConditional]'s, absent when a
+	// [RequireAbsent]'s.
 	cond     []int
 	required bool
+	absent   bool
 }
 
 type paramPlan struct {
@@ -113,6 +115,8 @@ func (r *registry) inPlan(t reflect.Type) (*inPlan, error) {
 					p.cond, inner = index, true
 				case requireConditionalType:
 					p.required = true
+				case requireAbsentType:
+					p.absent = true
 				}
 				if err := walk(f.Type, index, inner); err != nil {
 					return err
@@ -332,7 +336,8 @@ func (p *inPlan) bind(w http.ResponseWriter, r *http.Request, dst reflect.Value,
 		omitted += d.omitted
 	}
 	if p.cond != nil {
-		dst.FieldByIndex(p.cond).Addr().Interface().(*Conditional).method = r.Method
+		cond := dst.FieldByIndex(p.cond).Addr().Interface().(*Conditional)
+		cond.method, cond.verdict = r.Method, new(verdict)
 	}
 	if len(errs) > 0 {
 		pre = nil // a 400 whatever the preconditions

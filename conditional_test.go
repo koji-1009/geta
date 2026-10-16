@@ -540,28 +540,30 @@ func TestConditionalStatusesAreDocumentedOnTheWire(t *testing.T) {
 
 // Beside the ETag middleware: a handler's verdict passes through it, and the
 // two compare If-None-Match alike, so the handler's tag answers 304 the same
-// whether Check or the middleware decides.
+// whether Check decides (/x, whose input embeds Conditional) or the
+// middleware does (/y, whose input does not).
 func TestConditionalBesideTheETagMiddleware(t *testing.T) {
 	type tagged struct {
 		ETag string `header:"ETag"`
 		Body ok     `body:"json"`
 	}
-	checked := true
-	tbl := withRoot(one("/x", get(func(_ context.Context, in *condIn) (*tagged, error) {
-		if checked {
+	tbl := withRoot(geta.Table{Routes: []geta.Entry{
+		{Path: "/x", Route: get(func(_ context.Context, in *condIn) (*tagged, error) {
 			if err := in.Check(current, time.Time{}); err != nil {
 				return nil, err
 			}
-		}
-		return &tagged{ETag: current, Body: ok{true}}, nil
-	})), geta.ETag())
+			return &tagged{ETag: current, Body: ok{true}}, nil
+		})},
+		{Path: "/y", Route: get(func(context.Context, *empty) (*tagged, error) {
+			return &tagged{ETag: current, Body: ok{true}}, nil
+		})},
+	}}, geta.ETag())
 	a := accepts(t, tbl)
-	for _, check := range []bool{true, false} {
-		checked = check
+	for _, path := range []string{"/x", "/y"} {
 		for v, want := range map[string]int{`"v2"`: 304, `W/"v2"`: 304, `"v1", W/"v2"`: 304, "*": 304, `"v1"`: 200} {
-			rec := do(t, a, "GET", "/x", "If-None-Match", v)
+			rec := do(t, a, "GET", path, "If-None-Match", v)
 			if rec.Code != want || rec.Header().Get("ETag") != current {
-				t.Errorf("checked %v, If-None-Match %s: %d %q", check, v, rec.Code, rec.Header().Get("ETag"))
+				t.Errorf("%s, If-None-Match %s: %d %q", path, v, rec.Code, rec.Header().Get("ETag"))
 			}
 		}
 	}
@@ -579,36 +581,39 @@ func TestPreconditionsAreReadByTheirGrammarAlike(t *testing.T) {
 		ETag string `header:"ETag"`
 		Body ok     `body:"json"`
 	}
-	checked := true
-	a := accepts(t, withRoot(one("/x", geta.Route{
-		Get: geta.Op(http.StatusOK, func(_ context.Context, in *condIn) (*tagged, error) {
-			if checked {
+	// /x checks with Check; /y, whose input embeds no Conditional, leaves
+	// them to geta.ETag.
+	a := accepts(t, withRoot(geta.Table{Routes: []geta.Entry{
+		{Path: "/x", Route: geta.Route{
+			Get: geta.Op(http.StatusOK, func(_ context.Context, in *condIn) (*tagged, error) {
 				if err := in.Check(obs, time.Time{}); err != nil {
 					return nil, err
 				}
-			}
+				return &tagged{ETag: obs, Body: ok{true}}, nil
+			}, geta.Doc{}),
+			Put: geta.OpNoBody(http.StatusNoContent, func(_ context.Context, in *condIn) error { return in.Check(obs, modifiedAt) }, geta.Doc{}),
+		}},
+		{Path: "/y", Route: get(func(context.Context, *empty) (*tagged, error) {
 			return &tagged{ETag: obs, Body: ok{true}}, nil
-		}, geta.Doc{}),
-		Put: geta.OpNoBody(http.StatusNoContent, func(_ context.Context, in *condIn) error { return in.Check(obs, modifiedAt) }, geta.Doc{}),
-	}), geta.ETag()))
+		})},
+	}}, geta.ETag()))
 	if r := do(t, a, "GET", "/x"); r.Code != 200 || r.Header().Get("ETag") != obs {
 		t.Fatal(r.Code, r.Header())
 	}
 	long := strings.Repeat(`"x", `, 1000) + obs
-	for _, check := range []bool{true, false} {
-		checked = check
+	for _, path := range []string{"/x", "/y"} {
 		for _, h := range [][]string{
 			{"If-None-Match", obs},
 			{"If-None-Match", `W/` + obs},
 			{"If-None-Match", long},
 			{"If-None-Match", "", "If-None-Match", "*"},
 		} {
-			if r := do(t, a, "GET", "/x", h...); r.Code != 304 || r.Header().Get("ETag") != obs {
-				t.Errorf("checked %v, %q: %d %q", check, h, r.Code, r.Header().Get("ETag"))
+			if r := do(t, a, "GET", path, h...); r.Code != 304 || r.Header().Get("ETag") != obs {
+				t.Errorf("%s, %q: %d %q", path, h, r.Code, r.Header().Get("ETag"))
 			}
 		}
-		if r := do(t, a, "GET", "/x", "If-None-Match", "\"\xfe\""); r.Code != 200 {
-			t.Errorf("checked %v, another tag: %d", check, r.Code)
+		if r := do(t, a, "GET", path, "If-None-Match", "\"\xfe\""); r.Code != 200 {
+			t.Errorf("%s, another tag: %d", path, r.Code)
 		}
 	}
 	for _, c := range []struct {
@@ -638,4 +643,222 @@ func TestConditionalHeaderBoundTwiceIsRefused(t *testing.T) {
 		Extra string `header:"If-Match"`
 	}
 	rejects(t, one("/x", get(func(context.Context, *both) (*ok, error) { return nil, nil })), "If-Match", "already bound")
+}
+
+type seeOther struct {
+	Status   int     `status:"200|303"`
+	Location *string `header:"Location"`
+	Body     ok      `body:"json"`
+}
+
+type absentIn struct{ geta.RequireAbsent }
+
+// The document states the preconditions of an operation whose input embeds
+// Conditional (412, a required If-Match, 428), so a 2xx its handler answers
+// without calling Check or CheckAbsent, or after either returned an error
+// (304, 400, 412, 428) it dropped, even with a later call that held, is a
+// response the document does not describe: a logged 500 with an instance,
+// whatever the rows, a catch-all included, the body and envelope headers
+// unsent. A check on a copy of the bound Conditional counts. Any other status is sent as the handler answers
+// it: the preconditions are ignored there (RFC 9110 §13.2.1), so a missing
+// target is its 404 and a redirect its 303.
+func TestAnUncheckedConditionalIsADefect(t *testing.T) {
+	catchAll := geta.Doc{Failures: []geta.Failure{geta.On(errNoHook, http.StatusNotFound, "no such hook"),
+		geta.OnAs[error](http.StatusServiceUnavailable, "")}}
+	var status int
+	log, buf := logger()
+	a, err := geta.New(geta.Table{Routes: []geta.Entry{
+		{Path: "/get", Route: geta.Route{Get: geta.Op(http.StatusOK, func(context.Context, *condIn) (*ok, error) {
+			return &ok{true}, nil
+		}, catchAll)}},
+		{Path: "/put", Route: geta.Route{
+			Put: geta.OpNoBody(http.StatusNoContent, func(context.Context, *requiredIn) error { return nil }, catchAll),
+			Delete: geta.OpNoBody(http.StatusNoContent, func(_ context.Context, in *requiredIn) error {
+				c := in.Conditional // a copy shares what the check records
+				return c.Check(current, time.Time{})
+			}, catchAll),
+		}},
+		{Path: "/missing", Route: geta.Route{Get: geta.Op(http.StatusOK, func(context.Context, *condIn) (*ok, error) {
+			return nil, errNoHook
+		}, catchAll)}},
+		{Path: "/moved", Route: geta.Route{Get: geta.Op(http.StatusOK, func(context.Context, *condIn) (*seeOther, error) {
+			return &seeOther{Status: status, Location: new("/elsewhere"), Body: ok{true}}, nil
+		}, catchAll)}},
+		{Path: "/new", Route: geta.Route{Put: geta.OpNoBody(http.StatusCreated, func(context.Context, *absentIn) error { return nil }, catchAll)}},
+		// Handlers that call Check and drop its error.
+		{Path: "/ignored", Route: geta.Route{
+			Get: geta.Op(http.StatusOK, func(_ context.Context, in *condIn) (*ok, error) {
+				_ = in.Check(current, time.Time{})
+				return &ok{true}, nil
+			}, catchAll),
+			Put: geta.OpNoBody(http.StatusNoContent, func(_ context.Context, in *requiredIn) error {
+				c := in.RequireConditional // a copy shares what the check records
+				_ = c.Check(current, time.Time{})
+				return nil
+			}, catchAll),
+			Patch: geta.OpNoBody(http.StatusNoContent, func(_ context.Context, in *requiredIn) error {
+				// A failed check is not undone by one that holds after it.
+				_ = in.Check(`"v1"`, time.Time{})
+				return in.Check(current, time.Time{})
+			}, catchAll),
+			Delete: geta.OpNoBody(http.StatusNoContent, func(_ context.Context, in *requiredIn) error {
+				_ = in.Check(current, time.Time{})
+				return errNoHook
+			}, catchAll),
+		}},
+		{Path: "/created", Route: geta.Route{Put: geta.OpNoBody(http.StatusCreated, func(_ context.Context, in *absentIn) error {
+			_ = in.Check(current, time.Time{})
+			return nil
+		}, catchAll)}},
+	}}, geta.WithLogger(log))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct {
+		method, path string
+		headers      []string
+		status, want int
+	}{
+		{"GET", "/get", nil, 0, 500},
+		{"PUT", "/put", header("If-Match", current), 0, 500},
+		{"DELETE", "/put", header("If-Match", current), 0, 204},
+		{"DELETE", "/put", header("If-Match", `"v1"`), 0, 412},
+		{"GET", "/missing", nil, 0, 404},
+		{"GET", "/moved", nil, 303, 303},
+		{"GET", "/moved", nil, 200, 500},
+		{"GET", "/moved", nil, 0, 500},
+		{"PUT", "/new", header("If-None-Match", "*"), 0, 500},
+		{"GET", "/ignored", nil, 0, 200},
+		{"GET", "/ignored", header("If-None-Match", current), 0, 500}, // a dropped 304
+		{"GET", "/ignored", header("If-Match", `"v1"`), 0, 500},       // a dropped 412
+		{"GET", "/ignored", header("If-Match", "v1"), 0, 500},         // a dropped 400
+		{"PUT", "/ignored", header("If-Match", current), 0, 204},
+		{"PUT", "/ignored", header("If-Match", `"v1"`), 0, 500},     // a dropped 412, on a copy
+		{"PUT", "/ignored", nil, 0, 500},                            // a dropped 428
+		{"PATCH", "/ignored", header("If-Match", current), 0, 500},  // a 412 before a check that held
+		{"DELETE", "/ignored", header("If-Match", `"v1"`), 0, 404},  // not a 2xx: sent as answered
+		{"PUT", "/created", header("If-None-Match", "*"), 0, 500},   // a dropped 412
+		{"PUT", "/created", header("If-None-Match", `"x"`), 0, 500}, // a dropped 428
+	} {
+		status = c.status
+		rec := do(t, a, c.method, c.path, c.headers...)
+		if rec.Code != c.want {
+			t.Errorf("%s %s status %d: %d, want %d: %s", c.method, c.path, c.status, rec.Code, c.want, rec.Body)
+			continue
+		}
+		if c.want != 500 {
+			continue
+		}
+		why := "without calling Check or CheckAbsent"
+		if c.path == "/ignored" || c.path == "/created" {
+			why = "although Check or CheckAbsent returned an error"
+		}
+		var p geta.Problem
+		if err := json.Unmarshal(rec.Body.Bytes(), &p); err != nil || p.Instance == "" || rec.Header().Get("Location") != "" {
+			t.Errorf("%s %s %v: %v %s", c.method, c.path, c.headers, rec.Header(), rec.Body)
+			continue
+		}
+		var line string
+		for l := range strings.Lines(buf.String()) {
+			if strings.Contains(l, p.Instance) {
+				line = l
+			}
+		}
+		if !strings.Contains(line, "level=ERROR") || !strings.Contains(line, why) {
+			t.Errorf("%s %s %v: logged %q", c.method, c.path, c.headers, line)
+		}
+	}
+}
+
+// RequireAbsent is for a write that only creates its target: it requires
+// If-None-Match: "*" (RFC 9110 §13.1.2, RFC 6585 §3). Without it, or with a
+// list of tags, or with If-Match alone, Check and CheckAbsent answer 428;
+// "*" holds where the target has no representation (CheckAbsent) and fails
+// where it has one (Check: 412); a malformed value is a 400.
+func TestRequireAbsentRequiresIfNoneMatchStar(t *testing.T) {
+	a := accepts(t, geta.Table{Routes: []geta.Entry{
+		{Path: "/new", Route: geta.Route{Put: geta.OpNoBody(http.StatusCreated, func(_ context.Context, in *absentIn) error {
+			return in.CheckAbsent()
+		}, geta.Doc{})}},
+		{Path: "/taken", Route: geta.Route{Put: geta.OpNoBody(http.StatusCreated, func(_ context.Context, in *absentIn) error {
+			return in.Check(current, modifiedAt)
+		}, geta.Doc{})}},
+	}})
+	for _, c := range []struct {
+		name, path string
+		headers    []string
+		want       int
+	}{
+		{"none", "/new", nil, 428},
+		{"*", "/new", header("If-None-Match", "*"), 201},
+		{"* between spaces", "/new", header("If-None-Match", " *\t"), 201},
+		{"* over a representation", "/taken", header("If-None-Match", "*"), 412},
+		{"a tag", "/new", header("If-None-Match", `"x"`), 428},
+		{"a tag over a representation", "/taken", header("If-None-Match", `"x"`), 428},
+		{"If-Match alone", "/taken", header("If-Match", current), 428},
+		{"If-Unmodified-Since alone", "/taken", header("If-Unmodified-Since", dateLate), 428},
+		{"malformed", "/new", header("If-None-Match", "x"), 400},
+		{"empty", "/new", header("If-None-Match", ""), 400},
+		{"* in a list", "/new", header("If-None-Match", `"x", *`), 400},
+	} {
+		rec := do(t, a, "PUT", c.path, c.headers...)
+		if rec.Code != c.want {
+			t.Errorf("%s: %d, want %d: %s", c.name, rec.Code, c.want, rec.Body)
+			continue
+		}
+		if c.want == 428 {
+			var p geta.Problem
+			if err := json.Unmarshal(rec.Body.Bytes(), &p); err != nil || !strings.HasPrefix(p.Detail, `If-None-Match is required as "*"`) {
+				t.Errorf("%s: %s", c.name, rec.Body)
+			}
+		}
+	}
+	// Built by hand, it holds the same rule.
+	if err := (&geta.RequireAbsent{}).CheckAbsent(); err == nil {
+		t.Error("an unconditional create passed")
+	} else if pe, ok := errors.AsType[*geta.PreconditionError](err); !ok || pe.Status() != http.StatusPreconditionRequired {
+		t.Error(err)
+	}
+	if err := (&geta.RequireAbsent{Conditional: geta.Conditional{IfNoneMatch: new("*")}}).CheckAbsent(); err != nil {
+		t.Error(err)
+	}
+}
+
+// The document states If-None-Match as a required header parameter whose
+// value is "*", and lists 428 and 412; the other three stay optional.
+func TestRequireAbsentIsDocumented(t *testing.T) {
+	m := doc(t, accepts(t, one("/new", geta.Route{Put: geta.OpNoBody(http.StatusCreated, func(_ context.Context, in *absentIn) error {
+		return in.CheckAbsent()
+	}, geta.Doc{})})))
+	for _, p := range at(t, m, "paths", "/new", "put", "parameters").([]any) {
+		param := p.(map[string]any)
+		if param["name"] != "If-None-Match" {
+			if param["required"] != false {
+				t.Errorf("%v is required", param["name"])
+			}
+			continue
+		}
+		if param["required"] != true || compact(t, param["schema"]) != `{"const":"*","type":"string"}` ||
+			!strings.Contains(param["description"].(string), `Required: a request without it, or with a list of tags, answers 428`) {
+			t.Errorf("If-None-Match: %v", param)
+		}
+	}
+	if d := at(t, m, "paths", "/new", "put", "responses", "428", "description").(string); !strings.Contains(d, "If-None-Match: *") {
+		t.Error(d)
+	}
+	if at(t, m, "paths", "/new", "put", "responses", "412") == nil {
+		t.Error("no 412")
+	}
+}
+
+// A safe method creates nothing, and on a GET a matching "*" is a 304, not
+// the 412 RequireAbsent states: geta.New refuses it there.
+func TestRequireAbsentOnASafeMethodIsRefused(t *testing.T) {
+	rejects(t, one("/x", get(func(context.Context, *absentIn) (*ok, error) { return nil, nil })),
+		"the input embeds geta.RequireAbsent, which requires If-None-Match: * of a request that creates its target, but GET is safe")
+	rejects(t, one("/x", geta.Route{Query: geta.Op(http.StatusOK, func(context.Context, *absentIn) (*ok, error) { return nil, nil }, geta.Doc{})}),
+		"but QUERY is safe")
+	accepts(t, one("/x", geta.Route{Post: geta.Op(http.StatusCreated, func(_ context.Context, in *absentIn) (*ok, error) {
+		return &ok{true}, in.CheckAbsent()
+	}, geta.Doc{})}))
 }

@@ -453,6 +453,8 @@ func TestTheSharedRulesAreSet(t *testing.T) {
 		formField        func(vet.Field, bool, map[string]string) (bool, error) = vet.CheckFormField
 		envelopeField    func(vet.Field, map[string]bool) error                 = vet.CheckEnvelopeField
 		envelopeMedia    func(map[string]bool) error                            = vet.CheckEnvelopeMedia
+		requireAbsent    func(string) error                                     = vet.CheckRequireAbsent
+		conditionalUsed  func(bool) error                                       = vet.CheckConditionalUsed
 		envelopeStatus   func(int, string) error                                = vet.CheckEnvelopeStatus
 		bodylessStatus   func(int, string, bool) error                          = vet.CheckBodylessStatus
 		memberField      func(vet.Field, map[string]bool) (string, bool, error) = vet.CheckMemberField
@@ -481,14 +483,16 @@ func TestTheSharedRulesAreSet(t *testing.T) {
 		"CheckEnvelopeField": envelopeField(field(struct {
 			CL string `header:"Content-Length"`
 		}{}, "CL"), map[string]bool{}),
-		"CheckEnvelopeMedia":  envelopeMedia(map[string]bool{"media choice CT": true}),
-		"CheckEnvelopeStatus": envelopeStatus(http.StatusAccepted, "200|201"),
-		"CheckBodylessStatus": bodylessStatus(http.StatusOK, "200|205", true),
-		"CheckMemberField":    memberErr,
-		"CheckStructMembers":  structMembers("lib.Hidden", 1, 0),
-		"CheckJSONType":       jsonType(vet.Type{Type: "chan int", Kind: "chan"}),
-		"CheckSchemaName":     schemaName("lib.利用者"),
-		"CheckProblemType":    problemType("int", false),
+		"CheckEnvelopeMedia":   envelopeMedia(map[string]bool{"media choice CT": true}),
+		"CheckRequireAbsent":   requireAbsent(http.MethodGet),
+		"CheckConditionalUsed": conditionalUsed(false),
+		"CheckEnvelopeStatus":  envelopeStatus(http.StatusAccepted, "200|201"),
+		"CheckBodylessStatus":  bodylessStatus(http.StatusOK, "200|205", true),
+		"CheckMemberField":     memberErr,
+		"CheckStructMembers":   structMembers("lib.Hidden", 1, 0),
+		"CheckJSONType":        jsonType(vet.Type{Type: "chan int", Kind: "chan"}),
+		"CheckSchemaName":      schemaName("lib.利用者"),
+		"CheckProblemType":     problemType("int", false),
 		"CheckProblemField": problemField(field(struct {
 			Session *http.Cookie `cookie:"sid"`
 		}{}, "Session")),
