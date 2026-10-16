@@ -160,6 +160,102 @@ func TestUpgradeAcceptHandsTheHandshakeToALibrary(t *testing.T) {
 	}
 }
 
+// A library that writes the 101 before it hijacks has the 101 sent by the
+// hijack, before Hijack returns: the slot is free once the 101 is written, so
+// a client that reads it and sends its next request at once is not shed.
+func TestAWritten101HoldsNoSlot(t *testing.T) {
+	var a *geta.App
+	next := 0
+	h := func(context.Context, *struct{}) (*geta.Upgrade, error) {
+		return &geta.Upgrade{Protocol: "echo", Accept: func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusSwitchingProtocols)
+			rec := httptest.NewRecorder()
+			a.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/x", nil))
+			next = rec.Code
+		}}, nil
+	}
+	a, err := geta.New(geta.Table{
+		Root: geta.Scope{geta.ConcurrencyLimit(1)},
+		Routes: []geta.Entry{
+			{Path: "/ws", Route: geta.Route{Get: geta.Op(http.StatusSwitchingProtocols, h, geta.Doc{})}},
+			{Path: "/x", Route: geta.Route{Get: geta.Op(http.StatusOK, libPlain, geta.Doc{})}},
+		},
+	}, geta.WithLogger(slog.New(slog.DiscardHandler)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/ws", nil)
+	req.Header.Set("Connection", "Upgrade")
+	req.Header.Set("Upgrade", "echo")
+	a.ServeHTTP(httptest.NewRecorder(), req)
+	if next != http.StatusOK {
+		t.Fatalf("a request after the 101 is written: %d", next)
+	}
+}
+
+// wire is a switched connection that, when the first bytes reach it, sends
+// the client's next request: the client reads the 101 and asks again at once.
+type wire struct {
+	net.Conn
+	first []byte
+	next  func()
+}
+
+func (c *wire) Write(p []byte) (int, error) {
+	if c.first == nil {
+		c.first = append([]byte{}, p...)
+		c.next()
+	}
+	return len(p), nil
+}
+
+// hijackable hands out conn when hijacked.
+type hijackable struct {
+	http.ResponseWriter
+	conn net.Conn
+}
+
+func (h *hijackable) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	return h.conn, bufio.NewReadWriter(bufio.NewReader(h.conn), bufio.NewWriter(h.conn)), nil
+}
+
+// The 101 geta writes for Serve reaches the client with the slot already
+// free: the request the client sends on reading it is not shed.
+func TestTheServed101HoldsNoSlot(t *testing.T) {
+	var a *geta.App
+	h := func(context.Context, *struct{}) (*geta.Upgrade, error) {
+		return &geta.Upgrade{Protocol: "echo", Serve: func(net.Conn, *bufio.ReadWriter) {}}, nil
+	}
+	a, err := geta.New(geta.Table{
+		Root: geta.Scope{geta.ConcurrencyLimit(1)},
+		Routes: []geta.Entry{
+			{Path: "/ws", Route: geta.Route{Get: geta.Op(http.StatusSwitchingProtocols, h, geta.Doc{})}},
+			{Path: "/x", Route: geta.Route{Get: geta.Op(http.StatusOK, libPlain, geta.Doc{})}},
+		},
+	}, geta.WithLogger(slog.New(slog.DiscardHandler)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	server, client := net.Pipe()
+	t.Cleanup(func() { client.Close() })
+	next := 0
+	conn := &wire{Conn: server, next: func() {
+		rec := httptest.NewRecorder()
+		a.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/x", nil))
+		next = rec.Code
+	}}
+	req := httptest.NewRequest(http.MethodGet, "/ws", nil)
+	req.Header.Set("Connection", "Upgrade")
+	req.Header.Set("Upgrade", "echo")
+	a.ServeHTTP(&hijackable{ResponseWriter: httptest.NewRecorder(), conn: conn}, req)
+	if !strings.HasPrefix(string(conn.first), "HTTP/1.1 101 ") {
+		t.Fatalf("not switched: %q", conn.first)
+	}
+	if next != http.StatusOK {
+		t.Fatalf("a request sent on reading the 101: %d", next)
+	}
+}
+
 // geta answers a request that does not ask to switch 426 before the library
 // sees it.
 func TestUpgradeAcceptIsNotCalledWithoutAnUpgradeRequest(t *testing.T) {

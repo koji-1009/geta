@@ -195,7 +195,7 @@ Every behaviour geta states has a test or a command that checks it. The guide ([
 
 | Claim | Test |
 | --- | --- |
-| `ConcurrencyLimit` sheds with 503 and frees slots on return, panic, and stream start | `TestConcurrencyLimitShedsAndReleases`, `TestNestedConcurrencyLimitsFreeEverySlotForAStream`, `TestConcurrencyLimitIsDocumented` |
+| `ConcurrencyLimit` sheds with 503 and frees slots on return, panic, stream start, and protocol switch (once the 101 is written) | `TestConcurrencyLimitShedsAndReleases`, `TestNestedConcurrencyLimitsFreeEverySlotForAStream`, `TestUpgradeAcceptHandsTheHandshakeToALibrary`, `TestAWritten101HoldsNoSlot`, `TestTheServed101HoldsNoSlot`, `TestConcurrencyLimitIsDocumented` |
 | `Timeout` is a context deadline; the 504 keeps CORS headers | `TestTimeoutIs504WithCORS`, `TestTimeoutLeavesAFastHandlerAlone`, `TestTimeoutKeepsAnEarlierDeadline` |
 | `Timeout` bounds reading the body from its first read; a stall is a 408 | `TestASlowBodyIs408AndFreesItsSlot`, `TestALateBodyClosesOnlyAnHTTP1Connection`, `TestABodyInTimeLeavesTheConnectionAlone`, `TestABodyHasTheTimeoutsLengthFromItsFirstRead`, `TestTheBodyDeadlineIsDocumented`, `TestSendAStalledBodyGetsThe408` |
 | `Doc.Timeout` sets the operation's deadline length | `TestDocTimeoutIsTheOperationsDeadline`, `TestDocTimeoutLengthensNestedTimeouts`, `TestDocTimeoutFollowsARootRewrite` |
@@ -224,7 +224,7 @@ Every behaviour geta states has a test or a command that checks it. The guide ([
 | `KeepAlive`, `MaxIdle`, and `MaxLifetime` hold as stated | `TestKeepAliveDoesNotExtendMaxIdle`, `TestEventsRestartTheKeepAlive`, `TestEventsResetMaxIdleButNotMaxLifetime` |
 | A stream is not bounded by `Timeout` and holds no slot | `TestTimeoutDoesNotBoundAStream`, `TestWaitingStreamFreesItsSlot` |
 | Upgrades are authenticated before the switch; a plain request is 426 | `TestUnauthenticatedUpgradeIsRefusedBeforeTheSwitch`, `TestAPlainRequestToAnUpgradeIs426`, `TestAnUpgradeHeaderCannotNameTheProtocolAgain`, `TestAnUpgradeHeaderCannotRepeatTheDeprecation` |
-| `Upgrade.Accept` hands the handshake to a WebSocket library through every geta writer | `TestUpgradeAcceptHandsTheHandshakeToALibrary`, `TestUpgradeAcceptIsNotCalledWithoutAnUpgradeRequest`, `TestUpgradeTokensAreReadAsTheGrammarWritesThem`, `TestUpgradeAcceptDefectsAndRefusals`, `TestServeClosesTheConnectionWhenItReturns`, `TestServeOnAConnectionThatCannotSwitchIsADefect` |
+| `Upgrade.Accept` hands the handshake to a WebSocket library through every geta writer | `TestUpgradeAcceptHandsTheHandshakeToALibrary`, `TestAWritten101HoldsNoSlot`, `TestUpgradeAcceptIsNotCalledWithoutAnUpgradeRequest`, `TestUpgradeTokensAreReadAsTheGrammarWritesThem`, `TestUpgradeAcceptDefectsAndRefusals`, `TestServeClosesTheConnectionWhenItReturns`, `TestServeOnAConnectionThatCannotSwitchIsADefect` |
 | Middleware writers unwrap for `http.ResponseController` | `TestMiddlewareWritersUnwrapForAResponseController` |
 | getatest's `DialContext` reaches the app in memory | `TestGetatestDialContextReachesTheApp`, `TestPanelFeedOverWebSocket` (booking) |
 | `Run` drains on shutdown with a grace period | `TestStreamsEndWhenTheServerDrains`, `TestRunStopsWhenItsContextEnds`, `TestRunStopsOnASignal`, `TestShutdownWaitsForAnInFlightRequest`, `TestShutdownGraceThenForcedClose`, `TestWithShutdownGraceSetsTheGrace`, `TestWithShutdownGraceRefusesANonPositiveGrace`, `TestServeClosesTheListener`, `TestRunKeepsTheCallersBaseContext`, `TestRunListensOnTheDefaultAddress`, `TestRunReportsAListenFailure` |
