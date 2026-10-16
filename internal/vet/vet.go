@@ -98,6 +98,7 @@ var (
 	CheckDeepObjectField  func(f Field, seen map[string]string) (walk bool, err error)
 	CheckFormField        func(f Field, multipart bool, seen map[string]string) (walk bool, err error)
 	CheckEnvelopeField    func(f Field, seen map[string]bool) error
+	CheckEnvelopeMedia    func(seen map[string]bool) error
 	EnvelopeEmbedded      func(f Field) bool
 	CheckProblemType      func(typ string, isStruct bool) error
 	CheckProblemField     func(f Field) error
@@ -106,6 +107,8 @@ var (
 	CheckDocTimeout       func(t time.Duration) error
 	CheckMethodBody       func(method string) error
 	CheckConditionalWrite func(method string, get Validator, conditional bool) error
+	CheckRequireAbsent    func(method string) error
+	CheckConditionalUsed  func(used bool) error
 	CheckSuccessStatus    func(status int, output, tag string, location *Field) error
 	CheckBodylessStatus   func(status int, tag string, hasBody bool) error
 	CheckSpecialStatus    func(status, answers int) error

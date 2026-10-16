@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/koji-1009/geta"
 	"github.com/koji-1009/geta/getatest"
@@ -140,7 +141,7 @@ func TestPreconditionHeadersCarryTheirLists(t *testing.T) {
 	var seen string
 	app := accepts(t, one("/x", get(func(_ context.Context, in *carryCondIn) (*ok, error) {
 		seen = *in.IfMatch
-		return &ok{true}, nil
+		return &ok{true}, in.Check(`"a"`, time.Time{})
 	})))
 	for _, p := range at(t, doc(t, app), "paths", "/x", "get", "parameters").([]any) {
 		if g := compact(t, p.(map[string]any)["schema"]); g != compact(t, map[string]any{"type": "string", "pattern": headerPattern}) {

@@ -8,7 +8,9 @@ import (
 	"mime"
 	"net/http"
 	"reflect"
+	"slices"
 	"strconv"
+	"strings"
 )
 
 // A raw body is bytes of the one media type its body tag names
@@ -16,7 +18,18 @@ import (
 // io.Reader; an envelope writes it from a []byte or copies it from an
 // io.Reader. geta checks the media type and the body limit, not the bytes.
 // The document lists the media type with no schema (OpenAPI 3.1 raw binary
-// content). There is no content negotiation.
+// content).
+//
+// An envelope's body tag may list several media types
+// (body:"image/png|application/pdf"), of which the handler chooses the one
+// each response sends through a string field tagged header:"Content-Type",
+// as a status field chooses among listed statuses. The document lists each
+// as a content key of every success status. The choice follows the
+// resource's state (the type a file was stored as), not the request: there
+// is no content negotiation, and Accept is not read (RFC 9110 §12.4.1 lets
+// an origin server disregard it, "treating the response as if it is not
+// subject to content negotiation"), so no 406 is answered and no Vary is
+// sent.
 
 var readerType = reflect.TypeFor[io.Reader]()
 
@@ -122,17 +135,38 @@ func (p *rawPlan) judge(w http.ResponseWriter, r *http.Request) *bindError {
 
 // rawOut writes an envelope's raw body.
 type rawOut struct {
-	index     []int
-	mediaType string
-	reader    bool // io.Reader; else []byte
+	index []int
+	// mediaTypes are the media types the body tag lists, as it writes them:
+	// one, or several the handler chooses among through typeIdx, the
+	// envelope's Content-Type header field (nil with one).
+	mediaTypes []string
+	typeIdx    []int
+	reader     bool // io.Reader; else []byte
 }
 
-// writeRaw sends the envelope v with its raw body, the declared media type as
-// Content-Type, and nosniff. A body that fits in limit bytes gets a
-// Content-Length, and a reader failing within them is a clean 500. A longer
-// body is streamed after the header is committed, so a failure then returns
-// a *committedError. The caller closes a reader that is an io.Closer.
-func (p *outPlan) writeRaw(w http.ResponseWriter, status int, v reflect.Value, limit int) error {
+// mediaType returns the media type the envelope v sends its raw body as: the
+// one its body tag lists, or the one its Content-Type field chooses. A choice
+// the tag does not list, the empty string included, is a defect: the
+// document states only the listed types, and the Content-Type a client reads
+// the bytes by must be one of them.
+func (ro *rawOut) mediaType(v reflect.Value) (string, error) {
+	if ro.typeIdx == nil {
+		return ro.mediaTypes[0], nil
+	}
+	mt := v.FieldByIndex(ro.typeIdx).String()
+	if !slices.Contains(ro.mediaTypes, mt) {
+		return "", fmt.Errorf("the Content-Type field holds %q, not a media type the body lists (want %s)", mt, strings.Join(ro.mediaTypes, "|"))
+	}
+	return mt, nil
+}
+
+// writeRaw sends the envelope v with its raw body, mt (a media type the body
+// tag lists) as Content-Type, and nosniff. A body that fits in limit bytes
+// gets a Content-Length, and a reader failing within them is a clean 500. A
+// longer body is streamed after the header is committed, so a failure then
+// returns a *committedError. The caller closes a reader that is an
+// io.Closer.
+func (p *outPlan) writeRaw(w http.ResponseWriter, status int, v reflect.Value, mt string, limit int) error {
 	ro := p.raw
 	fv := v.FieldByIndex(ro.index)
 	h := w.Header()
@@ -141,7 +175,7 @@ func (p *outPlan) writeRaw(w http.ResponseWriter, status int, v reflect.Value, l
 			return err
 		}
 		b := fv.Bytes()
-		rawHeaders(h, ro.mediaType)
+		rawHeaders(h, mt)
 		h["Content-Length"] = []string{strconv.Itoa(len(b))}
 		w.WriteHeader(status)
 		if _, err := w.Write(b); err != nil {
@@ -162,7 +196,7 @@ func (p *outPlan) writeRaw(w http.ResponseWriter, status int, v reflect.Value, l
 		if err := p.setHeaders(h, v); err != nil {
 			return err
 		}
-		rawHeaders(h, ro.mediaType)
+		rawHeaders(h, mt)
 		h["Content-Length"] = []string{strconv.Itoa(n)}
 		w.WriteHeader(status)
 		if _, err := w.Write(buf[:n]); err != nil {
@@ -175,7 +209,7 @@ func (p *outPlan) writeRaw(w http.ResponseWriter, status int, v reflect.Value, l
 	if err := p.setHeaders(h, v); err != nil {
 		return err
 	}
-	rawHeaders(h, ro.mediaType)
+	rawHeaders(h, mt)
 	delete(h, "Content-Length")
 	w.WriteHeader(status)
 	if _, err := w.Write(buf[:n]); err != nil {

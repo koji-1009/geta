@@ -440,6 +440,11 @@ func (a *App) compile(reg *registry, path string, params []string, m methodOp, c
 		bad("%w", err)
 	} else {
 		c.in = in
+		if in.absent {
+			if err := checkRequireAbsent(m.method); err != nil {
+				bad("%w", err)
+			}
+		}
 		if in.body != nil || in.form != nil || in.raw != nil {
 			if err := checkMethodBody(m.method); err != nil {
 				bad("%w", err)

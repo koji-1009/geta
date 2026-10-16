@@ -402,7 +402,7 @@ type Body struct {
 }
 
 type Env struct {
-	CT     string       ` + "`header:\"Content-Type\"`" + `
+	CT     *string      ` + "`header:\"Content-Type\"`" + `
 	CL     string       ` + "`header:\"content-length\"`" + `
 	XC     string       ` + "`header:\"X-Content-Type-Options\"`" + `
 	Bad    string       ` + "`header:\"X Bad\"`" + `
@@ -456,7 +456,7 @@ func Build() (*geta.App, error) {
 		t.Fatalf("vet passed:\n%s", out)
 	}
 	wants := []string{
-		`CT: header "Content-Type" is reserved for the body geta writes`,
+		`CT: a Content-Type header field is a string, not *string`,
 		`CL: header "content-length" is reserved for the body geta writes`,
 		`XC: header "X-Content-Type-Options" is reserved for the body geta writes`,
 		`Bad: "X Bad" is not a valid header name`,

@@ -114,6 +114,7 @@ func isEnvelope(t reflect.Type) bool {
 func (r *registry) envelope(t reflect.Type) (*outPlan, error) {
 	p := &outPlan{kind: outEnvelope}
 	seen := map[string]bool{}
+	var mediaIdx []int // the Content-Type header field
 	var walk func(t reflect.Type, prefix []int) error
 	walk = func(t reflect.Type, prefix []int) error {
 		for i := range t.NumField() {
@@ -140,6 +141,21 @@ func (r *registry) envelope(t reflect.Type) (*outPlan, error) {
 				p.statusIdx = index
 				continue
 			}
+			if h, isH := f.Tag.Lookup("header"); isH && http.CanonicalHeaderKey(h) == "Content-Type" {
+				// The media type the handler chooses among the raw body's;
+				// its type is checked as getavet checks it, once its kind is
+				// known.
+				c, err := r.codecFor(f.Type)
+				if err != nil {
+					return fmt.Errorf("%s.%s: %w", t, f.Name, err)
+				}
+				vf.Kind = vetKind(c)
+				if err := mediaTypeField(vf); err != nil {
+					return fmt.Errorf("%s.%w", t, err)
+				}
+				mediaIdx = index
+				continue
+			}
 			if h, isH := f.Tag.Lookup("header"); isH {
 				ft, opt := f.Type, false
 				if ft.Kind() == reflect.Pointer {
@@ -160,8 +176,10 @@ func (r *registry) envelope(t reflect.Type) (*outPlan, error) {
 			} else if ck, isC := f.Tag.Lookup("cookie"); isC {
 				p.cookies = append(p.cookies, cookieOut{name: ck, index: index})
 			} else if b := f.Tag.Get("body"); b != "json" {
-				// Raw bytes of the media type the tag names.
-				p.raw = &rawOut{index: index, mediaType: b, reader: f.Type == readerType}
+				// Raw bytes of the media type, or one of the media types, the
+				// tag names; checkEnvelopeField has parsed it.
+				types, _ := outputMediaTypes(f.Name, b)
+				p.raw = &rawOut{index: index, mediaTypes: types, reader: f.Type == readerType}
 			} else {
 				c, err := r.codecFor(f.Type)
 				if err != nil {
@@ -174,6 +192,14 @@ func (r *registry) envelope(t reflect.Type) (*outPlan, error) {
 	}
 	if err := walk(t, nil); err != nil {
 		return nil, err
+	}
+	// Shared with getavet: a body listing several media types and the
+	// Content-Type field choosing one come together.
+	if err := checkEnvelopeMedia(seen); err != nil {
+		return nil, fmt.Errorf("%s.%w", t, err)
+	}
+	if p.raw != nil {
+		p.raw.typeIdx = mediaIdx
 	}
 	for i := range p.headers {
 		if http.CanonicalHeaderKey(p.headers[i].name) == "Location" {
@@ -220,7 +246,8 @@ func (p *outPlan) checkLocation(status int, v reflect.Value) error {
 // being status: its status, and the entity tag and modification date its
 // ETag and Last-Modified header fields carry, "" and the zero Time where it
 // carries none or one a field cannot render. A status its status field does
-// not declare is 0: write refuses it.
+// not declare, or a media type its raw body does not list, is 0: write
+// refuses it.
 func (p *outPlan) validators(status int, v reflect.Value) (int, string, time.Time) {
 	if p.statusIdx != nil {
 		if s := int(v.FieldByIndex(p.statusIdx).Int()); s != 0 {
@@ -228,6 +255,11 @@ func (p *outPlan) validators(status int, v reflect.Value) (int, string, time.Tim
 				return 0, "", time.Time{}
 			}
 			status = s
+		}
+	}
+	if p.raw != nil {
+		if _, err := p.raw.mediaType(v); err != nil {
+			return 0, "", time.Time{} // write refuses it
 		}
 	}
 	h := http.Header{}
@@ -303,7 +335,11 @@ func (p *outPlan) write(w http.ResponseWriter, status int, out any, limit int) e
 			return err
 		}
 		if p.raw != nil {
-			return p.writeRaw(w, status, v, limit)
+			mt, err := p.raw.mediaType(v)
+			if err != nil {
+				return err
+			}
+			return p.writeRaw(w, status, v, mt, limit)
 		}
 		if p.body != nil {
 			bv := v.FieldByIndex(p.bodyIdx)

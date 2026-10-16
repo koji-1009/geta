@@ -174,11 +174,22 @@ func TestEnvelopeEmbeddedRefusals(t *testing.T) {
 	rejects(t, one("/x", get(func(context.Context, *empty) (*repeated, error) { return nil, nil })),
 		`repeated.Again: empty or repeated header name "x-req"`)
 	type badInner struct {
-		Raw string `header:"Content-Type"`
+		Raw string `header:"Content-Length"`
 	}
 	type inner struct {
 		badInner
 	}
 	rejects(t, one("/x", get(func(context.Context, *empty) (*inner, error) { return nil, nil })),
-		`badInner.Raw: header "Content-Type" is reserved for the body geta writes`)
+		`badInner.Raw: header "Content-Length" is reserved for the body geta writes`)
+	// A Content-Type field in an embedded struct chooses among the body's
+	// media types as one in the envelope itself does; without such a body,
+	// the envelope is refused by the field's name.
+	type typeInner struct {
+		Type string `header:"Content-Type"`
+	}
+	type typed struct {
+		typeInner
+	}
+	rejects(t, one("/x", get(func(context.Context, *empty) (*typed, error) { return nil, nil })),
+		`typed.Type: header "Content-Type" is reserved for the body geta writes; it chooses among the media types a raw body field lists`)
 }
