@@ -523,12 +523,16 @@ func (d *decoder) checkAt(c *codec, s *schema, v any, at vpath) {
 		if !d.objectLen(s, len(m), p) {
 			return
 		}
-		// A value is checked only if its key passes.
+		// JSON Schema applies propertyNames and additionalProperties apart,
+		// so a value is checked whether or not its key passes, after the
+		// key's violation. A key past the backstop leaves its value unchecked
+		// (keyPastBound).
 		for _, k := range slices.Sorted(maps.Keys(m)) {
 			kp := p.member(k)
-			if d.key(s, k, kp) && d.keyText(c.key, k, kp) {
-				d.checkAt(c.elem, s.Additional, m[k], *kp)
+			if !d.keyAndText(s, c.key, k, kp) && d.keyPastBound(s, k) {
+				continue
 			}
+			d.checkAt(c.elem, s.Additional, m[k], *kp)
 		}
 	case kStruct:
 		m := v.(map[string]any)
@@ -604,7 +608,8 @@ func errorText(err error) string { return clip(err.Error(), maxErrorBytes) }
 // only where check reaches the value and the value's schema passes, so that
 // it reports nothing check reports or does not reach: a member check found
 // unknown, an array or object past its bound, a key the keys' schema
-// refuses, a variant no discriminator selects, a declared type's keyword.
+// refuses (its value is still read), a value under a key past the backstop,
+// a variant no discriminator selects, a declared type's keyword.
 type methodWalk struct {
 	d   *decoder
 	dec *jsontext.Decoder
@@ -769,24 +774,24 @@ func (w *methodWalk) object(c *codec, m map[string]any) {
 }
 
 // mapValue reads the members of a map whose parsed tree is m. A value is
-// entered only if its key passes, as in checkAt; a key of a type that reads
-// itself is then read by its method, and the value only if the method takes
-// the key.
+// entered unless its key is past the backstop, as in checkAt. A key of a type
+// that reads itself is read by its method only if the keys' schema passes it;
+// the value is entered whether or not the method takes the key.
 func (w *methodWalk) mapValue(c *codec, s *schema, m map[string]any) {
 	w.dec.ReadToken() // '{'
 	for w.dec.PeekKind() != '}' {
 		raw, _ := w.dec.ReadValue() // the name as written, which v2 hands the key's method
 		k := memberName(raw)
-		if !w.passes(func(d *decoder, p *vpath) bool { return d.key(s, k, p) && d.keyText(c.key, k, p) }) {
+		keyOK := w.passes(func(d *decoder, p *vpath) bool { return d.keyAndText(s, c.key, k, p) })
+		if !keyOK && w.scratch.keyPastBound(s, k) {
 			w.skip()
 			continue
 		}
 		n := w.enter(k)
-		if c.keyMethods && c.key.kind == kJSON && !w.runOn(c.key.t, raw) {
-			w.skip()
-		} else {
-			w.value(c.elem, s.Additional, m[k])
+		if keyOK && c.keyMethods && c.key.kind == kJSON {
+			w.runOn(c.key.t, raw)
 		}
+		w.value(c.elem, s.Additional, m[k])
 		w.leave(n)
 	}
 	w.dec.ReadToken() // '}'
@@ -992,6 +997,30 @@ func (d *decoder) str(s *schema, v, path string) bool {
 // schema (schema.keys). It reports whether the key passed.
 func (d *decoder) key(s *schema, k string, p *vpath) bool {
 	return d.text(s.keys(), k, p, "key", "key ")
+}
+
+// keyAndText checks a map key k against the keys' schema and, if it passes,
+// with the key type's UnmarshalText (keyText). It reports whether the key
+// passed both.
+func (d *decoder) keyAndText(s *schema, kc *codec, k string, p *vpath) bool {
+	return d.key(s, k, p) && d.keyText(kc, k, p)
+}
+
+// keyPastBound reports whether the member name k is past the backstop a
+// request's keys are held to when propertyNames declares no maxLength:
+// MaxStringLength, and the pattern ceiling where a pattern applies. A
+// backstop bounds the work a request costs, unlike the keys' schema, so the
+// value under such a key is not checked. A response (Conforms) has none.
+func (d *decoder) keyPastBound(s *schema, k string) bool {
+	ks := s.keys()
+	if d.written || ks.MaxLength != nil {
+		return false
+	}
+	bound := d.limits.MaxStringLength
+	if ks.re != nil {
+		bound = min(bound, patternCeiling)
+	}
+	return utf8.RuneCountInString(k) > bound
 }
 
 // keyText checks a map key k of a text type (codec kc) with the type's

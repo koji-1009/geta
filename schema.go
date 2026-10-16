@@ -167,22 +167,33 @@ var annotations = []string{"default", "examples", "deprecated"}
 
 // tagEntries splits a schema tag into its key=value entries. A comma not
 // followed by a keyword belongs to the previous value, so a pattern may
-// contain commas.
-func tagEntries(tag string) []string {
+// contain commas. A comma followed by nothing (a trailing or doubled comma)
+// or by white space and then a keyword is refused: read as part of the value,
+// it would silently drop the entry its writer meant to start.
+func tagEntries(tag string) ([]string, error) {
 	var parts []string
 	for p := range strings.SplitSeq(tag, ",") {
-		if len(parts) > 0 && !keyPrefix.MatchString(p) {
-			parts[len(parts)-1] += "," + p
+		if len(parts) == 0 || keyPrefix.MatchString(p) {
+			parts = append(parts, p)
 			continue
 		}
-		parts = append(parts, p)
+		in, _, _ := strings.Cut(parts[len(parts)-1], "=")
+		switch {
+		case p == "":
+			return nil, fmt.Errorf("schema tag %q has an empty entry (a trailing or doubled comma) after %s; write a comma the value holds as [,] or \\x2c in a pattern", tag, in)
+		case keyPrefix.MatchString(strings.TrimLeftFunc(p, unicode.IsSpace)):
+			return nil, fmt.Errorf("schema tag %q has white space before %q after a comma in the value of %s; separate entries with a bare comma, or write a comma the value holds as [,] or \\x2c in a pattern",
+				tag, strings.TrimLeftFunc(p, unicode.IsSpace), in)
+		}
+		parts[len(parts)-1] += "," + p
 	}
-	return parts
+	return parts, nil
 }
 
 // declaresDefault reports whether a schema tag declares a default.
 func declaresDefault(tag string) bool {
-	for _, p := range tagEntries(tag) {
+	entries, _ := tagEntries(tag) // parseConstraints reports a malformed tag
+	for _, p := range entries {
 		if strings.HasPrefix(p, "default=") {
 			return true
 		}
@@ -198,7 +209,11 @@ func parseConstraints(tag string, base *schema) (*schema, error) {
 	if tag == "" {
 		return base, nil
 	}
-	return parseEntries(tag, tagEntries(tag), base)
+	entries, err := tagEntries(tag)
+	if err != nil {
+		return nil, err
+	}
+	return parseEntries(tag, entries, base)
 }
 
 // parseEntries is parseConstraints, on the entries of tag.

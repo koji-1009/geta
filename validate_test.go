@@ -69,6 +69,41 @@ func TestPattern(t *testing.T) {
 	want(t, check[string](t, `pattern=^\d{1,3}$,maxLength=3`, q("12")))
 }
 
+// A comma starts a schema tag entry only where a keyword and '=' follow it,
+// behind any items., additionalProperties., and propertyNames. prefixes; any
+// other comma stays in the value before it, as docs/guide/schema.md says. A
+// comma followed by nothing, or by white space and a keyword, is refused
+// rather than read into the value.
+func TestTagCommas(t *testing.T) {
+	for tag, entries := range map[string][]string{
+		`pattern=^"[A-Za-z0-9._:-]{8,64}"$,maxLength=66`: {`pattern=^"[A-Za-z0-9._:-]{8,64}"$`, "maxLength=66"},
+		"enum=a,b|c,default=a,b":                         {"enum=a,b|c", "default=a,b"},
+		"items.pattern=^a{1,2}$,items.maxLength=2":       {"items.pattern=^a{1,2}$", "items.maxLength=2"},
+		"pattern=^a[,]b=1$":                              {"pattern=^a[,]b=1$"},
+		`pattern=^a\x2c b=1$`:                            {`pattern=^a\x2c b=1$`},
+		"pattern=^a, b$":                                 {"pattern=^a, b$"},
+		"pattern=^(a,b=1)$":                              {"pattern=^(a", "b=1)$"},
+	} {
+		if got, err := tagEntries(tag); err != nil || !slices.Equal(got, entries) {
+			t.Errorf("%s: %q %v, want %q", tag, got, err, entries)
+		}
+	}
+	for tag, msg := range map[string]string{
+		"pattern=^a$, maxLength=3":                        `white space before "maxLength=3" after a comma in the value of pattern`,
+		"enum=a|b,\titems.maxLength=3":                    `white space before "items.maxLength=3" after a comma in the value of enum`,
+		"pattern=^a$,":                                    "an empty entry (a trailing or doubled comma) after pattern",
+		"minLength=1,,maxLength=2":                        "an empty entry (a trailing or doubled comma) after minLength",
+		"propertyNames.pattern=^a$, propertyNames.enum=a": `white space before "propertyNames.enum=a" after a comma in the value of propertyNames.pattern`,
+	} {
+		if _, err := parseConstraints(tag, &schema{Type: "string"}); err == nil || !strings.Contains(err.Error(), msg) {
+			t.Errorf("%s: %v, want %q", tag, err, msg)
+		}
+	}
+	want(t, check[string](t, "enum=a,b|c", q("a,b")))
+	want(t, check[string](t, "pattern=^a[,]b=1$", q("a,b=1")))
+	want(t, check[string](t, `pattern=^a\x2c b=1$`, q("a, b=1")))
+}
+
 // A pattern never runs over a long string: maxLength condemns it first, and
 // the pattern ceiling holds where the backstop is larger. A declared
 // maxLength past the ceiling beside a pattern would document strings geta
