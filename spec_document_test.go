@@ -452,6 +452,7 @@ func TestTheSharedRulesAreSet(t *testing.T) {
 		deepObjectField  func(vet.Field, map[string]string) (bool, error)       = vet.CheckDeepObjectField
 		formField        func(vet.Field, bool, map[string]string) (bool, error) = vet.CheckFormField
 		envelopeField    func(vet.Field, map[string]bool) error                 = vet.CheckEnvelopeField
+		envelopeMedia    func(map[string]bool) error                            = vet.CheckEnvelopeMedia
 		envelopeStatus   func(int, string) error                                = vet.CheckEnvelopeStatus
 		bodylessStatus   func(int, string, bool) error                          = vet.CheckBodylessStatus
 		memberField      func(vet.Field, map[string]bool) (string, bool, error) = vet.CheckMemberField
@@ -478,8 +479,9 @@ func TestTheSharedRulesAreSet(t *testing.T) {
 		"CheckDeepObjectField":  deepErr,
 		"CheckFormField":        formErr,
 		"CheckEnvelopeField": envelopeField(field(struct {
-			CT string `header:"Content-Type"`
-		}{}, "CT"), map[string]bool{}),
+			CL string `header:"Content-Length"`
+		}{}, "CL"), map[string]bool{}),
+		"CheckEnvelopeMedia":  envelopeMedia(map[string]bool{"media choice CT": true}),
 		"CheckEnvelopeStatus": envelopeStatus(http.StatusAccepted, "200|201"),
 		"CheckBodylessStatus": bodylessStatus(http.StatusOK, "200|205", true),
 		"CheckMemberField":    memberErr,

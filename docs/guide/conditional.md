@@ -2,7 +2,7 @@
 
 ## Conditional requests (304, 412, 428)
 
-Embed `geta.Conditional` in an input to bind `If-Match`, `If-None-Match`, `If-Modified-Since`, `If-Unmodified-Since` (optional, documented header parameters). After its own checks, before acting, the handler calls `in.Check(etag, modified)` and returns the error as is: `etag` the current entity tag (`"v1"`, `W/"v1"`, "" for none), `modified` the last modification (zero for none). `in.CheckAbsent()`: target without representation yet (a creating PUT); `If-Match` fails, `If-None-Match: *` holds.
+Embed `geta.Conditional` in an input to bind `If-Match`, `If-None-Match`, `If-Modified-Since`, `If-Unmodified-Since` (optional, documented header parameters; `RequireConditional` makes `If-Match` required on a write, below). After its own checks, before acting, the handler calls `in.Check(etag, modified)` and returns the error as is: `etag` the current entity tag (`"v1"`, `W/"v1"`, "" for none), `modified` the last modification (zero for none). `in.CheckAbsent()`: target without representation yet (a creating PUT); `If-Match` fails, `If-None-Match: *` holds.
 
 ```go
 type PutIn struct {
@@ -34,7 +34,11 @@ func (h Handler) Put(ctx context.Context, in *PutIn) (*Tagged, error) {
 - Non-HTTP-date: ignored. Only RFC 9110 §5.6.7 forms are read (IMF-fixdate, RFC 850, asctime; two-digit hour, minute, second; no fraction; names in their own case). 23:59:60 reads as 23:59:59.
 - The four fields are not string parameters: bound whatever their bytes and length. An obs-text (non-UTF-8) entity tag matches as any other; non-UTF-8 date ignored; long list read whole; no documented `maxLength`.
 - Error: `*geta.PreconditionError` (`Status()` 304, 400, 412, 428), answered on operations whose input embeds `Conditional`, which document 412 (304 too on GET). Returned elsewhere, or an `etag` not one entity tag: logged 500 with an `instance`; no failure row answers them, catch-all `geta.OnAs[error]` included.
-- `geta.RequireConditional` instead of `Conditional`: 428 without a precondition (RFC 6585), documented there.
+- `geta.RequireConditional` instead of `Conditional`: 428 when the request carries no precondition that assures "clients are working with the correct copies" (RFC 6585 §3), documented there with the 428.
+  - On a write (any method but GET and HEAD): `If-Match` listing one or more entity tags, the tag of the representation the request was made against (§13.1.1, "to prevent the 'lost update' problem"). The document states `If-Match` `required: true`. Nothing else stands for it, each a 428 alone: `If-Match: *` (holds for any current representation, whichever copy the client worked on); `If-None-Match` with tags (holds whenever the current tag is another, a stale copy's included); `If-None-Match: *` (holds only where there is no representation, which `If-Match` always fails); `If-Unmodified-Since` (read only without `If-Match`, §13.2.2; ignored where `Check` gets no date, §13.1.4; one second, within which two writes both hold). Its parameter says it is not read there. A malformed `If-Match` is a 400, as with `Conditional`.
+  - A write that creates its target has no tag to send: embed `Conditional` and call `CheckAbsent` (`If-None-Match: *` holds, `If-Match` fails). `RequireConditional`'s `CheckAbsent` answers 428 or 412.
+  - On a GET or HEAD: any of `If-Match`, `If-None-Match`, a valid `If-Modified-Since`, a valid `If-Unmodified-Since`; the four stay optional.
+  - The 428 is `Check`'s answer, so it comes after the handler's own checks (a missing target's 404), as 412 does (§13.2.1).
 - Binding the four headers again in the same input fails `geta.New`.
 - `geta.ETag` reads `If-None-Match` as `Check` does; on a GET without `Conditional`, every precondition (below).
 - Every status `Check` answers is documented.

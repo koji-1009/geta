@@ -1089,10 +1089,10 @@
         "operationId": "postBookingsByBookingChanges",
         "parameters": [
           {
-            "description": "\"*\" or a list of one or more entity tags (RFC 9110 §13.1.1), compared strongly; a failed match answers 412",
+            "description": "A list of one or more entity tags (RFC 9110 §13.1.1), compared strongly: the tag of the representation the request was made against. Required: a request without one, or with \"*\", answers 428 (RFC 6585 §3); a failed match answers 412",
             "in": "header",
             "name": "If-Match",
-            "required": false,
+            "required": true,
             "schema": {
               "pattern": "^(?:[^\\x00-\\x20\\x7F](?:[^\\x00-\\x08\\x0A-\\x1F\\x7F]*[^\\x00-\\x20\\x7F])?)?$",
               "type": "string"
@@ -1119,7 +1119,7 @@
             }
           },
           {
-            "description": "An HTTP-date (RFC 9110 §13.1.4), read without If-Match; a representation modified since answers 412. A value that is not one HTTP-date is ignored",
+            "description": "An HTTP-date (RFC 9110 §13.1.4). Not read: this operation requires If-Match, and If-Unmodified-Since is read only without it (RFC 9110 §13.2.2)",
             "in": "header",
             "name": "If-Unmodified-Since",
             "required": false,
@@ -1261,7 +1261,7 @@
                 }
               }
             },
-            "description": "A precondition failed: If-Match, If-Unmodified-Since, or If-None-Match",
+            "description": "A precondition failed: If-Match, or If-None-Match",
             "summary": "Precondition Failed"
           },
           "413": {
@@ -1325,7 +1325,7 @@
                 }
               }
             },
-            "description": "The request carries no precondition, and this operation requires one",
+            "description": "The request carries no If-Match listing the entity tag of the representation it was made against (\"*\" names none), which this operation requires (RFC 6585 section 3)",
             "summary": "Precondition Required"
           },
           "429": {

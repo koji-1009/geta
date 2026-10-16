@@ -142,10 +142,19 @@ func refConditional(method string, exists, required bool, etag string, modified 
 	if !modified.IsZero() {
 		modified = modified.Truncate(time.Second)
 	}
-	if required {
+	if required && safe {
 		_, unmodified := date(ius)
 		_, modifiedSince := date(ims)
-		if im == nil && inm == nil && !unmodified && !(safe && modifiedSince) {
+		if im == nil && inm == nil && !unmodified && !modifiedSince {
+			return http.StatusPreconditionRequired, "If-Match"
+		}
+	}
+	if required && !safe {
+		// A write takes If-Match listing entity tags, and nothing else.
+		if im == nil {
+			return http.StatusPreconditionRequired, "If-Match"
+		}
+		if _, star, ok := refCondition(*im); ok && star {
 			return http.StatusPreconditionRequired, "If-Match"
 		}
 	}
@@ -213,10 +222,11 @@ var fzCondHeaders = []string{"If-Match", "If-None-Match", "If-Modified-Since", "
 // modification or none), dates fuzzed as raw text or written near the
 // modification in each of the three HTTP-date forms, and holds the answer to
 // refConditional on GET, HEAD, PUT, and DELETE: Check on /r, CheckAbsent on
-// /a, RequireConditional's Check on /q. Each field is bound whatever its
-// bytes and length (an entity tag may hold obs-text, which is no UTF-8).
-// Behind geta.ETag on /e, If-None-Match alone decides, read as Check reads
-// it, against the response's tag. A 304 has no body and
+// /a, RequireConditional's Check on /q (a write requires If-Match listing
+// tags). Each field is bound whatever its bytes and length (an entity tag
+// may hold obs-text, which is no UTF-8). Behind geta.ETag on /e, a GET
+// without Conditional, every precondition decides, read as Check reads it,
+// against the response's tag and no date. A 304 has no body and
 // carries the validator; every 4xx is a problem of its status, a 412's
 // detail beginning with the field that decided it.
 func FuzzConditional(f *testing.F) {
@@ -374,28 +384,22 @@ func FuzzConditional(f *testing.F) {
 			success = http.StatusNoContent
 		}
 		tag := cur
+		var v [4]*string
+		for i := range fzCondHeaders {
+			v[i] = refCondField(lines[i])
+		}
 		if route == "e" {
+			// The response's tag, the handler's or else geta.ETag's, and no
+			// modification date: every precondition, as Check reads them.
 			if tag == "" {
 				tag = computed
 			}
-			if lines[1] != nil {
-				tags, star, ok := refCondition(*refCondField(lines[1]))
-				switch {
-				case !ok:
-					status, decider, bad = http.StatusBadRequest, "If-None-Match", []string{"If-None-Match"}
-				case star || slices.ContainsFunc(tags, func(tg string) bool { return strings.TrimPrefix(tg, "W/") == strings.TrimPrefix(tag, "W/") }):
-					status = http.StatusNotModified
-				}
-			}
+			status, decider = refConditional(method, true, false, tag, time.Time{}, v[0], v[1], v[2], v[3])
 		} else {
-			var v [4]*string
-			for i := range fzCondHeaders {
-				v[i] = refCondField(lines[i])
-			}
 			status, decider = refConditional(method, route != "a", route == "q", cur, mod, v[0], v[1], v[2], v[3])
-			if status == http.StatusBadRequest {
-				bad = []string{decider}
-			}
+		}
+		if status == http.StatusBadRequest {
+			bad = []string{decider}
 		}
 		if status == 0 {
 			status = success

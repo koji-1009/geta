@@ -34,8 +34,8 @@ const (
 // conditionalTable serves, on /r, a GET and a PUT that check the current
 // representation; on /absent, a PUT that checks a target with none; on
 // /dated, a GET of a representation with a date and no tag; on /weak, a GET
-// and a PUT of one with a weak tag; and on /req, a PUT that requires a
-// precondition.
+// and a PUT of one with a weak tag; and on /req, a GET and a PUT that
+// require a precondition.
 func conditionalTable() geta.Table {
 	check := func(etag string, mod time.Time) func(context.Context, *condIn) (*ok, error) {
 		return func(_ context.Context, in *condIn) (*ok, error) {
@@ -62,6 +62,12 @@ func conditionalTable() geta.Table {
 			Put: geta.OpNoBody(http.StatusNoContent, put(`W/"w"`, time.Time{}), geta.Doc{}),
 		}},
 		{Path: "/req", Route: geta.Route{
+			Get: geta.Op(http.StatusOK, func(_ context.Context, in *requiredIn) (*ok, error) {
+				if err := in.Check(current, modifiedAt); err != nil {
+					return nil, err
+				}
+				return &ok{true}, nil
+			}, geta.Doc{}),
 			Put: geta.OpNoBody(http.StatusNoContent, func(_ context.Context, in *requiredIn) error {
 				return in.Check(current, modifiedAt)
 			}, geta.Doc{}),
@@ -152,14 +158,26 @@ func TestConditionalEvaluationOrder(t *testing.T) {
 		{"absent: If-Match a tag", "PUT", "/absent", header("If-Match", `"v1"`), 412},
 		{"absent: If-Unmodified-Since", "PUT", "/absent", header("If-Unmodified-Since", dateEarly), 204},
 
-		// RFC 6585: a required precondition.
+		// RFC 6585: a required precondition. On a write, only If-Match listing
+		// the tag of the copy the client worked on assures it (§13.1.1).
 		{"required: none", "PUT", "/req", nil, 428},
 		{"required: If-Modified-Since is not one on PUT", "PUT", "/req", header("If-Modified-Since", dateEarly), 428},
 		{"required: a malformed date is not one", "PUT", "/req", header("If-Unmodified-Since", "soon"), 428},
 		{"required: If-Match", "PUT", "/req", header("If-Match", `"v2"`), 204},
 		{"required: If-Match stale", "PUT", "/req", header("If-Match", `"v1"`), 412},
-		{"required: If-Unmodified-Since", "PUT", "/req", header("If-Unmodified-Since", dateExact), 204},
-		{"required: If-None-Match *", "PUT", "/req", header("If-None-Match", "*"), 412},
+		{"required: If-Match malformed", "PUT", "/req", header("If-Match", "v2"), 400},
+		{"required: If-Match * names no copy", "PUT", "/req", header("If-Match", "*"), 428},
+		{"required: If-Match * between spaces names no copy", "PUT", "/req", header("If-Match", " *\t"), 428},
+		{"required: If-Unmodified-Since is not one on PUT", "PUT", "/req", header("If-Unmodified-Since", dateExact), 428},
+		{"required: If-Unmodified-Since stale is not one either", "PUT", "/req", header("If-Unmodified-Since", dateEarly), 428},
+		{"required: If-None-Match * is not one on PUT", "PUT", "/req", header("If-None-Match", "*"), 428},
+		{"required: If-None-Match a tag the target lacks is not one", "PUT", "/req", header("If-None-Match", `"x"`), 428},
+		{"required: If-Match, then If-None-Match decides", "PUT", "/req", []string{"If-Match", `"v2"`, "If-None-Match", `"x"`}, 204},
+		{"required: If-Match holds, If-Unmodified-Since is not read", "PUT", "/req", []string{"If-Match", `"v2"`, "If-Unmodified-Since", dateEarly}, 204},
+		{"required on GET: If-None-Match", "GET", "/req", header("If-None-Match", `"x"`), 200},
+		{"required on GET: If-Modified-Since", "GET", "/req", header("If-Modified-Since", dateExact), 304},
+		{"required on GET: If-Match *", "GET", "/req", header("If-Match", "*"), 200},
+		{"required on GET: none", "GET", "/req", nil, 428},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			rec := do(t, a, c.method, c.path, c.headers...)
@@ -231,8 +249,8 @@ func TestPreconditionProblems(t *testing.T) {
 // An If-Match or If-None-Match whose list holds no entity tag (an empty
 // line, several, or only commas) names no condition: a client that sent one
 // lost the tag it meant to send, and evaluated it would be a 412 that no tag
-// matches, or for If-None-Match a write with no condition, past
-// RequireConditional's 428. It is a 400, on one line as on several.
+// matches, or for If-None-Match a write with no condition. It is a 400, on
+// one line as on several.
 func TestEmptyPreconditionListsAreRefused(t *testing.T) {
 	a := accepts(t, conditionalTable())
 	for _, path := range []string{"/r", "/req"} {
@@ -241,6 +259,10 @@ func TestEmptyPreconditionListsAreRefused(t *testing.T) {
 				var headers []string
 				for _, l := range lines {
 					headers = append(headers, name, l)
+				}
+				if path == "/req" && name == "If-None-Match" {
+					// The write requires If-Match (428 without it).
+					headers = append(headers, "If-Match", current)
 				}
 				var p geta.Problem
 				if err := json.Unmarshal(do(t, a, "PUT", path, headers...).Body.Bytes(), &p); err != nil {
@@ -400,9 +422,11 @@ func TestACatchAllRowDoesNotSwallowAConditionalDefect(t *testing.T) {
 	}
 }
 
-// The document lists the four header parameters, optional and described,
-// and what Check answers: 412 everywhere, 304 on a GET, 428 where a
-// precondition is required.
+// The document lists the four header parameters, described, and what Check
+// answers: 412 everywhere, 304 on a GET, 428 where a precondition is
+// required. They are optional, but for If-Match on a write that requires a
+// precondition: Check answers 428 without it, so the document states it
+// required, as it does any other parameter a request must carry.
 func TestConditionalIsDocumented(t *testing.T) {
 	var doc struct {
 		Paths map[string]map[string]struct {
@@ -427,12 +451,14 @@ func TestConditionalIsDocumented(t *testing.T) {
 	}{
 		{"/r", "get", []string{"304", "412"}, []string{"428"}},
 		{"/r", "put", []string{"412"}, []string{"304", "428"}},
+		{"/req", "get", []string{"304", "412", "428"}, nil},
 		{"/req", "put", []string{"412", "428"}, []string{"304"}},
 	} {
 		op := doc.Paths[c.path][c.method]
 		var names []string
 		for _, p := range op.Parameters {
-			if p.In != "header" || p.Required || p.Description == "" {
+			required := c.path == "/req" && c.method == "put" && p.Name == "If-Match"
+			if p.In != "header" || p.Required != required || p.Description == "" {
 				t.Errorf("%s %s: %+v", c.method, c.path, p)
 			}
 			names = append(names, p.Name)
@@ -459,6 +485,30 @@ func TestConditionalIsDocumented(t *testing.T) {
 	}
 	if op := doc.Paths["/r"]["get"]; !strings.Contains(op.Responses["412"].Description, "If-Match") || strings.Contains(op.Responses["412"].Description, "If-None-Match") {
 		t.Errorf("GET 412: %q", op.Responses["412"].Description)
+	}
+	// On the write, If-Match says it is required and If-Unmodified-Since that
+	// it is not read; the 412 and 428 say which field decides.
+	put := doc.Paths["/req"]["put"]
+	for _, p := range put.Parameters {
+		switch p.Name {
+		case "If-Match":
+			if !strings.Contains(p.Description, `Required: a request without one, or with "*", answers 428`) {
+				t.Errorf("PUT /req If-Match: %q", p.Description)
+			}
+		case "If-Unmodified-Since":
+			if !strings.Contains(p.Description, "Not read") {
+				t.Errorf("PUT /req If-Unmodified-Since: %q", p.Description)
+			}
+		}
+	}
+	if d := put.Responses["412"].Description; strings.Contains(d, "If-Unmodified-Since") {
+		t.Errorf("PUT /req 412: %q", d)
+	}
+	if d := put.Responses["428"].Description; !strings.Contains(d, "If-Match") {
+		t.Errorf("PUT /req 428: %q", d)
+	}
+	if get := doc.Paths["/req"]["get"]; get.Responses["428"].Description != "The request carries no precondition, and this operation requires one" {
+		t.Errorf("GET /req 428: %q", get.Responses["428"].Description)
 	}
 	// The 304 states the validator it carries.
 	var m map[string]any

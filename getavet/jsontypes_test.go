@@ -137,7 +137,7 @@ type Stamp struct {
 
 type meta struct {
 	Req string       ` + "`header:\"X-Req\"`" + `
-	CT  string       ` + "`header:\"Content-Type\"`" + `
+	CT  *string      ` + "`header:\"Content-Type\"`" + `
 	SID *http.Cookie ` + "`cookie:\"sid\"`" + `
 }
 
@@ -223,7 +223,7 @@ func Build() (*geta.App, error) {
 		"Stamp: embedded lib.Stamp is a text type with no fields; tag it header",
 		// An envelope's embedded fields are its own.
 		"moreMeta: embedded pointer types are not supported in an envelope; embed lib.moreMeta",
-		`CT: header "Content-Type" is reserved for the body geta writes`,
+		`CT: a Content-Type header field is a string, not *string`,
 		`Again: empty or repeated header name "x-req"`,
 		`Bad: header "Content-Length" is reserved for the body geta writes`,
 	}

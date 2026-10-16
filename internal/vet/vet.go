@@ -98,6 +98,7 @@ var (
 	CheckDeepObjectField  func(f Field, seen map[string]string) (walk bool, err error)
 	CheckFormField        func(f Field, multipart bool, seen map[string]string) (walk bool, err error)
 	CheckEnvelopeField    func(f Field, seen map[string]bool) error
+	CheckEnvelopeMedia    func(seen map[string]bool) error
 	EnvelopeEmbedded      func(f Field) bool
 	CheckProblemType      func(typ string, isStruct bool) error
 	CheckProblemField     func(f Field) error

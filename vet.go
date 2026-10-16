@@ -26,6 +26,7 @@ func init() {
 	vet.CheckDeepObjectField = checkDeepObjectField
 	vet.CheckFormField = checkFormField
 	vet.CheckEnvelopeField = checkEnvelopeField
+	vet.CheckEnvelopeMedia = checkEnvelopeMedia
 	vet.EnvelopeEmbedded = envelopeEmbedded
 	vet.CheckProblemType = checkProblemType
 	vet.CheckProblemField = checkProblemField
@@ -728,6 +729,16 @@ func checkEnvelopeField(f vet.Field, seen map[string]bool) error {
 		if !validHeaderName(h) {
 			return fmt.Errorf("%s: %q is not a valid header name", f.Name, h)
 		}
+		if http.CanonicalHeaderKey(h) == "Content-Type" {
+			// The handler's choice among the body's media types
+			// (checkEnvelopeMedia).
+			if err := mediaTypeField(f); err != nil {
+				return err
+			}
+			seen["h Content-Type"] = true
+			seen[mediaChoice+f.Name] = true
+			return nil
+		}
 		if why, ok := reservedHeaders[http.CanonicalHeaderKey(h)]; ok {
 			return fmt.Errorf("%s: header %q %s", f.Name, h, why)
 		}
@@ -763,8 +774,12 @@ func checkEnvelopeField(f vet.Field, seen map[string]bool) error {
 			return fmt.Errorf("%s: unknown body tag %q", f.Name, b)
 		}
 		if raw {
-			if err := rawMediaType(f.Name, b, true); err != nil {
+			types, err := outputMediaTypes(f.Name, b)
+			if err != nil {
 				return err
+			}
+			if len(types) > 1 {
+				seen[mediaList+f.Name] = true
 			}
 		}
 		if seen["body"] {
@@ -787,6 +802,73 @@ func checkEnvelopeField(f vet.Field, seen map[string]bool) error {
 		seen["body"] = true
 	default:
 		return fmt.Errorf("%s: an envelope field needs a header, cookie, or body tag", f.Name)
+	}
+	return nil
+}
+
+// The keys checkEnvelopeField records in seen for checkEnvelopeMedia, each
+// followed by the field's name: a raw body listing several media types, and
+// a Content-Type header field choosing among them.
+const (
+	mediaList   = "media list "
+	mediaChoice = "media choice "
+)
+
+// outputMediaTypes parses an envelope's raw body tag: one media type, or
+// several separated by "|" (body:"image/png|application/pdf"), as a status
+// tag lists statuses, each valid for a raw output body (rawMediaType) and
+// none twice. The error begins with field.
+func outputMediaTypes(field, tag string) ([]string, error) {
+	var out []string
+	for mt := range strings.SplitSeq(tag, "|") {
+		if err := rawMediaType(field, mt, true); err != nil {
+			return nil, err
+		}
+		if slices.Contains(out, mt) {
+			return nil, fmt.Errorf("%s: body tag %q names %q twice", field, tag, mt)
+		}
+		out = append(out, mt)
+	}
+	return out, nil
+}
+
+// mediaTypeField reports whether f, an envelope field tagged
+// header:"Content-Type", may hold the media type the handler chooses among
+// those its raw body lists: a string, not a pointer, with no schema or doc
+// tag; the content keys of the document state the types.
+func mediaTypeField(f vet.Field) error {
+	_, schema := f.Tag.Lookup("schema")
+	_, doc := f.Tag.Lookup("doc")
+	switch {
+	case f.Pointer || f.Kind != "" && f.Kind != "string":
+		return fmt.Errorf("%s: a Content-Type header field is a string, not %s", f.Name, f.Type)
+	case schema || doc:
+		return fmt.Errorf("%s: a Content-Type header field takes no schema or doc tag; the body's media types are the document's content keys", f.Name)
+	}
+	return nil
+}
+
+// checkEnvelopeMedia reports whether geta.New accepts an envelope whose
+// fields checkEnvelopeField has recorded in seen: a raw body that lists
+// several media types needs a Content-Type header field, through which the
+// handler chooses one per response, and a Content-Type header field needs
+// such a body, since geta writes every other body's Content-Type itself. It
+// applies geta.New's rule.
+func checkEnvelopeMedia(seen map[string]bool) error {
+	var list, choice string
+	for _, k := range slices.Sorted(maps.Keys(seen)) {
+		switch {
+		case strings.HasPrefix(k, mediaList):
+			list = strings.TrimPrefix(k, mediaList)
+		case strings.HasPrefix(k, mediaChoice):
+			choice = strings.TrimPrefix(k, mediaChoice)
+		}
+	}
+	switch {
+	case list != "" && choice == "":
+		return fmt.Errorf("%s: the body lists several media types, but the envelope has no string field tagged header:\"Content-Type\" to choose the one each response sends", list)
+	case choice != "" && list == "":
+		return fmt.Errorf("%s: header \"Content-Type\" %s; it chooses among the media types a raw body field lists (body:\"image/png|application/pdf\"), and this envelope's body lists no more than one", choice, bodyHeader)
 	}
 	return nil
 }

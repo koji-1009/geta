@@ -403,6 +403,14 @@ func (c *compiledOp) document(lim *Limits, split map[string]bool) map[string]any
 		if p.desc != "" {
 			param["description"] = p.desc
 		}
+		if desc, ok := requiredDocs[p.name]; ok && p.joined && c.requiresIfMatch() {
+			// RequireConditional on a write: If-Match is required, and
+			// If-Unmodified-Since is never read beside it.
+			param["description"] = desc
+			if p.name == "If-Match" {
+				param["required"] = true
+			}
+		}
 		if p.use.Deprecated {
 			param["deprecated"] = true
 		}
@@ -544,13 +552,19 @@ func (c *compiledOp) responses() map[string]any {
 	// Conditional's Check: 412 on any method, 304 on GET (and HEAD), 428 when
 	// required.
 	if c.in.cond != nil {
-		if c.method == http.MethodGet {
+		switch {
+		case c.method == http.MethodGet:
 			add(http.StatusNotModified, "The representation has not changed")
 			add(http.StatusPreconditionFailed, "A precondition failed: If-Match, or If-Unmodified-Since")
-		} else {
+		case c.requiresIfMatch():
+			add(http.StatusPreconditionFailed, "A precondition failed: If-Match, or If-None-Match")
+		default:
 			add(http.StatusPreconditionFailed, "A precondition failed: If-Match, If-Unmodified-Since, or If-None-Match")
 		}
-		if c.in.required {
+		switch {
+		case c.requiresIfMatch():
+			add(http.StatusPreconditionRequired, `The request carries no If-Match listing the entity tag of the representation it was made against ("*" names none), which this operation requires (RFC 6585 section 3)`)
+		case c.in.required:
 			add(http.StatusPreconditionRequired, "The request carries no precondition, and this operation requires one")
 		}
 	} else if c.selecting {
@@ -840,7 +854,12 @@ func (c *compiledOp) success(status int) map[string]any {
 			r["content"] = map[string]any{"application/json": map[string]any{"schema": p.bodyUse.document(nil)}}
 		}
 		if p.raw != nil {
-			r["content"] = map[string]any{p.raw.mediaType: map[string]any{}}
+			// Every media type the handler may choose (rawOut.mediaType).
+			content := map[string]any{}
+			for _, mt := range p.raw.mediaTypes {
+				content[mt] = map[string]any{}
+			}
+			r["content"] = content
 		}
 		headers := map[string]any{}
 		for _, h := range p.headers {

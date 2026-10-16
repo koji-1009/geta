@@ -22,7 +22,10 @@
 //   - a form or multipart body field geta.New refuses (vet.CheckFormField):
 //     tags, names, types, geta.File fields and their schema tags.
 //   - an output envelope field geta.New refuses (vet.CheckEnvelopeField):
-//     header, cookie, body, and status fields, and embedded structs.
+//     header, cookie, body, and status fields, and embedded structs; and a
+//     raw body listing several media types without a Content-Type header
+//     field to choose one, or such a field without such a body
+//     (vet.CheckEnvelopeMedia).
 //   - a type geta.New derives no JSON form for, used as a body, parameter,
 //     header, stream event (geta.Stream), or geta.OnAsProblem result: an
 //     invalid component name, json tag options and pointers without
@@ -446,6 +449,7 @@ func (v *vetter) problem(call *ast.CallExpr, p types.Type) {
 		return
 	}
 	seen := map[string]bool{}
+	refused := false // a field is refused: geta.New stops there
 	var walk func(st *types.Struct)
 	walk = func(st *types.Struct) {
 		for i := range st.NumFields() {
@@ -453,6 +457,7 @@ func (v *vetter) problem(call *ast.CallExpr, p types.Type) {
 			vf := field(f, tag)
 			if err := vet.CheckEnvelopeField(vf, seen); err != nil {
 				v.report(call, f.Pos(), err.Error())
+				refused = true
 				continue
 			}
 			if vet.EnvelopeEmbedded(vf) {
@@ -461,6 +466,7 @@ func (v *vetter) problem(call *ast.CallExpr, p types.Type) {
 			}
 			if err := vet.CheckProblemField(vf); err != nil {
 				v.report(call, f.Pos(), err.Error())
+				refused = true
 				continue
 			}
 			if !f.Exported() {
@@ -481,6 +487,9 @@ func (v *vetter) problem(call *ast.CallExpr, p types.Type) {
 		}
 	}
 	walk(st)
+	if err := vet.CheckEnvelopeMedia(seen); err != nil && !refused {
+		v.report(call, call.Pos(), err.Error())
+	}
 }
 
 // problemMembers checks a problem's extension members by
@@ -735,6 +744,7 @@ func (v *vetter) output(call *ast.CallExpr, out types.Type) {
 		return
 	}
 	seen := map[string]bool{}
+	refused := false // a field is refused: geta.New stops there
 	var walk func(st *types.Struct)
 	walk = func(st *types.Struct) {
 		for i := range st.NumFields() {
@@ -742,6 +752,7 @@ func (v *vetter) output(call *ast.CallExpr, out types.Type) {
 			vf := field(f, tag)
 			if err := vet.CheckEnvelopeField(vf, seen); err != nil {
 				v.report(call, f.Pos(), err.Error())
+				refused = true
 			}
 			if vet.EnvelopeEmbedded(vf) {
 				walk(f.Type().Underlying().(*types.Struct))
@@ -763,6 +774,9 @@ func (v *vetter) output(call *ast.CallExpr, out types.Type) {
 		}
 	}
 	walk(st)
+	if err := vet.CheckEnvelopeMedia(seen); err != nil && !refused {
+		v.report(call, call.Pos(), err.Error())
+	}
 }
 
 // status checks a constant success status of a geta.Op or geta.OpNoBody

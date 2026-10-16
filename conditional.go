@@ -49,10 +49,35 @@ type Conditional struct {
 }
 
 // RequireConditional is [Conditional] for an operation that refuses an
-// unconditional request (RFC 6585 §3). Its Check answers 428 when the
-// request carries no precondition the method evaluates: If-Match,
-// If-None-Match, a valid If-Unmodified-Since, or, on a GET or HEAD, a valid
-// If-Modified-Since. The document lists 428 on the operation.
+// unconditional request (RFC 6585 §3): "By requiring requests to be
+// conditional, the server can assure that clients are working with the
+// correct copies". Its Check answers 428 when the request carries no
+// precondition that does so.
+//
+// On a method other than GET or HEAD, a write, that is If-Match listing one
+// or more entity tags: the tag of the representation the client is replacing
+// (RFC 9110 §13.1.1, "to prevent the 'lost update' problem"). Nothing else
+// stands for it:
+//   - If-Match "*" holds for any current representation, whichever copy the
+//     client worked on.
+//   - If-None-Match with a list of tags holds whenever the target's tag is
+//     another, a stale copy's included; with "*" it holds only for a target
+//     with no representation, which an If-Match always fails (§13.1.2).
+//   - If-Unmodified-Since is read only without If-Match (§13.2.2), is ignored
+//     where Check is given no modification date (§13.1.4), and names a
+//     second, within which two writes both hold: a date is a weak validator
+//     but where the server ensures otherwise (§8.8.2.2), and "lost update"
+//     avoidance takes a strong one (§8.8.1).
+//
+// The document states If-Match as a required header parameter there. A
+// write that creates its target has no tag to send, so it embeds
+// [Conditional] and calls [Conditional.CheckAbsent].
+//
+// On a GET or HEAD, any of If-Match, If-None-Match, a valid
+// If-Unmodified-Since, or a valid If-Modified-Since is one, and the four
+// stay optional in the document.
+//
+// The document lists 428 on the operation.
 type RequireConditional struct{ Conditional }
 
 var (
@@ -66,6 +91,13 @@ var conditionalDocs = map[string]string{
 	"If-None-Match":       `"*" or a list of one or more entity tags (RFC 9110 §13.1.2), compared weakly; a match answers 304 to a GET or HEAD and 412 otherwise`,
 	"If-Modified-Since":   "An HTTP-date (RFC 9110 §13.1.3), read on a GET or HEAD without If-None-Match; an unmodified representation answers 304. A value that is not one HTTP-date is ignored",
 	"If-Unmodified-Since": "An HTTP-date (RFC 9110 §13.1.4), read without If-Match; a representation modified since answers 412. A value that is not one HTTP-date is ignored",
+}
+
+// requiredDocs describes the parameters RequireConditional states otherwise
+// on a write, where If-Match is required.
+var requiredDocs = map[string]string{
+	"If-Match":            `A list of one or more entity tags (RFC 9110 §13.1.1), compared strongly: the tag of the representation the request was made against. Required: a request without one, or with "*", answers 428 (RFC 6585 §3); a failed match answers 412`,
+	"If-Unmodified-Since": "An HTTP-date (RFC 9110 §13.1.4). Not read: this operation requires If-Match, and If-Unmodified-Since is read only without it (RFC 9110 §13.2.2)",
 }
 
 // PreconditionError is returned by [Conditional.Check] when the request must
@@ -163,16 +195,35 @@ func (c *RequireConditional) CheckAbsent() error {
 	return c.Conditional.CheckAbsent()
 }
 
-// required returns a 428 if the request carries no precondition its method
-// evaluates.
+// required returns a 428 if the request carries no precondition that
+// RequireConditional takes for its method: on a write, If-Match listing
+// entity tags; on a GET or HEAD, any precondition it evaluates. An If-Match
+// that is neither "*" nor a list is left to check, which answers 400.
 func (c *Conditional) required() error {
-	_, unmodified := httpDate(c.IfUnmodifiedSince)
-	_, modifiedSince := httpDate(c.IfModifiedSince)
-	if c.IfMatch != nil || c.IfNoneMatch != nil || unmodified || modifiedSince && c.safe() {
+	refuse := func(detail string) error {
+		return &PreconditionError{status: http.StatusPreconditionRequired, field: "If-Match", detail: detail}
+	}
+	if !c.safe() {
+		switch {
+		case c.IfMatch == nil:
+			return refuse("is required: list the entity tag of the representation the request was made against")
+		case starred([]string{*c.IfMatch}):
+			return refuse(`is required to list the entity tag of the representation the request was made against; "*" names none`)
+		}
 		return nil
 	}
-	return &PreconditionError{status: http.StatusPreconditionRequired, field: "If-Match",
-		detail: "is required"}
+	_, unmodified := httpDate(c.IfUnmodifiedSince)
+	_, modifiedSince := httpDate(c.IfModifiedSince)
+	if c.IfMatch != nil || c.IfNoneMatch != nil || unmodified || modifiedSince {
+		return nil
+	}
+	return refuse("is required")
+}
+
+// requiresIfMatch reports whether c's input embeds RequireConditional and c
+// is a write, where If-Match is required (RequireConditional).
+func (c *compiledOp) requiresIfMatch() bool {
+	return c.in.required && c.method != http.MethodGet && c.method != http.MethodHead
 }
 
 // safe reports whether the request is a GET or HEAD. An unbound Conditional

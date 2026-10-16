@@ -145,8 +145,23 @@ func (c refusalCase) refusal(t *testing.T, check func(vet.Field) error) {
 func TestEnvelopeRefusalsAreCheckEnvelopeFields(t *testing.T) {
 	for _, c := range []refusalCase{
 		outCase[struct {
-			F string `header:"Content-Type"`
-		}]("Content-Type", ""),
+			F *string `header:"Content-Type"`
+		}]("Content-Type pointer", "string"),
+		outCase[struct {
+			F int `header:"Content-Type"`
+		}]("Content-Type int", "int"),
+		outCase[struct {
+			F string `header:"Content-Type" doc:"the type"`
+		}]("Content-Type doc", "string"),
+		outCase[struct {
+			F []byte `body:"image/png|image/png"`
+		}]("media type twice", ""),
+		outCase[struct {
+			F []byte `body:"image/png|image/*"`
+		}]("listed media range", ""),
+		outCase[struct {
+			F []byte `body:"image/png|application/json"`
+		}]("listed JSON", ""),
 		outCase[struct {
 			F string `header:"content-length"`
 		}]("Content-Length", ""),

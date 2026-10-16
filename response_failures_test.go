@@ -142,15 +142,20 @@ func TestARowBesideABeforeGateAnswerIsDocumentedWithBoth(t *testing.T) {
 	}
 }
 
-// RequireConditional.CheckAbsent evaluates a request that carries a
-// precondition as CheckAbsent does: If-None-Match: * holds, If-Match fails.
+// RequireConditional.CheckAbsent evaluates a request that carries the
+// precondition it requires as CheckAbsent does: If-Match fails. Built by
+// hand, it has no method and is a write, which requires If-Match listing
+// tags: If-None-Match: * alone, or If-Match: *, is a 428.
 func TestRequireConditionalCheckAbsentEvaluates(t *testing.T) {
-	if err := (&geta.RequireConditional{Conditional: geta.Conditional{IfNoneMatch: new("*")}}).CheckAbsent(); err != nil {
-		t.Fatal(err)
-	}
 	err := (&geta.RequireConditional{Conditional: geta.Conditional{IfMatch: new(`"a"`)}}).CheckAbsent()
 	if pe, ok := errors.AsType[*geta.PreconditionError](err); !ok || pe.Status() != http.StatusPreconditionFailed {
 		t.Fatal(err)
+	}
+	for _, c := range []geta.Conditional{{IfNoneMatch: new("*")}, {IfMatch: new("*")}} {
+		err := (&geta.RequireConditional{Conditional: c}).CheckAbsent()
+		if pe, ok := errors.AsType[*geta.PreconditionError](err); !ok || pe.Status() != http.StatusPreconditionRequired {
+			t.Fatal(err)
+		}
 	}
 }
 
