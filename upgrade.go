@@ -26,8 +26,9 @@ import (
 //   - Serve is for a protocol with no such library: geta writes the 101,
 //     with Header, and hands Serve the connection.
 //
-// Once the connection is switched, the request's [ConcurrencyLimit] slot is
-// freed and every [Timeout] deadline on its context is lifted.
+// The request's [ConcurrencyLimit] slot is freed before the 101 reaches the
+// client, and once the connection is switched every [Timeout] deadline on
+// its context is lifted.
 type Upgrade struct {
 	// Protocol is the Upgrade token the request must offer, such as
 	// websocket, compared without case; a request may add a version
@@ -153,6 +154,14 @@ type acceptWriter struct {
 
 func (a *acceptWriter) WriteHeader(code int) {
 	a.wrote = true
+	if code == http.StatusSwitchingProtocols {
+		// A library that writes the 101 before hijacking (coder/websocket)
+		// has it sent by the hijack, before Hijack returns. The slot is freed
+		// before the 101 reaches the client, which may send its next request
+		// as soon as it reads it; the 101 is final, so the request holds no
+		// HTTP exchange past it (RFC 9110 §15.2.2).
+		releaseSlot(a.ctx)
+	}
 	a.ResponseWriter.WriteHeader(code)
 }
 

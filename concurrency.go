@@ -18,8 +18,10 @@ func releaseSlot(ctx context.Context) {
 }
 
 // ConcurrencyLimit sheds requests past n in flight with 503. A shed request
-// takes no slot; a slot is freed when its handler returns, panics, or starts
-// a stream. The 503 carries no Retry-After. [New] refuses an n below 1.
+// takes no slot; a slot is freed when its handler returns, panics, starts a
+// stream, or switches protocols (once its 101 is written, before the 101
+// reaches the client). The 503 carries no Retry-After. [New] refuses an n
+// below 1.
 func ConcurrencyLimit(n int) Middleware {
 	var bad error
 	if n < 1 {
