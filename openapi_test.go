@@ -5,7 +5,9 @@ import (
 	"context"
 	"math/rand/v2"
 	"net/http"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/koji-1009/geta"
 )
@@ -23,17 +25,29 @@ type person struct {
 }
 
 type personIn struct {
+	geta.Conditional
 	ID   int64  `path:"id"`
 	Q    string `query:"id"` // a query parameter may share a path parameter's name
 	Body person `body:"json"`
+}
+
+// removeIn is idIn of a write.
+type removeIn struct {
+	geta.Conditional
+	ID int64 `path:"id"`
 }
 
 var errMissing = &lookupErr{}
 
 func richTable() geta.Table {
 	gate := geta.Secure(geta.Policy{Default: []geta.Scheme{geta.Bearer}, Verifiers: map[string]geta.Verifier{"bearer": admit}})
-	put := func(ctx context.Context, in *personIn) (*person, error) { return &in.Body, nil }
-	del := func(ctx context.Context, in *idIn) error { return nil }
+	put := func(ctx context.Context, in *personIn) (*person, error) {
+		if err := in.Check("", time.Time{}); err != nil {
+			return nil, err
+		}
+		return &in.Body, nil
+	}
+	del := func(ctx context.Context, in *removeIn) error { return in.Check("", time.Time{}) }
 	return geta.Table{
 		Root: geta.Scope{gate},
 		Routes: []geta.Entry{
@@ -58,7 +72,14 @@ func TestDocumentShape(t *testing.T) {
 		t.Fatal(m["openapi"])
 	}
 	put := at(t, m, "paths", "/people/{id}", "put")
-	if got := compact(t, at(t, put, "parameters")); got != `[{"in":"path","name":"id","required":true,"schema":{"format":"int64","type":"integer"}},{"in":"query","name":"id","required":true,"schema":{"maxLength":4096,"type":"string"}}]` {
+	// The embedded geta.Conditional's four header parameters come first.
+	const header = `"required":false,"schema":{"pattern":"^(?:[^\\x00-\\x20\\x7F](?:[^\\x00-\\x08\\x0A-\\x1F\\x7F]*[^\\x00-\\x20\\x7F])?)?$","type":"string"}}`
+	wantParams := `[{"description":"\"*\" or a list of one or more entity tags (RFC 9110 §13.1.1), compared strongly; a failed match answers 412","in":"header","name":"If-Match",` + header +
+		`,{"description":"\"*\" or a list of one or more entity tags (RFC 9110 §13.1.2), compared weakly; a match answers 304 to a GET or HEAD and 412 otherwise","in":"header","name":"If-None-Match",` + header +
+		`,{"description":"An HTTP-date (RFC 9110 §13.1.3), read on a GET or HEAD without If-None-Match; an unmodified representation answers 304. A value that is not one HTTP-date is ignored","in":"header","name":"If-Modified-Since",` + header +
+		`,{"description":"An HTTP-date (RFC 9110 §13.1.4), read without If-Match; a representation modified since answers 412. A value that is not one HTTP-date is ignored","in":"header","name":"If-Unmodified-Since",` + header +
+		`,{"in":"path","name":"id","required":true,"schema":{"format":"int64","type":"integer"}},{"in":"query","name":"id","required":true,"schema":{"maxLength":4096,"type":"string"}}]`
+	if got := compact(t, at(t, put, "parameters")); got != wantParams {
 		t.Fatal(got)
 	}
 	// person is read and written, and its request schema states backstops
@@ -78,7 +99,7 @@ func TestDocumentShape(t *testing.T) {
 		"400": "The request does not match its contract",
 		"401": "Unauthenticated",
 		"404": "no such person; Not Found",
-		"412": "A precondition failed: If-Match other than *, or If-None-Match: *; the operation declares no validator (its input does not embed geta.Conditional)",
+		"412": "A precondition failed: If-Match, If-Unmodified-Since, or If-None-Match",
 		"413": "The request body is larger than 1048576 bytes (Limits.MaxBodyBytes)",
 		"415": "The request has content of a media type the operation does not take, or no Content-Type, or content in a content coding (Content-Encoding)",
 		"500": "A defect in the server, such as an error no failure row matches, output that cannot be encoded, or a panic",
@@ -111,10 +132,20 @@ func TestDocumentShape(t *testing.T) {
 	if _, has := at(t, health, "responses").(map[string]any)["401"]; has {
 		t.Fatal("a public operation lists the gate's 401")
 	}
-	for _, k := range []string{"summary", "description", "tags", "parameters", "requestBody"} {
+	for _, k := range []string{"summary", "description", "tags", "requestBody"} {
 		if _, has := health.(map[string]any)[k]; has {
 			t.Errorf("undeclared %s present", k)
 		}
+	}
+	// A read that embeds no geta.Conditional still has its preconditions
+	// evaluated, after the handler, so its parameters are If-Match and
+	// If-None-Match alone.
+	var names []string
+	for _, p := range at(t, health, "parameters").([]any) {
+		names = append(names, p.(map[string]any)["name"].(string))
+	}
+	if strings.Join(names, ",") != "If-Match,If-None-Match" {
+		t.Errorf("health parameters: %v", names)
 	}
 
 	weird := at(t, m, "paths", "/weird", "get", "responses")
@@ -160,6 +191,7 @@ type flag struct {
 }
 
 type flagIn struct {
+	geta.Conditional
 	Body flag `body:"json"`
 }
 
@@ -169,6 +201,7 @@ type note struct {
 }
 
 type noteIn struct {
+	geta.Conditional
 	Body note `body:"json"`
 }
 
@@ -237,6 +270,7 @@ func TestReservedProblemSchemaName(t *testing.T) {
 	// Read by two operations under different limits, it is refused too,
 	// without the document's limits check meeting it.
 	type in struct {
+		geta.Conditional
 		Body GetaProblem `body:"json"`
 	}
 	h := func(context.Context, *in) (*ok, error) { return nil, nil }

@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/koji-1009/geta"
 	"github.com/koji-1009/geta/getatest"
@@ -27,6 +28,7 @@ type metaItem struct {
 }
 
 type metaIn struct {
+	geta.Conditional
 	Limit int      `query:"limit" doc:"How many to return" schema:"minimum=1,maximum=100,default=20,examples=10|50"`
 	Sort  string   `query:"sort" schema:"enum=asc|desc,default=asc,deprecated=true"`
 	Trace *string  `header:"X-Trace" doc:"A trace id" schema:"examples=abc"`
@@ -47,6 +49,7 @@ type metaEcho struct {
 }
 
 type metaFormIn struct {
+	geta.Conditional
 	Body struct {
 		Size int    `form:"size" doc:"The size" schema:"default=3,maximum=9"`
 		Tag  string `form:"tag"`
@@ -60,9 +63,15 @@ type metaFormOut struct {
 
 func metaTable() geta.Table {
 	h := func(_ context.Context, in *metaIn) (*metaOut, error) {
+		if err := in.Check("", time.Time{}); err != nil {
+			return nil, err
+		}
 		return &metaOut{Count: 1, Body: metaEcho{Limit: in.Limit, Sort: in.Sort, Lang: in.Lang, Item: in.Body}}, nil
 	}
 	form := func(_ context.Context, in *metaFormIn) (*metaFormOut, error) {
+		if err := in.Check("", time.Time{}); err != nil {
+			return nil, err
+		}
 		return &metaFormOut{Size: in.Body.Size, Tag: in.Body.Tag}, nil
 	}
 	return geta.Table{Routes: []geta.Entry{
@@ -186,9 +195,11 @@ func TestDefaultAndExampleMistakesAreRefused(t *testing.T) {
 		N *int `json:"n,omitzero" schema:"default=3"`
 	}
 	type pointerMemberIn struct {
+		geta.Conditional
 		Body pointerMember `body:"json"`
 	}
 	type bodyDefault struct {
+		geta.Conditional
 		Body string `body:"json" schema:"default=x"`
 	}
 	type belowMinimum struct {

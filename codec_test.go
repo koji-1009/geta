@@ -269,8 +269,12 @@ func TestNamedEmbeddedFieldsAreMembers(t *testing.T) {
 			return &memberNamed{memberItem: memberItem{7}}, nil
 		}, geta.Doc{}),
 		Post: geta.Op(http.StatusOK, func(_ context.Context, in *struct {
+			geta.Conditional
 			Body memberNamed `body:"json"`
 		}) (*ok, error) {
+			if err := in.Check("", time.Time{}); err != nil {
+				return nil, err
+			}
 			got = in.Body
 			return &ok{true}, nil
 		}, geta.Doc{}),

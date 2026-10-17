@@ -24,6 +24,7 @@ type Body struct {
 }
 
 type In struct {
+	geta.Conditional
 	Body Body `+"`body:\"json\"`"+`
 }
 
@@ -43,9 +44,11 @@ type Holder struct {
 	S 形 `+"`json:\"s\"`"+`
 }
 
+func write[In, Result any](context.Context, *In) (*Result, error) { return nil, nil }
+
 func Build() (*geta.App, error) {
 	return geta.New(geta.Table{Routes: []geta.Entry{
-		{Path: "/x", Route: geta.Route{Put: geta.Op(http.StatusOK, func(context.Context, *In) (*Body, error) { return nil, nil }, geta.Doc{})}},
+		{Path: "/x", Route: geta.Route{Put: geta.Op(http.StatusOK, write[In, Body], geta.Doc{})}},
 		{Path: "/y", Route: geta.Route{Get: geta.Op(http.StatusOK, func(context.Context, *ByID) (*Dot, error) { return nil, nil }, geta.Doc{})}},
 		{Path: "/s", Route: geta.Route{Get: geta.Op(http.StatusOK, func(context.Context, *struct{}) (*Holder, error) { return nil, nil }, geta.Doc{})}},
 	}}, geta.WithUnion(geta.Sealed[形]("kind", geta.Case[Dot]("dot"))))

@@ -85,7 +85,7 @@ func TestAMethodRewriteOfARedirectStaysARedirect(t *testing.T) {
 		})
 	})
 	tbl := withRoot(one("/x", geta.Route{Get: geta.Op(http.StatusOK, okHandler, geta.Doc{}),
-		Post: geta.Op(http.StatusOK, okHandler, geta.Doc{Deprecated: true, Deprecation: dep})}), toPost, geta.Timeout(time.Second))
+		Post: geta.Op(http.StatusOK, writeHandler, geta.Doc{Deprecated: true, Deprecation: dep})}), toPost, geta.Timeout(time.Second))
 	a := accepts(t, tbl)
 	if r := do(t, a, "GET", "/./x"); r.Code != 308 || r.Header().Get("Location") != "/x" || r.Header().Get("Deprecation") != "" {
 		t.Fatal(r.Code, r.Header())
@@ -145,7 +145,7 @@ func TestARootRewriteKeepsTheDeadlinesBounds(t *testing.T) {
 // with the Timeout ends its connection after the window.
 func TestAnOperationWithoutATimeoutSetsNoDeadlineAfterItsAnswer(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		post := geta.Route{Post: geta.Op(http.StatusOK, func(context.Context, *dlJSONIn) (*ok, error) { return &ok{true}, nil }, geta.Doc{})}
+		post := geta.Route{Post: geta.Op(http.StatusOK, checkedOK[dlJSONIn], geta.Doc{})}
 		tbl := withRoot(geta.Table{Routes: []geta.Entry{
 			{Path: "/t", Route: post, Scopes: []geta.Scope{{geta.Timeout(drWindow)}}},
 			{Path: "/n", Route: post},
@@ -223,7 +223,10 @@ func TestAHijackAfterAnAnswerClearsItsReadDeadline(t *testing.T) {
 // the window arrives.
 func TestAStreamAfterABodyLiftsItsReadDeadlines(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		late := func(ctx context.Context, _ *dlJSONIn) (*geta.Stream[change], error) {
+		late := func(ctx context.Context, in *dlJSONIn) (*geta.Stream[change], error) {
+			if err := in.Check("", time.Time{}); err != nil {
+				return nil, err
+			}
 			return &geta.Stream[change]{Events: func(yield func(change) bool) {
 				time.Sleep(3 * drWindow)
 				yield(change{"late", "1"})

@@ -18,24 +18,37 @@ type methodBodyForm struct {
 	Name string `form:"name"`
 }
 
+// The inputs embed geta.Conditional, which POST, PUT, and PATCH require.
 type methodBodyJSON struct {
+	geta.Conditional
 	Body methodBodyItem `body:"json"`
 }
 
 type methodBodyOptional struct {
+	geta.Conditional
 	Body *methodBodyItem `body:"json"`
 }
 
 type methodBodyFormIn struct {
+	geta.Conditional
 	Body methodBodyForm `body:"form"`
 }
 
 type methodBodyMultipart struct {
+	geta.Conditional
 	Body methodBodyForm `body:"multipart"`
 }
 
 type methodBodyRaw struct {
+	geta.Conditional
 	Body []byte `body:"text/csv"`
+}
+
+// methodBodyParams is parameters alone, which a DELETE (a write) takes with
+// geta.Conditional.
+type methodBodyParams struct {
+	geta.Conditional
+	Q string `query:"q"`
 }
 
 type methodBodyEmbedded struct{ methodBodyJSON }
@@ -78,7 +91,7 @@ func TestABodyOnGetOrDeleteIsRefused(t *testing.T) {
 		})
 	}
 	// Parameters alone are what a GET and a DELETE take.
-	if _, err := geta.New(one("/x", geta.Route{Get: methodBodyOp[queryIn](), Delete: methodBodyOp[queryIn]()})); err != nil {
+	if _, err := geta.New(one("/x", geta.Route{Get: methodBodyOp[queryIn](), Delete: methodBodyOp[methodBodyParams]()})); err != nil {
 		t.Fatal(err)
 	}
 	if err := vet.CheckMethodBody(http.MethodHead); err == nil {

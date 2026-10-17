@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/koji-1009/geta"
 )
@@ -118,16 +119,20 @@ func TestPathValuesAfterARootRewriteAreTheServedOperations(t *testing.T) {
 	}) (*ok, error) {
 		return &ok{true}, nil
 	}, geta.Doc{})}
-	x := func(context.Context, *struct {
+	x := func(_ context.Context, in *struct {
+		geta.Conditional
 		X string `path:"x"`
 	}) (*ok, error) {
+		if err := in.Check("", time.Time{}); err != nil {
+			return nil, err
+		}
 		return &ok{true}, nil
 	}
 	app, err := geta.New(geta.Table{Root: geta.Scope{rewrite, methodOverride}, Routes: []geta.Entry{
 		{Path: "/alias/{other}", Route: other},
 		{Path: "/users/{id}", Route: get(idHandler), Scopes: []geta.Scope{{look}}},
 		{Path: "/plain", Route: get(okHandler), Scopes: []geta.Scope{{look}}},
-		{Path: "/a/b", Route: geta.Route{Put: geta.Op(http.StatusOK, okHandler, geta.Doc{})}, Scopes: []geta.Scope{{look}}},
+		{Path: "/a/b", Route: geta.Route{Put: geta.Op(http.StatusOK, writeHandler, geta.Doc{})}, Scopes: []geta.Scope{{look}}},
 		{Path: "/a/{x}", Route: geta.Route{Post: geta.Op(http.StatusOK, x, geta.Doc{})}},
 	}})
 	if err != nil {
@@ -193,11 +198,20 @@ func TestEachAssemblyMistakeIsReportedOnce(t *testing.T) {
 	}) (*ok, error) {
 		return &ok{true}, nil
 	}
+	delName := func(_ context.Context, in *struct {
+		geta.Conditional
+		Name string `path:"name"`
+	}) (*ok, error) {
+		if err := in.Check("", time.Time{}); err != nil {
+			return nil, err
+		}
+		return &ok{true}, nil
+	}
 	_, err := geta.New(geta.Table{Routes: []geta.Entry{
 		{Path: "/u/{id}", Route: get(idHandler)},
 		{Path: "/u/{name}", Route: geta.Route{
 			Get:    geta.Op(http.StatusOK, name, geta.Doc{}),
-			Delete: geta.Op(http.StatusOK, name, geta.Doc{}),
+			Delete: geta.Op(http.StatusOK, delName, geta.Doc{}),
 		}},
 	}})
 	if err == nil || strings.Count(err.Error(), "differ only in parameter names") != 1 {
@@ -263,7 +277,7 @@ func TestNilAndZeroArgumentsAreRefused(t *testing.T) {
 		"nil option":  {geta.Table{}, []geta.Option{nil}, "option 0 is nil"},
 		"zero union":  {geta.Table{}, []geta.Option{geta.WithUnion(geta.Union{})}, "a zero geta.Union"},
 		"nil handler": {one("/x", geta.Route{Get: geta.Op(http.StatusOK, h, geta.Doc{})}), nil, "the handler is nil"},
-		"nil no-body": {one("/x", geta.Route{Delete: geta.OpNoBody[empty](http.StatusNoContent, nil, geta.Doc{})}), nil, "the handler is nil"},
+		"nil no-body": {one("/x", geta.Route{Delete: geta.OpNoBody[write](http.StatusNoContent, nil, geta.Doc{})}), nil, "the handler is nil"},
 	} {
 		if _, err := geta.New(c.tbl, c.opts...); err == nil || !strings.Contains(err.Error(), c.want) {
 			t.Errorf("%s: %v", name, err)

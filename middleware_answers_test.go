@@ -70,15 +70,15 @@ func TestMiddlewareAnswers304OnlyWhereItCanBe(t *testing.T) {
 		Routes: []geta.Entry{
 			{Path: "/x", Route: geta.Route{
 				Get:  geta.Op(http.StatusOK, okHandler, geta.Doc{}),
-				Post: geta.Op(http.StatusOK, okHandler, geta.Doc{}),
+				Post: geta.Op(http.StatusOK, writeHandler, geta.Doc{}),
 			}},
 			{Path: "/made", Route: geta.Route{Get: geta.Op(http.StatusCreated, okHandler, geta.Doc{})}},
 		},
 	})
 	m := doc(t, a)
-	// geta's own 304, to If-None-Match: * where no validator is declared, is
-	// listed after it.
-	if got := compact(t, at(t, m, "paths", "/x", "get", "responses", "304")); got != `{"description":"The cached representation is current; If-None-Match: *; the operation declares no validator (its input does not embed geta.Conditional)","headers":{"ETag":{"description":"The current entity tag","required":false,"schema":{"type":"string"}}}}` {
+	// geta's own 304, to If-None-Match against the validators the response
+	// carries, is listed after it.
+	if got := compact(t, at(t, m, "paths", "/x", "get", "responses", "304")); got != `{"description":"The cached representation is current; The representation has not changed: If-None-Match, against the validators the response carries (its input does not embed geta.Conditional)","headers":{"ETag":{"description":"The current entity tag","required":false,"schema":{"type":"string"}}}}` {
 		t.Error("GET 304:", got)
 	}
 	for _, where := range [][]string{{"/x", "post"}, {"/made", "get"}, {"/x", "options"}} {

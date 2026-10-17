@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/koji-1009/geta"
 	"github.com/koji-1009/geta/getatest"
@@ -50,12 +51,18 @@ type ownEvent struct {
 }
 
 type ownEventIn struct {
+	geta.Conditional
 	Body ownEvent `body:"json"`
 }
 
 func ownEventClient(t *testing.T) *getatest.Client {
 	t.Helper()
-	h := func(context.Context, *ownEventIn) (*empty, error) { return &empty{}, nil }
+	h := func(_ context.Context, in *ownEventIn) (*empty, error) {
+		if err := in.Check("", time.Time{}); err != nil {
+			return nil, err
+		}
+		return &empty{}, nil
+	}
 	return getatest.New(t, one("/x", geta.Route{Post: geta.Op(http.StatusOK, h, geta.Doc{})}),
 		geta.WithSchema[cents]("string", `pattern=^-?[0-9]+\.[0-9]+$`))
 }

@@ -24,21 +24,27 @@ type echoed struct {
 	Got string `json:"got"`
 }
 
+// echo answers GET alone: a write's input embeds geta.Conditional, which
+// echo's inputs do not.
 func echo[In any](path string) geta.Table {
 	h := func(ctx context.Context, in *In) (*echoed, error) {
 		b, err := json.Marshal(in)
 		return &echoed{Got: string(b)}, err
 	}
-	return one(path, geta.Route{
-		Get:  geta.Op(http.StatusOK, h, geta.Doc{}),
-		Post: geta.Op(http.StatusOK, h, geta.Doc{}),
-	})
+	return one(path, geta.Route{Get: geta.Op(http.StatusOK, h, geta.Doc{})})
 }
 
 // echoBody is echo for an input with a body, which a GET does not take: it
-// answers POST alone.
-func echoBody[In any](path string) geta.Table {
+// answers POST alone, its input embedding geta.Conditional, which the
+// handler checks.
+func echoBody[In any, P interface {
+	*In
+	Check(string, time.Time) error
+}](path string) geta.Table {
 	h := func(ctx context.Context, in *In) (*echoed, error) {
+		if err := P(in).Check("", time.Time{}); err != nil {
+			return nil, err
+		}
 		b, err := json.Marshal(in)
 		return &echoed{Got: string(b)}, err
 	}
@@ -167,8 +173,20 @@ type optionalBodyIn struct {
 	Body *item `body:"json"`
 }
 
+// writeBodyIn and writeOptionalBodyIn are bodyIn and optionalBodyIn as a
+// write's input: it embeds geta.Conditional.
+type writeBodyIn struct {
+	geta.Conditional
+	Body item `body:"json"`
+}
+
+type writeOptionalBodyIn struct {
+	geta.Conditional
+	Body *item `body:"json"`
+}
+
 func TestBodyBinding(t *testing.T) {
-	c := getatest.New(t, echoBody[bodyIn]("/x"))
+	c := getatest.New(t, echoBody[writeBodyIn]("/x"))
 	got(t, c.Post("/x", `{"name":"a","price":1}`))
 	same(t, violations(t, c.Post("/x", "")), "body $: missing required request body")
 	same(t, violations(t, c.Post("/x", `{"name":"","price":-1}`)),
@@ -184,17 +202,19 @@ func TestBodyBinding(t *testing.T) {
 		t.Fatal(res.Status, res.Text())
 	}
 
-	o := getatest.New(t, echoBody[optionalBodyIn]("/x"))
-	if g := got(t, o.Post("/x", "")); g != `{"Body":null}` {
+	o := getatest.New(t, echoBody[writeOptionalBodyIn]("/x"))
+	if g := got(t, o.Post("/x", "")); g != `{"IfMatch":null,"IfNoneMatch":null,"IfModifiedSince":null,"IfUnmodifiedSince":null,"Body":null}` {
 		t.Fatalf("%s", g)
 	}
 }
 
 type vendorBodyIn struct {
+	geta.Conditional
 	Body item `body:"json" mediatype:"application/vnd.x+json"`
 }
 
 type plainPatchIn struct {
+	geta.Conditional
 	Body item `body:"json" mediatype:"application/json"`
 }
 
@@ -203,12 +223,12 @@ type plainPatchIn struct {
 // mediatype tag declares. Another is a 415 naming it, and the document's
 // content key is it.
 func TestABodyTakesItsOneMediaType(t *testing.T) {
-	patch := func(h func(context.Context, *bodyIn) (*item, error)) geta.Route {
+	patch := func(h func(context.Context, *writeBodyIn) (*item, error)) geta.Route {
 		return geta.Route{Patch: geta.Op(http.StatusOK, h, geta.Doc{})}
 	}
-	echo := func(_ context.Context, in *bodyIn) (*item, error) { return &in.Body, nil }
-	vendor := func(_ context.Context, in *vendorBodyIn) (*item, error) { return &in.Body, nil }
-	plain := func(_ context.Context, in *plainPatchIn) (*item, error) { return &in.Body, nil }
+	echo := func(_ context.Context, in *writeBodyIn) (*item, error) { return &in.Body, in.Check("", time.Time{}) }
+	vendor := func(_ context.Context, in *vendorBodyIn) (*item, error) { return &in.Body, in.Check("", time.Time{}) }
+	plain := func(_ context.Context, in *plainPatchIn) (*item, error) { return &in.Body, in.Check("", time.Time{}) }
 	tbl := geta.Table{Routes: []geta.Entry{
 		{Path: "/p", Route: patch(echo)},
 		{Path: "/v", Route: geta.Route{Post: geta.Op(http.StatusOK, vendor, geta.Doc{})}},
@@ -273,7 +293,7 @@ func TestMediaTypeTagMistakes(t *testing.T) {
 func TestBodyLimitIs413AtTheExactBoundary(t *testing.T) {
 	limits := geta.DefaultLimits
 	limits.MaxBodyBytes = 64
-	app, err := geta.New(echoBody[bodyIn]("/x"), geta.WithLimits(limits))
+	app, err := geta.New(echoBody[writeBodyIn]("/x"), geta.WithLimits(limits))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -293,12 +313,14 @@ func TestBodyLimitIs413AtTheExactBoundary(t *testing.T) {
 }
 
 type limitFormIn struct {
+	geta.Conditional
 	Body struct {
 		Name string `form:"name"`
 	} `body:"form"`
 }
 
 type limitRawIn struct {
+	geta.Conditional
 	Body []byte `body:"text/plain"`
 }
 
@@ -308,9 +330,9 @@ func TestBodyLimitHoldsAtTheBoundForEveryBody(t *testing.T) {
 	limits := geta.DefaultLimits
 	limits.MaxBodyBytes = 64
 	tbl := geta.Table{Routes: []geta.Entry{
-		{Path: "/j", Route: post(func(context.Context, *bodyIn) (*ok, error) { return &ok{true}, nil })},
-		{Path: "/f", Route: post(func(context.Context, *limitFormIn) (*ok, error) { return &ok{true}, nil })},
-		{Path: "/r", Route: post(func(context.Context, *limitRawIn) (*ok, error) { return &ok{true}, nil })},
+		{Path: "/j", Route: post(checkedOK[writeBodyIn])},
+		{Path: "/f", Route: post(checkedOK[limitFormIn])},
+		{Path: "/r", Route: post(checkedOK[limitRawIn])},
 	}}
 	app, err := geta.New(tbl, geta.WithLimits(limits))
 	if err != nil {
@@ -347,7 +369,7 @@ func TestBodyLimitHoldsAtTheBoundForEveryBody(t *testing.T) {
 // A Limits built field by field leaves the caps it does not name zero; New
 // refuses each rather than serve an app that refuses every body.
 func TestWithLimitsRefusesAZeroCap(t *testing.T) {
-	_, err := geta.New(echoBody[bodyIn]("/x"), geta.WithLimits(geta.Limits{MaxBodyBytes: 64 << 10}))
+	_, err := geta.New(echoBody[writeBodyIn]("/x"), geta.WithLimits(geta.Limits{MaxBodyBytes: 64 << 10}))
 	if err == nil {
 		t.Fatal("New accepted Limits with zero caps")
 	}
@@ -361,12 +383,12 @@ func TestWithLimitsRefusesAZeroCap(t *testing.T) {
 	}
 	lim := geta.DefaultLimits
 	lim.MaxBodyBytes = -1
-	if _, err := geta.New(echoBody[bodyIn]("/x"), geta.WithLimits(lim)); err == nil || !strings.Contains(err.Error(), "MaxBodyBytes is -1") {
+	if _, err := geta.New(echoBody[writeBodyIn]("/x"), geta.WithLimits(lim)); err == nil || !strings.Contains(err.Error(), "MaxBodyBytes is -1") {
 		t.Errorf("%v", err)
 	}
 	lim = geta.DefaultLimits
 	lim.MaxMultipartMemory, lim.MaxResponseBuffer = 0, 0
-	if _, err := geta.New(echoBody[bodyIn]("/x"), geta.WithLimits(lim)); err != nil {
+	if _, err := geta.New(echoBody[writeBodyIn]("/x"), geta.WithLimits(lim)); err != nil {
 		t.Error(err)
 	}
 }
@@ -381,7 +403,10 @@ type created struct {
 }
 
 func TestEnvelope(t *testing.T) {
-	h := func(ctx context.Context, _ *empty) (*created, error) {
+	h := func(ctx context.Context, in *write) (*created, error) {
+		if err := in.Check("", time.Time{}); err != nil {
+			return nil, err
+		}
 		sid := &http.Cookie{Value: "abc", Path: "/", HttpOnly: true, SameSite: http.SameSiteLaxMode, MaxAge: 3600}
 		return &created{Location: "/items/1", Session: sid, Body: item{Name: "a", Price: 1}}, nil
 	}
@@ -413,7 +438,12 @@ func TestInvalidCookieIsADefect(t *testing.T) {
 		{Value: "v", Partitioned: true},
 		{Name: "other", Value: "v"},
 	} {
-		h := func(ctx context.Context, _ *empty) (*out, error) { return &out{C: ck}, nil }
+		h := func(ctx context.Context, in *write) (*out, error) {
+			if err := in.Check("", time.Time{}); err != nil {
+				return nil, err
+			}
+			return &out{C: ck}, nil
+		}
 		res := getatest.New(t, one("/x", geta.Route{Post: geta.Op(http.StatusNoContent, h, geta.Doc{})})).Post("/x", nil)
 		if res.Status != 500 || res.Header.Get("Set-Cookie") != "" {
 			t.Errorf("%+v: %d %q", ck, res.Status, res.Header.Values("Set-Cookie"))
@@ -437,7 +467,10 @@ func TestCookieAttributesRender(t *testing.T) {
 		C *http.Cookie `cookie:"sid"`
 	}
 	exp := time.Date(2021, 6, 9, 10, 18, 14, 0, time.UTC)
-	h := func(ctx context.Context, _ *empty) (*out, error) {
+	h := func(ctx context.Context, in *write) (*out, error) {
+		if err := in.Check("", time.Time{}); err != nil {
+			return nil, err
+		}
 		return &out{C: &http.Cookie{Name: "sid", Value: "abc", MaxAge: 3600, Expires: exp, Domain: "example.com",
 			Path: "/app", Secure: true, HttpOnly: true, SameSite: http.SameSiteStrictMode}}, nil
 	}

@@ -8,20 +8,24 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/koji-1009/geta"
 	"github.com/koji-1009/geta/getatest"
 )
 
 type csvIn struct {
+	geta.Conditional
 	Body []byte `body:"text/csv" doc:"rows to import"`
 }
 
 type maybeCSVIn struct {
+	geta.Conditional
 	Body *[]byte `body:"text/csv"`
 }
 
 type blobIn struct {
+	geta.Conditional
 	ID   string    `path:"id"`
 	Body io.Reader `body:"application/octet-stream"`
 }
@@ -70,9 +74,15 @@ func rawTable(closed *bool, pdf func() io.Reader) geta.Table {
 	return geta.Table{Routes: []geta.Entry{
 		{Path: "/import", Route: geta.Route{
 			Post: geta.Op(http.StatusOK, func(_ context.Context, in *csvIn) (*counted, error) {
+				if err := in.Check("", time.Time{}); err != nil {
+					return nil, err
+				}
 				return &counted{len(in.Body)}, nil
 			}, geta.Doc{}),
 			Put: geta.Op(http.StatusOK, func(_ context.Context, in *maybeCSVIn) (*counted, error) {
+				if err := in.Check("", time.Time{}); err != nil {
+					return nil, err
+				}
 				if in.Body == nil {
 					return &counted{-1}, nil
 				}
@@ -82,6 +92,9 @@ func rawTable(closed *bool, pdf func() io.Reader) geta.Table {
 		{Path: "/blobs/{id}", Route: geta.Route{Put: geta.Op(http.StatusOK, func(_ context.Context, in *blobIn) (*counted, error) {
 			b, err := io.ReadAll(in.Body)
 			if err != nil {
+				return nil, err
+			}
+			if err := in.Check("", time.Time{}); err != nil {
 				return nil, err
 			}
 			return &counted{len(b)}, nil
@@ -278,7 +291,7 @@ func TestRawBodyMistakesAreRefused(t *testing.T) {
 	rejects(t, one("/x", get(func(context.Context, *empty) (*streamOut, error) { return nil, nil })), `is an event stream; return a *geta.Stream`)
 	rejects(t, one("/x", get(func(context.Context, *empty) (*pointerOut, error) { return nil, nil })), `the body field is a pointer`)
 	rejects(t, one("/x", get(func(context.Context, *empty) (*stringOut, error) { return nil, nil })), `a body:"text/plain" field has type string, not []byte or io.Reader`)
-	rejects(t, one("/x", geta.Route{Delete: geta.Op(http.StatusNoContent, func(context.Context, *empty) (*pdfOut, error) { return nil, nil }, geta.Doc{})}),
+	rejects(t, one("/x", geta.Route{Delete: geta.Op(http.StatusNoContent, func(context.Context, *write) (*pdfOut, error) { return nil, nil }, geta.Doc{})}),
 		"success status 204 takes no body")
 }
 

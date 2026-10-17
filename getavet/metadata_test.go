@@ -33,10 +33,12 @@ type PointerMember struct {
 }
 
 type PointerMemberIn struct {
+	geta.Conditional
 	Body PointerMember `+"`body:\"json\"`"+`
 }
 
 type BodyDefault struct {
+	geta.Conditional
 	Body string `+"`body:\"json\" schema:\"default=x\"`"+`
 }
 
@@ -66,6 +68,7 @@ type CookieDoc struct {
 }
 
 type Sound struct {
+	geta.Conditional
 	Paging
 	Sort string `+"`query:\"sort\" schema:\"enum=asc|desc,default=asc,deprecated=true,examples=desc\"`"+`
 	Body Out    `+"`body:\"json\" doc:\"the body\"`"+`
@@ -76,18 +79,20 @@ type SoundOut struct {
 	Body Out `+"`body:\"json\"`"+`
 }
 
+func write[In, Result any](context.Context, *In) (*Result, error) { return nil, nil }
+
 func Build() (*geta.App, error) {
 	return geta.New(geta.Table{Routes: []geta.Entry{
 		{Path: "/a", Route: geta.Route{Get: geta.Op(http.StatusOK, func(context.Context, *PointerParam) (*Out, error) { return nil, nil }, geta.Doc{})}},
 		{Path: "/b/{id}", Route: geta.Route{Get: geta.Op(http.StatusOK, func(context.Context, *PathParam) (*Out, error) { return nil, nil }, geta.Doc{})}},
-		{Path: "/c", Route: geta.Route{Post: geta.Op(http.StatusOK, func(context.Context, *PointerMemberIn) (*Out, error) { return nil, nil }, geta.Doc{})}},
-		{Path: "/d", Route: geta.Route{Post: geta.Op(http.StatusOK, func(context.Context, *BodyDefault) (*Out, error) { return nil, nil }, geta.Doc{})}},
+		{Path: "/c", Route: geta.Route{Post: geta.Op(http.StatusOK, write[PointerMemberIn, Out], geta.Doc{})}},
+		{Path: "/d", Route: geta.Route{Post: geta.Op(http.StatusOK, write[BodyDefault, Out], geta.Doc{})}},
 		{Path: "/e", Route: geta.Route{Get: geta.Op(http.StatusOK, func(context.Context, *BelowMinimum) (*Out, error) { return nil, nil }, geta.Doc{})}},
 		{Path: "/f", Route: geta.Route{Get: geta.Op(http.StatusOK, func(context.Context, *NotCarried) (*Out, error) { return nil, nil }, geta.Doc{})}},
 		{Path: "/g", Route: geta.Route{Get: geta.Op(http.StatusOK, func(context.Context, *struct{}) (*NullDefault, error) { return nil, nil }, geta.Doc{})}},
 		{Path: "/h", Route: geta.Route{Get: geta.Op(http.StatusOK, func(context.Context, *EmbeddedDoc) (*Out, error) { return nil, nil }, geta.Doc{})}},
 		{Path: "/i", Route: geta.Route{Get: geta.Op(http.StatusOK, func(context.Context, *struct{}) (*CookieDoc, error) { return nil, nil }, geta.Doc{})}},
-		{Path: "/j", Route: geta.Route{Post: geta.Op(http.StatusOK, func(context.Context, *Sound) (*SoundOut, error) { return nil, nil }, geta.Doc{})}},
+		{Path: "/j", Route: geta.Route{Post: geta.Op(http.StatusOK, write[Sound, SoundOut], geta.Doc{})}},
 	}})
 }
 `)

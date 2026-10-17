@@ -36,7 +36,7 @@ func TestAMiddlewaresProblemBesideARowOfTheSameReason(t *testing.T) {
 func TestPathsSharingAnOptionsIDAreRefused(t *testing.T) {
 	rejects(t, geta.Table{Routes: []geta.Entry{
 		{Path: "/aB", Route: get(okHandler)},
-		{Path: "/a/b", Route: geta.Route{Post: geta.Op(http.StatusOK, okHandler, geta.Doc{})}},
+		{Path: "/a/b", Route: geta.Route{Post: geta.Op(http.StatusOK, writeHandler, geta.Doc{})}},
 	}}, `operationId "optionsAB"`)
 }
 
@@ -55,6 +55,7 @@ type reportBody struct {
 }
 
 type reportIn struct {
+	geta.Conditional
 	Body reportBody `body:"json"`
 }
 
@@ -64,7 +65,12 @@ type reportCondIn struct{ geta.Conditional }
 // Accept-Encoding, and a Conditional 304's ETag.
 func TestCORSExposesGetasOwnHeaders(t *testing.T) {
 	a := accepts(t, withRoot(geta.Table{Routes: []geta.Entry{
-		{Path: "/p", Route: geta.Route{Post: geta.Op(http.StatusOK, func(context.Context, *reportIn) (*ok, error) { return &ok{true}, nil }, geta.Doc{})}},
+		{Path: "/p", Route: geta.Route{Post: geta.Op(http.StatusOK, func(_ context.Context, in *reportIn) (*ok, error) {
+			if err := in.Check("", time.Time{}); err != nil {
+				return nil, err
+			}
+			return &ok{true}, nil
+		}, geta.Doc{})}},
 		{Path: "/c", Route: get(func(_ context.Context, in *reportCondIn) (*ok, error) {
 			if err := in.Check(`"v"`, time.Time{}); err != nil {
 				return nil, err

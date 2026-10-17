@@ -696,9 +696,10 @@
             "description": "The representation has not changed",
             "headers": {
               "ETag": {
-                "description": "The entity tag given to Conditional.Check, when one was",
+                "description": "The entity tag the 200 would carry, when it carries one",
                 "required": false,
                 "schema": {
+                  "pattern": "^(?:[^\\x00-\\x20\\x7F](?:[^\\x00-\\x08\\x0A-\\x1F\\x7F]*[^\\x00-\\x20\\x7F])?)?$",
                   "type": "string"
                 }
               },
@@ -1408,11 +1409,22 @@
             }
           },
           {
-            "description": "\"*\" or a list of one or more entity tags (RFC 9110 §13.1.2), compared weakly; a match answers 304 to a GET or HEAD and 412 otherwise, read by geta.ETag",
+            "description": "\"*\" or a list of one or more entity tags (RFC 9110 §13.1.1), compared strongly with the ETag the response carries; a failed match answers 412. Evaluated once the handler has answered, and only on a 2xx: the handler's own answers, such as a 404, come first (§13.2.1)",
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "pattern": "^(?:[^\\x00-\\x20\\x7F](?:[^\\x00-\\x08\\x0A-\\x1F\\x7F]*[^\\x00-\\x20\\x7F])?)?$",
+              "type": "string"
+            }
+          },
+          {
+            "description": "\"*\" or a list of one or more entity tags (RFC 9110 §13.1.2), compared weakly with the ETag the response carries; a match answers 304 in place of a 200 to a GET or HEAD, and 412 otherwise. Evaluated once the handler has answered, and only on a 2xx (§13.2.1)",
             "in": "header",
             "name": "If-None-Match",
             "required": false,
             "schema": {
+              "pattern": "^(?:[^\\x00-\\x20\\x7F](?:[^\\x00-\\x08\\x0A-\\x1F\\x7F]*[^\\x00-\\x20\\x7F])?)?$",
               "type": "string"
             }
           }
@@ -1501,7 +1513,7 @@
                 }
               }
             },
-            "description": "A precondition failed: If-Match, or If-Unmodified-Since, against the validators the response carries (its input does not embed geta.Conditional)",
+            "description": "A precondition failed: If-Match, against the validators the response carries (its input does not embed geta.Conditional)",
             "summary": "Precondition Failed"
           },
           "415": {
@@ -1706,11 +1718,22 @@
         "operationId": "getHealth",
         "parameters": [
           {
-            "description": "\"*\" or a list of one or more entity tags (RFC 9110 §13.1.2), compared weakly; a match answers 304 to a GET or HEAD and 412 otherwise, read by geta.ETag",
+            "description": "\"*\" or a list of one or more entity tags (RFC 9110 §13.1.1), compared strongly with the ETag the response carries; a failed match answers 412. Evaluated once the handler has answered, and only on a 2xx: the handler's own answers, such as a 404, come first (§13.2.1)",
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "pattern": "^(?:[^\\x00-\\x20\\x7F](?:[^\\x00-\\x08\\x0A-\\x1F\\x7F]*[^\\x00-\\x20\\x7F])?)?$",
+              "type": "string"
+            }
+          },
+          {
+            "description": "\"*\" or a list of one or more entity tags (RFC 9110 §13.1.2), compared weakly with the ETag the response carries; a match answers 304 in place of a 200 to a GET or HEAD, and 412 otherwise. Evaluated once the handler has answered, and only on a 2xx (§13.2.1)",
             "in": "header",
             "name": "If-None-Match",
             "required": false,
             "schema": {
+              "pattern": "^(?:[^\\x00-\\x20\\x7F](?:[^\\x00-\\x08\\x0A-\\x1F\\x7F]*[^\\x00-\\x20\\x7F])?)?$",
               "type": "string"
             }
           }
@@ -1768,7 +1791,7 @@
                 }
               }
             },
-            "description": "A precondition failed: If-Match, or If-Unmodified-Since, against the validators the response carries (its input does not embed geta.Conditional)",
+            "description": "A precondition failed: If-Match, against the validators the response carries (its input does not embed geta.Conditional)",
             "summary": "Precondition Failed"
           },
           "415": {
@@ -1958,11 +1981,22 @@
         "operationId": "getMe",
         "parameters": [
           {
-            "description": "\"*\" or a list of one or more entity tags (RFC 9110 §13.1.2), compared weakly; a match answers 304 to a GET or HEAD and 412 otherwise, read by geta.ETag",
+            "description": "\"*\" or a list of one or more entity tags (RFC 9110 §13.1.1), compared strongly with the ETag the response carries; a failed match answers 412. Evaluated once the handler has answered, and only on a 2xx: the handler's own answers, such as a 404, come first (§13.2.1)",
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "pattern": "^(?:[^\\x00-\\x20\\x7F](?:[^\\x00-\\x08\\x0A-\\x1F\\x7F]*[^\\x00-\\x20\\x7F])?)?$",
+              "type": "string"
+            }
+          },
+          {
+            "description": "\"*\" or a list of one or more entity tags (RFC 9110 §13.1.2), compared weakly with the ETag the response carries; a match answers 304 in place of a 200 to a GET or HEAD, and 412 otherwise. Evaluated once the handler has answered, and only on a 2xx (§13.2.1)",
             "in": "header",
             "name": "If-None-Match",
             "required": false,
             "schema": {
+              "pattern": "^(?:[^\\x00-\\x20\\x7F](?:[^\\x00-\\x08\\x0A-\\x1F\\x7F]*[^\\x00-\\x20\\x7F])?)?$",
               "type": "string"
             }
           }
@@ -2040,7 +2074,7 @@
                 }
               }
             },
-            "description": "A precondition failed: If-Match, or If-Unmodified-Since, against the validators the response carries (its input does not embed geta.Conditional)",
+            "description": "A precondition failed: If-Match, against the validators the response carries (its input does not embed geta.Conditional)",
             "summary": "Precondition Failed"
           },
           "415": {
@@ -2312,11 +2346,22 @@
             }
           },
           {
-            "description": "\"*\" or a list of one or more entity tags (RFC 9110 §13.1.2), compared weakly; a match answers 304 to a GET or HEAD and 412 otherwise, read by geta.ETag",
+            "description": "\"*\" or a list of one or more entity tags (RFC 9110 §13.1.1), compared strongly with the ETag the response carries; a failed match answers 412. Evaluated once the handler has answered, and only on a 2xx: the handler's own answers, such as a 404, come first (§13.2.1)",
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "pattern": "^(?:[^\\x00-\\x20\\x7F](?:[^\\x00-\\x08\\x0A-\\x1F\\x7F]*[^\\x00-\\x20\\x7F])?)?$",
+              "type": "string"
+            }
+          },
+          {
+            "description": "\"*\" or a list of one or more entity tags (RFC 9110 §13.1.2), compared weakly with the ETag the response carries; a match answers 304 in place of a 200 to a GET or HEAD, and 412 otherwise. Evaluated once the handler has answered, and only on a 2xx (§13.2.1)",
             "in": "header",
             "name": "If-None-Match",
             "required": false,
             "schema": {
+              "pattern": "^(?:[^\\x00-\\x20\\x7F](?:[^\\x00-\\x08\\x0A-\\x1F\\x7F]*[^\\x00-\\x20\\x7F])?)?$",
               "type": "string"
             }
           }
@@ -2394,7 +2439,7 @@
                 }
               }
             },
-            "description": "A precondition failed: If-Match, or If-Unmodified-Since, against the validators the response carries (its input does not embed geta.Conditional)",
+            "description": "A precondition failed: If-Match, against the validators the response carries (its input does not embed geta.Conditional)",
             "summary": "Precondition Failed"
           },
           "415": {
@@ -2623,7 +2668,7 @@
                 }
               }
             },
-            "description": "The request does not match its contract",
+            "description": "The request does not match its contract; The request carries If-Match, If-None-Match, If-Modified-Since, or If-Unmodified-Since, which this operation does not take (its input does not embed geta.Conditional)",
             "summary": "Bad Request"
           },
           "401": {
@@ -2676,17 +2721,6 @@
             },
             "description": "The request body did not arrive before the deadline",
             "summary": "Request Timeout"
-          },
-          "412": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/GetaProblem"
-                }
-              }
-            },
-            "description": "A precondition failed: If-Match other than *, or If-None-Match: *; the operation declares no validator (its input does not embed geta.Conditional)",
-            "summary": "Precondition Failed"
           },
           "413": {
             "content": {
@@ -2821,11 +2855,22 @@
             }
           },
           {
-            "description": "\"*\" or a list of one or more entity tags (RFC 9110 §13.1.2), compared weakly; a match answers 304 to a GET or HEAD and 412 otherwise, read by geta.ETag",
+            "description": "\"*\" or a list of one or more entity tags (RFC 9110 §13.1.1), compared strongly with the ETag the response carries; a failed match answers 412. Evaluated once the handler has answered, and only on a 2xx: the handler's own answers, such as a 404, come first (§13.2.1)",
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "pattern": "^(?:[^\\x00-\\x20\\x7F](?:[^\\x00-\\x08\\x0A-\\x1F\\x7F]*[^\\x00-\\x20\\x7F])?)?$",
+              "type": "string"
+            }
+          },
+          {
+            "description": "\"*\" or a list of one or more entity tags (RFC 9110 §13.1.2), compared weakly with the ETag the response carries; a match answers 304 in place of a 200 to a GET or HEAD, and 412 otherwise. Evaluated once the handler has answered, and only on a 2xx (§13.2.1)",
             "in": "header",
             "name": "If-None-Match",
             "required": false,
             "schema": {
+              "pattern": "^(?:[^\\x00-\\x20\\x7F](?:[^\\x00-\\x08\\x0A-\\x1F\\x7F]*[^\\x00-\\x20\\x7F])?)?$",
               "type": "string"
             }
           }
@@ -2914,7 +2959,7 @@
                 }
               }
             },
-            "description": "A precondition failed: If-Match, or If-Unmodified-Since, against the validators the response carries (its input does not embed geta.Conditional)",
+            "description": "A precondition failed: If-Match, against the validators the response carries (its input does not embed geta.Conditional)",
             "summary": "Precondition Failed"
           },
           "415": {
@@ -3137,11 +3182,22 @@
             }
           },
           {
-            "description": "\"*\" or a list of one or more entity tags (RFC 9110 §13.1.2), compared weakly; a match answers 304 to a GET or HEAD and 412 otherwise, read by geta.ETag",
+            "description": "\"*\" or a list of one or more entity tags (RFC 9110 §13.1.1), compared strongly with the ETag the response carries; a failed match answers 412. Evaluated once the handler has answered, and only on a 2xx: the handler's own answers, such as a 404, come first (§13.2.1)",
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "pattern": "^(?:[^\\x00-\\x20\\x7F](?:[^\\x00-\\x08\\x0A-\\x1F\\x7F]*[^\\x00-\\x20\\x7F])?)?$",
+              "type": "string"
+            }
+          },
+          {
+            "description": "\"*\" or a list of one or more entity tags (RFC 9110 §13.1.2), compared weakly with the ETag the response carries; a match answers 304 in place of a 200 to a GET or HEAD, and 412 otherwise. Evaluated once the handler has answered, and only on a 2xx (§13.2.1)",
             "in": "header",
             "name": "If-None-Match",
             "required": false,
             "schema": {
+              "pattern": "^(?:[^\\x00-\\x20\\x7F](?:[^\\x00-\\x08\\x0A-\\x1F\\x7F]*[^\\x00-\\x20\\x7F])?)?$",
               "type": "string"
             }
           }
@@ -3230,7 +3286,7 @@
                 }
               }
             },
-            "description": "A precondition failed: If-Match, or If-Unmodified-Since, against the validators the response carries (its input does not embed geta.Conditional)",
+            "description": "A precondition failed: If-Match, against the validators the response carries (its input does not embed geta.Conditional)",
             "summary": "Precondition Failed"
           },
           "415": {
@@ -3488,7 +3544,7 @@
                 }
               }
             },
-            "description": "The request does not match its contract",
+            "description": "The request does not match its contract; The request carries If-Match, If-None-Match, If-Modified-Since, or If-Unmodified-Since, which this operation does not take (its input does not embed geta.Conditional)",
             "summary": "Bad Request"
           },
           "401": {
@@ -3563,17 +3619,6 @@
             },
             "description": "the room is booked then (type /problems/overlap)",
             "summary": "Conflict"
-          },
-          "412": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/GetaProblem"
-                }
-              }
-            },
-            "description": "A precondition failed: If-Match other than *, or If-None-Match: *; the operation declares no validator (its input does not embed geta.Conditional)",
-            "summary": "Precondition Failed"
           },
           "413": {
             "content": {
@@ -3794,17 +3839,6 @@
             },
             "description": "room not found (type /problems/room-not-found)",
             "summary": "Not Found"
-          },
-          "412": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/GetaProblem"
-                }
-              }
-            },
-            "description": "A precondition failed: If-Match other than *; the operation declares no validator (its input does not embed geta.Conditional)",
-            "summary": "Precondition Failed"
           },
           "415": {
             "content": {

@@ -174,6 +174,7 @@ type Body struct {
 }
 
 type BodyIn struct {
+	geta.Conditional
 	B Body `+"`body:\"json\"`"+`
 }
 
@@ -186,10 +187,12 @@ type OutLong struct {
 	S string `+"`json:\"s\" schema:\"minLength=5000\"`"+`
 }
 
+func write[In any](context.Context, *In) (*struct{}, error) { return nil, nil }
+
 func Build() (*geta.App, error) {
 	return geta.New(geta.Table{Routes: []geta.Entry{
 		{Path: "/a", Route: geta.Route{Get: geta.Op(http.StatusOK, func(context.Context, *In) (*struct{}, error) { return nil, nil }, geta.Doc{})}},
-		{Path: "/b", Route: geta.Route{Post: geta.Op(http.StatusOK, func(context.Context, *BodyIn) (*struct{}, error) { return nil, nil }, geta.Doc{})}},
+		{Path: "/b", Route: geta.Route{Post: geta.Op(http.StatusOK, write[BodyIn], geta.Doc{})}},
 		{Path: "/c", Route: geta.Route{Get: geta.Op(http.StatusOK, func(context.Context, *struct{}) (*OutMatch, error) { return nil, nil }, geta.Doc{})}},
 		{Path: "/d", Route: geta.Route{Get: geta.Op(http.StatusOK, func(context.Context, *struct{}) (*OutLong, error) { return nil, nil }, geta.Doc{})}},
 	}})
@@ -240,10 +243,12 @@ type Short struct {
 }
 
 type MatchIn struct {
+	geta.Conditional
 	B Match `+"`body:\"json\"`"+`
 }
 
 type ShortIn struct {
+	geta.Conditional
 	B Short `+"`body:\"json\"`"+`
 }
 
@@ -256,12 +261,14 @@ type OutShort struct {
 	S string `+"`json:\"s\" schema:\"enum=a|bbbbbbbb\"`"+`
 }
 
+func write[In any](context.Context, *In) (*struct{}, error) { return nil, nil }
+
 func Build() (*geta.App, error) {
 	lim := geta.DefaultLimits
 	lim.MaxStringLength = 7
 	return geta.New(geta.Table{Routes: []geta.Entry{
-		{Path: "/a", Route: geta.Route{Post: geta.Op(http.StatusOK, func(context.Context, *MatchIn) (*struct{}, error) { return nil, nil }, geta.Doc{})}},
-		{Path: "/b", Route: geta.Route{Post: geta.Op(http.StatusOK, func(context.Context, *ShortIn) (*struct{}, error) { return nil, nil }, geta.Doc{})}},
+		{Path: "/a", Route: geta.Route{Post: geta.Op(http.StatusOK, write[MatchIn], geta.Doc{})}},
+		{Path: "/b", Route: geta.Route{Post: geta.Op(http.StatusOK, write[ShortIn], geta.Doc{})}},
 		{Path: "/c", Route: geta.Route{Get: geta.Op(http.StatusOK, func(context.Context, *struct{}) (*OutMatch, error) { return nil, nil }, geta.Doc{})}},
 		{Path: "/d", Route: geta.Route{Get: geta.Op(http.StatusOK, func(context.Context, *struct{}) (*OutShort, error) { return nil, nil }, geta.Doc{})}},
 	}}, geta.WithLimits(lim))

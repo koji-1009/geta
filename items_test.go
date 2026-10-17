@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/koji-1009/geta"
 	"github.com/koji-1009/geta/getatest"
@@ -35,10 +36,12 @@ type itMember struct {
 }
 
 type itBody struct {
+	geta.Conditional
 	Body itMember `body:"json"`
 }
 
 type itForm struct {
+	geta.Conditional
 	Body struct {
 		Days []int `form:"day" schema:"items.minimum=1,items.maximum=7"`
 	} `body:"form"`
@@ -52,8 +55,18 @@ func TestElementKeywordsHoldEachElement(t *testing.T) {
 	c := getatest.New(t, geta.Table{Routes: []geta.Entry{
 		{Path: "/q", Route: get(func(context.Context, *itQuery) (*ok, error) { return &ok{true}, nil })},
 		{Path: "/h", Route: get(func(context.Context, *itHeader) (*ok, error) { return &ok{true}, nil })},
-		{Path: "/b", Route: post(func(context.Context, *itBody) (*ok, error) { return &ok{true}, nil })},
-		{Path: "/f", Route: post(func(context.Context, *itForm) (*ok, error) { return &ok{true}, nil })},
+		{Path: "/b", Route: post(func(_ context.Context, in *itBody) (*ok, error) {
+			if err := in.Check("", time.Time{}); err != nil {
+				return nil, err
+			}
+			return &ok{true}, nil
+		})},
+		{Path: "/f", Route: post(func(_ context.Context, in *itForm) (*ok, error) {
+			if err := in.Check("", time.Time{}); err != nil {
+				return nil, err
+			}
+			return &ok{true}, nil
+		})},
 		{Path: "/o", Route: get(func(context.Context, *empty) (*itOut, error) { return &itOut{Tags: []string{"x"}}, nil })},
 	}})
 	if res := c.Get("/q?feature=dark&feature=wide&size=2&size=4"); res.Status != 200 {
@@ -153,6 +166,7 @@ type itStruct struct {
 }
 
 type itStructBody struct {
+	geta.Conditional
 	Body itStruct `body:"json"`
 }
 

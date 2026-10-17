@@ -14,6 +14,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 	"unicode/utf8"
 
 	"github.com/koji-1009/geta"
@@ -24,10 +25,12 @@ type fzJSONBody struct {
 }
 
 type fzJSONIn struct {
+	geta.Conditional
 	Body fzJSONBody `body:"json"`
 }
 
 type fzRawIn struct {
+	geta.Conditional
 	Body []byte `body:"text/csv"`
 }
 
@@ -40,6 +43,7 @@ type fzForm struct {
 }
 
 type fzFormIn struct {
+	geta.Conditional
 	Body fzForm `body:"form"`
 }
 
@@ -157,15 +161,34 @@ func refClip(s string, n int) string {
 func FuzzContentHeaders(f *testing.F) {
 	limits := geta.DefaultLimits
 	limits.MaxBodyBytes = 2048
-	jsonOp := geta.Op(http.StatusOK, func(context.Context, *fzJSONIn) (*ok, error) { return &ok{true}, nil }, geta.Doc{})
+	jsonOp := geta.Op(http.StatusOK, func(_ context.Context, in *fzJSONIn) (*ok, error) {
+		if err := in.Check("", time.Time{}); err != nil {
+			return nil, err
+		}
+		return &ok{true}, nil
+	}, geta.Doc{})
 	big := func(context.Context, *empty) (*fzBig, error) { return &fzBig{Text: strings.Repeat("x", 1500)}, nil }
+	bigWrite := func(_ context.Context, in *write) (*fzBig, error) {
+		if err := in.Check("", time.Time{}); err != nil {
+			return nil, err
+		}
+		return &fzBig{Text: strings.Repeat("x", 1500)}, nil
+	}
 	app, err := geta.New(withRoot(geta.Table{Routes: []geta.Entry{
 		{Path: "/j", Route: geta.Route{Post: jsonOp, Patch: jsonOp}},
 		{Path: "/r", Route: geta.Route{Post: geta.Op(http.StatusOK, func(_ context.Context, in *fzRawIn) (*fzRawOut, error) {
+			if err := in.Check("", time.Time{}); err != nil {
+				return nil, err
+			}
 			return &fzRawOut{Body: in.Body}, nil
 		}, geta.Doc{})}},
-		{Path: "/f", Route: geta.Route{Post: geta.Op(http.StatusOK, func(context.Context, *fzFormIn) (*ok, error) { return &ok{true}, nil }, geta.Doc{})}},
-		{Path: "/n", Route: geta.Route{Get: geta.Op(http.StatusOK, big, geta.Doc{}), Post: geta.Op(http.StatusOK, big, geta.Doc{})}},
+		{Path: "/f", Route: geta.Route{Post: geta.Op(http.StatusOK, func(_ context.Context, in *fzFormIn) (*ok, error) {
+			if err := in.Check("", time.Time{}); err != nil {
+				return nil, err
+			}
+			return &ok{true}, nil
+		}, geta.Doc{})}},
+		{Path: "/n", Route: geta.Route{Get: geta.Op(http.StatusOK, big, geta.Doc{}), Post: geta.Op(http.StatusOK, bigWrite, geta.Doc{})}},
 	}}, geta.Gzip()), geta.WithLimits(limits))
 	if err != nil {
 		f.Fatal(err)

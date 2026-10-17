@@ -63,6 +63,12 @@ type streamPlan[T any] struct {
 
 func (p *streamPlan[T]) status() int { return http.StatusOK }
 
+// notModified returns the header fields a 304 in place of the stream carries
+// (RFC 9110 §15.4.5): the Cache-Control write sends.
+func (p *streamPlan[T]) notModified() http.Header {
+	return http.Header{"Cache-Control": {"no-cache"}}
+}
+
 // eventCodec returns the event type's codec, for [App.Conforms].
 func (p *streamPlan[T]) eventCodec() *codec { return p.c }
 

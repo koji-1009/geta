@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 )
 
 // A segment whose percent-encoding cannot be decoded matches
@@ -17,7 +18,7 @@ func TestUndecodableSegmentMatchesNothing(t *testing.T) {
 		}) (*struct{}, error) {
 			return &struct{}{}, nil
 		}, Doc{})}},
-		{Path: "/users/x", Route: Route{Put: OpNoBody(http.StatusNoContent, func(context.Context, *struct{}) error { return nil }, Doc{})}},
+		{Path: "/users/x", Route: Route{Put: OpNoBody(http.StatusNoContent, func(_ context.Context, in *struct{ Conditional }) error { return in.Check("", time.Time{}) }, Doc{})}},
 	}})
 	if err != nil {
 		t.Fatal(err)

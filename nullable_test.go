@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/koji-1009/geta"
 	"github.com/koji-1009/geta/getatest"
@@ -27,6 +28,7 @@ type nullPatch struct {
 }
 
 type nullPatchIn struct {
+	geta.Conditional
 	Body nullPatch `body:"json"`
 }
 
@@ -53,6 +55,9 @@ func state[T any](n geta.Nullable[T]) string {
 
 func nullTable() geta.Table {
 	h := func(_ context.Context, in *nullPatchIn) (*nullSeen, error) {
+		if err := in.Check("", time.Time{}); err != nil {
+			return nil, err
+		}
 		b := in.Body
 		return &nullSeen{Nickname: state(b.Nickname), Age: state(b.Age), Friend: state(b.Friend), Echo: b}, nil
 	}
@@ -137,6 +142,7 @@ type nullShapes struct {
 }
 
 type nullShapesIn struct {
+	geta.Conditional
 	Body nullShapes `body:"json"`
 }
 
@@ -146,6 +152,9 @@ type nullShapesIn struct {
 func TestNullableSealedType(t *testing.T) {
 	var out *nullShapes
 	h := func(_ context.Context, in *nullShapesIn) (*nullShapes, error) {
+		if err := in.Check("", time.Time{}); err != nil {
+			return nil, err
+		}
 		if out != nil {
 			return out, nil
 		}
@@ -188,6 +197,7 @@ func TestNullableMistakesAreRefused(t *testing.T) {
 		N *geta.Nullable[int] `json:"n,omitzero"`
 	}
 	type pointerIn struct {
+		geta.Conditional
 		Body pointerMember `body:"json"`
 	}
 	rejects(t, one("/x", geta.Route{Post: geta.Op(http.StatusOK, func(context.Context, *pointerIn) (*ok, error) { return nil, nil }, geta.Doc{})}),

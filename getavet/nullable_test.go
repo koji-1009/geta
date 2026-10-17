@@ -26,6 +26,7 @@ type Pointer struct {
 }
 
 type PointerIn struct {
+	geta.Conditional
 	Body Pointer `+"`body:\"json\"`"+`
 }
 
@@ -47,16 +48,19 @@ type Sound struct {
 }
 
 type SoundIn struct {
+	geta.Conditional
 	Body Sound `+"`body:\"json\"`"+`
 }
 
+func write[In, Result any](context.Context, *In) (*Result, error) { return nil, nil }
+
 func Build() (*geta.App, error) {
 	return geta.New(geta.Table{Routes: []geta.Entry{
-		{Path: "/a", Route: geta.Route{Post: geta.Op(http.StatusOK, func(context.Context, *PointerIn) (*Out, error) { return nil, nil }, geta.Doc{})}},
+		{Path: "/a", Route: geta.Route{Post: geta.Op(http.StatusOK, write[PointerIn, Out], geta.Doc{})}},
 		{Path: "/b", Route: geta.Route{Get: geta.Op(http.StatusOK, func(context.Context, *struct{}) (*Nested, error) { return nil, nil }, geta.Doc{})}},
 		{Path: "/c", Route: geta.Route{Get: geta.Op(http.StatusOK, func(context.Context, *ParamIn) (*Out, error) { return nil, nil }, geta.Doc{})}},
 		{Path: "/d", Route: geta.Route{Get: geta.Op(http.StatusOK, func(context.Context, *struct{}) (*Keyword, error) { return nil, nil }, geta.Doc{})}},
-		{Path: "/e", Route: geta.Route{Post: geta.Op(http.StatusOK, func(context.Context, *SoundIn) (*Sound, error) { return nil, nil }, geta.Doc{})}},
+		{Path: "/e", Route: geta.Route{Post: geta.Op(http.StatusOK, write[SoundIn, Sound], geta.Doc{})}},
 	}})
 }
 `)

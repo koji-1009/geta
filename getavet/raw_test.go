@@ -23,31 +23,38 @@ type Out struct {
 }
 
 type RangeIn struct {
+	geta.Conditional
 	Body []byte `+"`body:\"image/*\"`"+`
 }
 
 type JSONIn struct {
+	geta.Conditional
 	Body []byte `+"`body:\"application/problem+json\"`"+`
 }
 
 type StringIn struct {
+	geta.Conditional
 	Body string `+"`body:\"text/plain\"`"+`
 }
 
 type SchemaIn struct {
+	geta.Conditional
 	Body []byte `+"`body:\"text/plain\" schema:\"maxLength=3\"`"+`
 }
 
 type CaseIn struct {
+	geta.Conditional
 	Body []byte `+"`body:\"Text/Plain\"`"+`
 }
 
 type SoundIn struct {
+	geta.Conditional
 	ID   string    `+"`path:\"id\"`"+`
 	Body io.Reader `+"`body:\"application/octet-stream\" doc:\"the blob\"`"+`
 }
 
 type MaybeIn struct {
+	geta.Conditional
 	Body *[]byte `+"`body:\"text/csv\"`"+`
 }
 

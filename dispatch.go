@@ -9,6 +9,7 @@ import (
 	"reflect"
 	"slices"
 	"strings"
+	"time"
 )
 
 // ServeHTTP matches the URL, then runs the root scope around the dispatch.
@@ -338,12 +339,7 @@ func (c *compiledOp) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if c.in.reads() {
 		r = boundBody(w, r)
 	}
-	var pre *PreconditionError
-	if c.in.cond == nil {
-		// No validators are declared: geta evaluates the preconditions.
-		pre = c.unvalidated(r)
-	}
-	be, tmp := c.in.bind(w, r, in.Elem(), c.limits, pre)
+	be, tmp := c.in.bind(w, r, in.Elem(), c.limits)
 	if be != nil {
 		closeUnread(w, r)
 		if be.err != nil {
@@ -359,7 +355,7 @@ func (c *compiledOp) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	out, err := c.op.call(r.Context(), in.Interface())
 	if err != nil {
-		c.fail(w, r, err)
+		c.fail(w, r, err, out)
 		return
 	}
 	if err := c.unchecked(in, out); err != nil {
@@ -368,18 +364,15 @@ func (c *compiledOp) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		c.writeDefect(w, r, "geta: a 2xx the preconditions did not let through", err)
 		return
 	}
+	if c.answering {
+		// The preconditions, against what the handler answered.
+		if c.answerSelected(w, r, out) {
+			return
+		}
+	}
 	if c.out.kind == outSpecial {
 		c.out.special.write(w, r, c.app, c, out)
 		return
-	}
-	if c.answering && (r.Method == http.MethodGet || r.Method == http.MethodHead) {
-		// The preconditions, against the validators the output answers.
-		status, etag, modified := c.out.validators(c.op.status, reflect.ValueOf(out).Elem())
-		if pe := selected(r, status, etag, modified); pe != nil {
-			c.out.close(out)
-			pe.write(w, r)
-			return
-		}
 	}
 	if err := c.out.write(w, c.op.status, out, c.limits.MaxResponseBuffer); err != nil {
 		if ce, ok := err.(*committedError); ok {
@@ -397,13 +390,51 @@ func (c *compiledOp) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// answerSelected evaluates the preconditions of r, to an operation whose input
+// does not embed Conditional and that geta.ETag does not tag, against out,
+// what its handler answered (selected). It answers the refusal and reports
+// true, or reports false to write out. A 304 carries the header fields the
+// 200 would (notModifiedHeaders).
+func (c *compiledOp) answerSelected(w http.ResponseWriter, r *http.Request, out any) bool {
+	status, etag, modified := c.op.status, "", time.Time{}
+	switch c.out.kind {
+	case outEnvelope:
+		status, etag, modified = c.out.validators(c.op.status, reflect.ValueOf(out).Elem())
+	case outSpecial:
+		status = 0
+		if sp, ok := c.out.special.(interface{ status() int }); ok {
+			status = sp.status()
+		}
+	}
+	pe := selected(r, status, etag, modified)
+	if pe == nil {
+		return false
+	}
+	c.out.close(out)
+	if pe.status == http.StatusNotModified {
+		h, err := c.notModifiedHeaders(out)
+		if err != nil {
+			c.writeDefect(w, r, "geta: output could not be written", err)
+			return true
+		}
+		pe.carry = h
+	}
+	pe.write(w, r)
+	return true
+}
+
 // fail turns a handler's error into a response: defects and context errors
 // first, then a [Conditional]'s verdict, then the failure table top to
-// bottom, then 500.
+// bottom, then 500. out is what the handler returned beside err, or nil: a
+// 304 from Check carries its header fields.
 //
 // context.Canceled whose request context ended by a [Timeout] deadline is a
 // 504, like DeadlineExceeded; any other Canceled is a client that went away.
-func (c *compiledOp) fail(w http.ResponseWriter, r *http.Request, err error) {
+func (c *compiledOp) fail(w http.ResponseWriter, r *http.Request, err error, out any) {
+	if out != nil {
+		// Unused but for a 304's header fields.
+		defer c.out.close(out)
+	}
 	switch {
 	case err == errNilOutput:
 		// A defect no row answers, a catch-all OnAs[error] included.
@@ -444,6 +475,23 @@ func (c *compiledOp) fail(w http.ResponseWriter, r *http.Request, err error) {
 	// a Conditional; anywhere else it is a 500 defect, whatever the rows.
 	if pe, ok := errors.AsType[*PreconditionError](err); ok {
 		if c.in.cond != nil && c.app.listed[c][pe.status] {
+			if pe.status == http.StatusNotModified {
+				if out == nil && c.needsOutput() {
+					c.writeDefect(w, r, "geta: a 304 without the header fields the 200 would carry", errNotModifiedOutput)
+					return
+				}
+				var h http.Header
+				if out != nil {
+					if h, err = c.notModifiedHeaders(out); err != nil {
+						c.writeDefect(w, r, "geta: output could not be written", err)
+						return
+					}
+				}
+				// pe may be wrapped and returned again: answer a copy.
+				answered := *pe
+				answered.carry = h
+				pe = &answered
+			}
 			pe.write(w, r)
 			return
 		}

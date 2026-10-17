@@ -11,6 +11,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 // keyCalls counts the calls encoding/json/v2 makes to a map key's methods:
@@ -192,6 +193,7 @@ func (k *jkTo) UnmarshalJSONFrom(dec *jsontext.Decoder) error {
 }
 
 type mapKeyIn[K ~string] struct {
+	Conditional
 	Body map[K]int `body:"json"`
 }
 
@@ -232,8 +234,13 @@ func mapKeyCase[K ~string](t *testing.T) {
 
 	fixed := map[K]int{"a": 1, "b": 2}
 	app, err := New(Table{Routes: []Entry{{Path: "/m", Route: Route{
-		Post: Op(http.StatusOK, func(_ context.Context, in *mapKeyIn[K]) (*map[K]int, error) { return &in.Body, nil }, Doc{}),
-		Get:  Op(http.StatusOK, func(context.Context, *struct{}) (*map[K]int, error) { return &fixed, nil }, Doc{}),
+		Post: Op(http.StatusOK, func(_ context.Context, in *mapKeyIn[K]) (*map[K]int, error) {
+			if err := in.Check("", time.Time{}); err != nil {
+				return nil, err
+			}
+			return &in.Body, nil
+		}, Doc{}),
+		Get: Op(http.StatusOK, func(context.Context, *struct{}) (*map[K]int, error) { return &fixed, nil }, Doc{}),
 	}}}})
 	if (err == nil) != wantAccepted {
 		t.Fatalf("v2 writes by text %v, reads by text %v, calls JSON methods %v; geta.New: %v",

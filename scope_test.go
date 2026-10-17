@@ -9,6 +9,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/koji-1009/geta"
 	"github.com/koji-1009/geta/getatest"
@@ -54,7 +55,16 @@ type scopeBody struct {
 }
 
 type scopeIn struct {
+	geta.Conditional
 	Body scopeBody `body:"json"`
+}
+
+// whoamiWrite is whoami for a write, which checks its preconditions first.
+func whoamiWrite(ctx context.Context, in *write) (*who, error) {
+	if err := in.Check("", time.Time{}); err != nil {
+		return nil, err
+	}
+	return whoami(ctx, nil)
 }
 
 // scopeTable is /items: an open read and a write whose doc carries scope.
@@ -63,6 +73,9 @@ func scopeTable(calls *atomic.Int64, scope geta.Scope, rows ...geta.Failure) get
 		calls.Add(1)
 		if in.Body.Name == "fail" {
 			return nil, errNotFound
+		}
+		if err := in.Check("", time.Time{}); err != nil {
+			return nil, err
 		}
 		return &ok{true}, nil
 	}
@@ -120,14 +133,13 @@ func TestOperationScopeRunsInnermostForItsMethodOnly(t *testing.T) {
 			})
 		})
 	}
-	write := func(context.Context, *empty) error { return nil }
 	tbl := geta.Table{
 		Root: geta.Scope{record("root")},
 		Routes: []geta.Entry{{
 			Path: "/items",
 			Route: geta.Route{
 				Get:    geta.Op(http.StatusOK, okHandler, geta.Doc{}),
-				Delete: geta.OpNoBody(http.StatusNoContent, write, geta.Doc{Scope: geta.Scope{record("op1"), record("op2")}}),
+				Delete: geta.OpNoBody(http.StatusNoContent, writeNoBody, geta.Doc{Scope: geta.Scope{record("op1"), record("op2")}}),
 			},
 			Scopes: []geta.Scope{{record("dir")}},
 		}},
@@ -188,7 +200,7 @@ func TestOperationScopeAnswersAreDocumentedOnItsOperation(t *testing.T) {
 func TestOperationScopeOrderIsChecked(t *testing.T) {
 	authn := geta.Ordered(geta.OrderAuthenticate, noop)
 	authz := geta.Ordered(geta.OrderAuthorize, noop)
-	write := func(context.Context, *empty) error { return nil }
+	write := writeNoBody
 	tbl := geta.Table{Routes: []geta.Entry{{
 		Path: "/items",
 		Route: geta.Route{
@@ -233,10 +245,10 @@ func TestSecureInAnOperationScope(t *testing.T) {
 		Routes: []geta.Entry{
 			{Path: "/items", Route: geta.Route{
 				Get:  geta.Op(http.StatusOK, okHandler, geta.Doc{}),
-				Post: geta.Op(http.StatusCreated, whoami, geta.Doc{Scope: geta.Scope{gate}}),
+				Post: geta.Op(http.StatusCreated, whoamiWrite, geta.Doc{Scope: geta.Scope{gate}}),
 			}},
 			{Path: "/keyed", Route: geta.Route{
-				Post: geta.Op(http.StatusCreated, whoami, geta.Doc{Security: []geta.Scheme{apiKey}, Scope: geta.Scope{gate}}),
+				Post: geta.Op(http.StatusCreated, whoamiWrite, geta.Doc{Security: []geta.Scheme{apiKey}, Scope: geta.Scope{gate}}),
 			}},
 		},
 	}
@@ -291,7 +303,7 @@ func TestOperationScopeGateCountsForItsOperationOnly(t *testing.T) {
 	declared := []geta.Scheme{geta.Bearer}
 	tbl := one("/items", geta.Route{
 		Get:  geta.Op(http.StatusOK, whoami, geta.Doc{Security: declared}),
-		Post: geta.Op(http.StatusCreated, whoami, geta.Doc{Security: declared, Scope: geta.Scope{gate}}),
+		Post: geta.Op(http.StatusCreated, whoamiWrite, geta.Doc{Security: declared, Scope: geta.Scope{gate}}),
 	})
 	rejects(t, tbl, "GET /items", "no geta.Secure gate")
 	tbl.Routes[0].Route.Get = geta.Op(http.StatusOK, whoami, geta.Doc{Security: declared, Scope: geta.Scope{gate}})

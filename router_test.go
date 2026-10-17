@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/koji-1009/geta"
 	"github.com/koji-1009/geta/getatest"
@@ -79,7 +80,7 @@ func TestLiteralBeforeParameterWithBacktracking(t *testing.T) {
 // and parameter branches that reach it.
 func TestMethodNotAllowedUnionsTheBranches(t *testing.T) {
 	c := getatest.New(t, geta.Table{Routes: []geta.Entry{
-		{Path: "/a/b", Route: geta.Route{Put: geta.OpNoBody(http.StatusNoContent, func(context.Context, *empty) error { return nil }, geta.Doc{})}},
+		{Path: "/a/b", Route: geta.Route{Put: geta.OpNoBody(http.StatusNoContent, writeNoBody, geta.Doc{})}},
 		{Path: "/a/{x}", Route: geta.Route{Get: geta.Op(http.StatusOK, func(ctx context.Context, in *struct {
 			X string `path:"x"`
 		}) (*ok, error) {
@@ -355,6 +356,116 @@ type rpY0Y1Y2 struct {
 	C string `path:"y2"`
 }
 
+// The inputs of a write embed geta.Conditional beside the same parameters.
+type wrpNone struct {
+	geta.Conditional
+	rpNone
+}
+type wrpX0 struct {
+	geta.Conditional
+	rpX0
+}
+type wrpY0 struct {
+	geta.Conditional
+	rpY0
+}
+type wrpX1 struct {
+	geta.Conditional
+	rpX1
+}
+type wrpY1 struct {
+	geta.Conditional
+	rpY1
+}
+type wrpX2 struct {
+	geta.Conditional
+	rpX2
+}
+type wrpY2 struct {
+	geta.Conditional
+	rpY2
+}
+type wrpX0X1 struct {
+	geta.Conditional
+	rpX0X1
+}
+type wrpX0Y1 struct {
+	geta.Conditional
+	rpX0Y1
+}
+type wrpY0X1 struct {
+	geta.Conditional
+	rpY0X1
+}
+type wrpY0Y1 struct {
+	geta.Conditional
+	rpY0Y1
+}
+type wrpX0X2 struct {
+	geta.Conditional
+	rpX0X2
+}
+type wrpX0Y2 struct {
+	geta.Conditional
+	rpX0Y2
+}
+type wrpY0X2 struct {
+	geta.Conditional
+	rpY0X2
+}
+type wrpY0Y2 struct {
+	geta.Conditional
+	rpY0Y2
+}
+type wrpX1X2 struct {
+	geta.Conditional
+	rpX1X2
+}
+type wrpX1Y2 struct {
+	geta.Conditional
+	rpX1Y2
+}
+type wrpY1X2 struct {
+	geta.Conditional
+	rpY1X2
+}
+type wrpY1Y2 struct {
+	geta.Conditional
+	rpY1Y2
+}
+type wrpX0X1X2 struct {
+	geta.Conditional
+	rpX0X1X2
+}
+type wrpX0X1Y2 struct {
+	geta.Conditional
+	rpX0X1Y2
+}
+type wrpX0Y1X2 struct {
+	geta.Conditional
+	rpX0Y1X2
+}
+type wrpX0Y1Y2 struct {
+	geta.Conditional
+	rpX0Y1Y2
+}
+type wrpY0X1X2 struct {
+	geta.Conditional
+	rpY0X1X2
+}
+type wrpY0X1Y2 struct {
+	geta.Conditional
+	rpY0X1Y2
+}
+type wrpY0Y1X2 struct {
+	geta.Conditional
+	rpY0Y1X2
+}
+type wrpY0Y1Y2 struct {
+	geta.Conditional
+	rpY0Y1Y2
+}
+
 func (rpNone) vals() []string   { return []string{} }
 func (p rpX0) vals() []string   { return []string{p.A} }
 func (p rpY0) vals() []string   { return []string{p.A} }
@@ -394,6 +505,23 @@ func echoOp[In pathVals](method, tmpl, id string, last *routeHit) geta.Operation
 	}, geta.Doc{OperationID: id})
 }
 
+// echoWrite is echoOp for a write, which checks its preconditions (there are
+// none to fail in these requests) before it answers.
+func echoWrite[In any, P interface {
+	*In
+	pathVals
+	Check(etag string, modified time.Time) error
+}](method, tmpl, id string, last *routeHit) geta.Operation {
+	return geta.Op(http.StatusOK, func(_ context.Context, in *In) (*routeHit, error) {
+		if err := P(in).Check("", time.Time{}); err != nil {
+			return nil, err
+		}
+		*last = routeHit{Method: method, Template: tmpl, Values: P(in).vals()}
+		h := *last
+		return &h, nil
+	}, geta.Doc{OperationID: id})
+}
+
 // echoOps builds echoOp for a template's parameter names, joined by commas.
 var echoOps = map[string]func(method, tmpl, id string, last *routeHit) geta.Operation{
 	"":   echoOp[rpNone],
@@ -403,6 +531,17 @@ var echoOps = map[string]func(method, tmpl, id string, last *routeHit) geta.Oper
 	"x1,x2": echoOp[rpX1X2], "x1,y2": echoOp[rpX1Y2], "y1,x2": echoOp[rpY1X2], "y1,y2": echoOp[rpY1Y2],
 	"x0,x1,x2": echoOp[rpX0X1X2], "x0,x1,y2": echoOp[rpX0X1Y2], "x0,y1,x2": echoOp[rpX0Y1X2], "x0,y1,y2": echoOp[rpX0Y1Y2],
 	"y0,x1,x2": echoOp[rpY0X1X2], "y0,x1,y2": echoOp[rpY0X1Y2], "y0,y1,x2": echoOp[rpY0Y1X2], "y0,y1,y2": echoOp[rpY0Y1Y2],
+}
+
+// echoWrites builds echoWrite for the same keys.
+var echoWrites = map[string]func(method, tmpl, id string, last *routeHit) geta.Operation{
+	"":   echoWrite[wrpNone],
+	"x0": echoWrite[wrpX0], "y0": echoWrite[wrpY0], "x1": echoWrite[wrpX1], "y1": echoWrite[wrpY1], "x2": echoWrite[wrpX2], "y2": echoWrite[wrpY2],
+	"x0,x1": echoWrite[wrpX0X1], "x0,y1": echoWrite[wrpX0Y1], "y0,x1": echoWrite[wrpY0X1], "y0,y1": echoWrite[wrpY0Y1],
+	"x0,x2": echoWrite[wrpX0X2], "x0,y2": echoWrite[wrpX0Y2], "y0,x2": echoWrite[wrpY0X2], "y0,y2": echoWrite[wrpY0Y2],
+	"x1,x2": echoWrite[wrpX1X2], "x1,y2": echoWrite[wrpX1Y2], "y1,x2": echoWrite[wrpY1X2], "y1,y2": echoWrite[wrpY1Y2],
+	"x0,x1,x2": echoWrite[wrpX0X1X2], "x0,x1,y2": echoWrite[wrpX0X1Y2], "x0,y1,x2": echoWrite[wrpX0Y1X2], "x0,y1,y2": echoWrite[wrpX0Y1Y2],
+	"y0,x1,x2": echoWrite[wrpY0X1X2], "y0,x1,y2": echoWrite[wrpY0X1Y2], "y0,y1,x2": echoWrite[wrpY0Y1X2], "y0,y1,y2": echoWrite[wrpY0Y1Y2],
 }
 
 // fuzzBytes hands out the fuzzer's bytes one at a time, then zeros.
@@ -679,9 +818,12 @@ func FuzzRouter(f *testing.F) {
 		var entries []geta.Entry
 		var desc []string
 		for i, tm := range tmpls {
-			mk := echoOps[strings.Join(tm.names, ",")]
 			var r geta.Route
 			for _, m := range tm.methods {
+				mk := echoOps[strings.Join(tm.names, ",")]
+				if m != http.MethodGet && m != geta.MethodQuery {
+					mk = echoWrites[strings.Join(tm.names, ",")]
+				}
 				op := mk(m, tm.path, fmt.Sprintf("op%d%s", i, m), &last)
 				switch m {
 				case http.MethodGet:

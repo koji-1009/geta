@@ -10,6 +10,7 @@ func TestANamedByteSliceIsAnArray(t *testing.T) {
 import (
 	"context"
 	"net/http"
+	"time"
 
 	"github.com/koji-1009/geta"
 )
@@ -26,12 +27,13 @@ type Body struct {
 }
 
 type In struct {
+	geta.Conditional
 	Body Body `+"`body:\"json\"`"+`
 }
 
 func Build() (*geta.App, error) {
 	return geta.New(geta.Table{Routes: []geta.Entry{{Path: "/x", Route: geta.Route{
-		Post: geta.Op(http.StatusOK, func(context.Context, *In) (*Out, error) { return nil, nil }, geta.Doc{}),
+		Post: geta.Op(http.StatusOK, func(_ context.Context, in *In) (*Out, error) { return nil, in.Check("", time.Time{}) }, geta.Doc{}),
 	}}}})
 }
 `)
@@ -46,6 +48,7 @@ func TestTheNameProblemIsRefused(t *testing.T) {
 import (
 	"context"
 	"net/http"
+	"time"
 
 	"github.com/koji-1009/geta"
 )
@@ -59,12 +62,13 @@ type GetaProblem struct {
 }
 
 type In struct {
+	geta.Conditional
 	Body GetaProblem `+"`body:\"json\"`"+`
 }
 
 func Build() (*geta.App, error) {
 	return geta.New(geta.Table{Routes: []geta.Entry{{Path: "/x", Route: geta.Route{
-		Post: geta.Op(http.StatusOK, func(context.Context, *In) (*Out, error) { return nil, nil }, geta.Doc{}),
+		Post: geta.Op(http.StatusOK, func(_ context.Context, in *In) (*Out, error) { return nil, in.Check("", time.Time{}) }, geta.Doc{}),
 	}}}})
 }
 `)

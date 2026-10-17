@@ -53,10 +53,8 @@ func newRawPlan(f reflect.StructField, mt string, index []int) *rawPlan {
 // bind reads the body into dst. A content coding or another media type is a
 // 415, and an empty body is no body. A body past MaxBodyBytes is a 413: here
 // for a []byte, and for an io.Reader when the handler reads past the limit
-// (Read returns *http.MaxBytesError, which fail answers 413). A failed
-// precondition pre, when not nil, is returned before the rest is read, as
-// for a JSON body.
-func (p *rawPlan) bind(w http.ResponseWriter, r *http.Request, dst reflect.Value, limits Limits, pre *PreconditionError) *bindError {
+// (Read returns *http.MaxBytesError, which fail answers 413).
+func (p *rawPlan) bind(w http.ResponseWriter, r *http.Request, dst reflect.Value, limits Limits) *bindError {
 	// Judge a declared body before reading any of it, so a client waiting
 	// for 100 Continue gets its answer without sending the body.
 	n := declaredLength(r)
@@ -82,9 +80,6 @@ func (p *rawPlan) bind(w http.ResponseWriter, r *http.Request, dst reflect.Value
 		if be := p.judge(w, r); be != nil {
 			return be
 		}
-	}
-	if pre != nil {
-		return pre.refusal()
 	}
 	if p.reader {
 		dst.Set(reflect.ValueOf(&readerBody{br}))

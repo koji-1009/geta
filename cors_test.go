@@ -167,9 +167,10 @@ func TestCORSPreflightAllowsTheOperationsHeaders(t *testing.T) {
 		"If-Match", "If-None-Match", "If-Modified-Since", "If-Unmodified-Since", "Authorization")
 	sameHeaders(t, "HEAD /r", preflight(t, a, "https://a.example", "HEAD", "/r").Get("Access-Control-Allow-Headers"),
 		"If-Match", "If-None-Match", "If-Modified-Since", "If-Unmodified-Since", "Authorization")
-	// geta.ETag, in the root, reads If-None-Match on a GET.
-	sameHeaders(t, "GET /key", preflight(t, a, "https://a.example", "GET", "/key").Get("Access-Control-Allow-Headers"), "X-API-Key", "If-None-Match")
-	sameHeaders(t, "GET /open", preflight(t, a, "https://a.example", "GET", "/open").Get("Access-Control-Allow-Headers"), "If-None-Match")
+	// A GET reads If-Match and If-None-Match whether or not its input embeds
+	// geta.Conditional, and geta.ETag, in the root, reads If-None-Match.
+	sameHeaders(t, "GET /key", preflight(t, a, "https://a.example", "GET", "/key").Get("Access-Control-Allow-Headers"), "X-API-Key", "If-Match", "If-None-Match")
+	sameHeaders(t, "GET /open", preflight(t, a, "https://a.example", "GET", "/open").Get("Access-Control-Allow-Headers"), "If-Match", "If-None-Match")
 	// No operation: nothing derived.
 	sameHeaders(t, "DELETE /r", preflight(t, a, "https://a.example", "DELETE", "/r").Get("Access-Control-Allow-Headers"))
 	sameHeaders(t, "GET /nope", preflight(t, a, "https://a.example", "GET", "/nope").Get("Access-Control-Allow-Headers"))

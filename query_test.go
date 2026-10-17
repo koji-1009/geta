@@ -156,14 +156,15 @@ func TestQueryIsServedWithABody(t *testing.T) {
 		t.Fatal(rec.Code, rec.Header())
 	}
 
-	// A preflight clears QUERY on the path that serves it, with Content-Type,
-	// and the page reads Accept-Query from a 415.
+	// A preflight clears QUERY on the path that serves it, with Content-Type
+	// and the preconditions headers every QUERY takes, and the page reads
+	// Accept-Query from a 415.
 	req := httptest.NewRequest(http.MethodOptions, "/search", nil)
 	req.Header.Set("Origin", "https://page.example")
 	req.Header.Set("Access-Control-Request-Method", geta.MethodQuery)
 	rec := httptest.NewRecorder()
 	a.ServeHTTP(rec, req)
-	if rec.Header().Get("Access-Control-Allow-Methods") != "GET, QUERY" || rec.Header().Get("Access-Control-Allow-Headers") != "Content-Type" {
+	if rec.Header().Get("Access-Control-Allow-Methods") != "GET, QUERY" || rec.Header().Get("Access-Control-Allow-Headers") != "If-Match, If-None-Match, Content-Type" {
 		t.Fatal(rec.Header())
 	}
 	req = httptest.NewRequest(geta.MethodQuery, "/search", strings.NewReader("x"))

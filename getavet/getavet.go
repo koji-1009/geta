@@ -39,8 +39,9 @@
 //   - a body on an operation a geta.Route literal builds in place under Get
 //     or Delete (vet.CheckMethodBody).
 //   - an operation a geta.Route literal builds in place under Put, Patch,
-//     or Delete whose input embeds neither geta.Conditional nor
-//     geta.RequireConditional, beside a Get built in place whose input embeds
+//     or Delete whose input embeds none of geta.Conditional,
+//     geta.RequireConditional, and geta.RequireAbsent, and so takes no
+//     precondition, beside a Get built in place whose input embeds
 //     one or whose output has an ETag or Last-Modified header field
 //     (vet.CheckConditionalWrite).
 //   - an operation a geta.Route literal builds in place under Get or Query

@@ -30,6 +30,19 @@ func post[In, Out any](h func(context.Context, *In) (*Out, error)) geta.Route {
 	return geta.Route{Post: geta.Op(http.StatusOK, h, geta.Doc{})}
 }
 
+// checkedOK answers ok to a write whose input embeds geta.Conditional, once
+// its preconditions hold: a write's handler evaluates them (RFC 9110
+// §13.2.1), the target having no validators here.
+func checkedOK[In any, P interface {
+	*In
+	Check(string, time.Time) error
+}](_ context.Context, in *In) (*ok, error) {
+	if err := P(in).Check("", time.Time{}); err != nil {
+		return nil, err
+	}
+	return &ok{true}, nil
+}
+
 // An input is a struct: geta.New refuses any other, with CheckInputType's
 // text.
 func TestANonStructInputIsRefused(t *testing.T) {
@@ -147,10 +160,12 @@ type rqJSONBody struct {
 }
 
 type rqJSONIn struct {
+	geta.Conditional
 	Body rqJSONBody `body:"json"`
 }
 
 type rqOptJSONIn struct {
+	geta.Conditional
 	Body *rqJSONBody `body:"json"`
 }
 
@@ -161,8 +176,8 @@ type rqOptJSONIn struct {
 // standard base64.
 func TestJSONBodyContent(t *testing.T) {
 	c := getatest.New(t, geta.Table{Routes: []geta.Entry{
-		{Path: "/r", Route: post(func(context.Context, *rqJSONIn) (*ok, error) { return &ok{true}, nil })},
-		{Path: "/o", Route: post(func(context.Context, *rqOptJSONIn) (*ok, error) { return &ok{true}, nil })},
+		{Path: "/r", Route: post(checkedOK[rqJSONIn])},
+		{Path: "/o", Route: post(checkedOK[rqOptJSONIn])},
 	}})
 	for path, cases := range map[string]map[string]string{
 		"/r": {
@@ -201,6 +216,7 @@ func TestJSONBodyContent(t *testing.T) {
 }
 
 type rqReaderIn struct {
+	geta.Conditional
 	Body io.Reader `body:"text/csv"`
 }
 
@@ -220,15 +236,20 @@ func (b *rqBrokenBody) Read(p []byte) (int, error) {
 // for every encoding.
 func TestABodyThatCannotBeReadIs400(t *testing.T) {
 	app := accepts(t, geta.Table{Routes: []geta.Entry{
-		{Path: "/j", Route: post(func(context.Context, *rqJSONIn) (*ok, error) { return &ok{true}, nil })},
-		{Path: "/f", Route: post(func(context.Context, *rqLimitFormIn) (*ok, error) { return &ok{true}, nil })},
-		{Path: "/r", Route: post(func(context.Context, *rqRawOptIn) (*rqRawOut, error) { return &rqRawOut{}, nil })},
+		{Path: "/j", Route: post(checkedOK[rqJSONIn])},
+		{Path: "/f", Route: post(checkedOK[rqLimitFormIn])},
+		{Path: "/r", Route: post(func(_ context.Context, in *rqRawOptIn) (*rqRawOut, error) {
+			if err := in.Check("", time.Time{}); err != nil {
+				return nil, err
+			}
+			return &rqRawOut{}, nil
+		})},
 		// The handler returns the reader's error as its own, wrapped.
-		{Path: "/i", Route: post(func(_ context.Context, in *rqReaderIn) (*ok, error) {
+		{Path: "/i", Route: post(func(ctx context.Context, in *rqReaderIn) (*ok, error) {
 			if _, err := io.ReadAll(in.Body); err != nil {
 				return nil, fmt.Errorf("import: %w", err)
 			}
-			return &ok{true}, nil
+			return checkedOK(ctx, in)
 		})},
 	}})
 	for path, ct := range map[string]string{"/j": "application/json", "/f": "application/x-www-form-urlencoded", "/r": "text/csv", "/i": "text/csv"} {
@@ -274,16 +295,17 @@ type rqOwnBody struct {
 // before its UnmarshalJSON reads it.
 func TestDeclaredOwnJSONTypesAreChecked(t *testing.T) {
 	type numIn struct {
+		geta.Conditional
 		Body rqOwnBody `body:"json"`
 	}
-	c := getatest.New(t, one("/o", post(func(context.Context, *numIn) (*ok, error) { return &ok{true}, nil })),
+	c := getatest.New(t, one("/o", post(checkedOK[numIn])),
 		geta.WithSchema[rqOwnNum]("number", "maximum=10"), geta.WithSchema[rqOwnList]("array", "maxItems=2"))
 	if res := c.Post("/o", `{"n":1.5,"i":2,"l":[1,2]}`); res.Status != 200 {
 		t.Fatal(res.Status, res.Text())
 	}
 	same(t, violations(t, c.Post("/o", `{"n":1e400,"i":11,"l":[1,2,3]}`)),
 		"body $.n: 1e400 is greater than maximum 10", "body $.i: 11 is greater than maximum 10", "body $.l: array length 3 exceeds maxItems 2")
-	ci := getatest.New(t, one("/o", post(func(context.Context, *numIn) (*ok, error) { return &ok{true}, nil })),
+	ci := getatest.New(t, one("/o", post(checkedOK[numIn])),
 		geta.WithSchema[rqOwnNum]("integer", "minimum=0"), geta.WithSchema[rqOwnList]("array", "minItems=1"))
 	same(t, violations(t, ci.Post("/o", `{"n":1.5,"i":-1,"l":[]}`)),
 		"body $.n: expected integer, got number", "body $.i: -1 is less than minimum 0", "body $.l: array length 0 is shorter than minItems 1")
@@ -333,13 +355,14 @@ type rqUniqueBody struct {
 }
 
 type rqUniqueIn struct {
+	geta.Conditional
 	Body rqUniqueBody `body:"json"`
 }
 
 // uniqueItems compares booleans, strings, and nested arrays as JSON values,
 // numbers by value, and reports the first repeated pair.
 func TestUniqueItemsOfEveryKind(t *testing.T) {
-	c := getatest.New(t, one("/u", post(func(context.Context, *rqUniqueIn) (*ok, error) { return &ok{true}, nil })))
+	c := getatest.New(t, one("/u", post(checkedOK[rqUniqueIn])))
 	if res := c.Post("/u", `{"b":[true,false],"s":["a","A"],"n":[[1,2],[2,1],[1],[]],"m":[{"a":"x","raw":""},{"a":"x","raw":"AA=="}]}`); res.Status != 200 {
 		t.Fatal(res.Status, res.Text())
 	}
@@ -376,6 +399,7 @@ type rqFormCommon struct {
 }
 
 type rqFormEmbedIn struct {
+	geta.Conditional
 	Body struct {
 		rqFormCommon
 		Name string `form:"name"`
@@ -453,6 +477,9 @@ type rqFormOut struct {
 // refused.
 func TestFormFieldsEmbeddedAndRefused(t *testing.T) {
 	c := getatest.New(t, one("/f", post(func(_ context.Context, in *rqFormEmbedIn) (*rqFormOut, error) {
+		if err := in.Check("", time.Time{}); err != nil {
+			return nil, err
+		}
 		return &rqFormOut{Tag: in.Body.Tag, Size: in.Body.Size, Name: in.Body.Name}, nil
 	})))
 	res := c.Form(http.MethodPost, "/f", url.Values{"size": {"2"}, "name": {"n"}})
@@ -525,6 +552,7 @@ func TestCheckFormFieldBranches(t *testing.T) {
 }
 
 type rqFilesIn struct {
+	geta.Conditional
 	Body struct {
 		Files []geta.File  `form:"files"`
 		More  *[]geta.File `form:"more"`
@@ -560,6 +588,9 @@ func TestMultipartFilesAndTheirStore(t *testing.T) {
 	}
 	serve := func(limits geta.Limits) *getatest.Client {
 		app, err := geta.New(one("/m", post(func(_ context.Context, in *rqFilesIn) (*rqFilesOut, error) {
+			if err := in.Check("", time.Time{}); err != nil {
+				return nil, err
+			}
 			out := &rqFilesOut{Files: len(in.Body.Files), OnDisk: tmpEntries(dir)}
 			if in.Body.More != nil {
 				out.More = len(*in.Body.More)
@@ -611,10 +642,12 @@ func TestMultipartFilesAndTheirStore(t *testing.T) {
 }
 
 type rqRawOptIn struct {
+	geta.Conditional
 	Body *[]byte `body:"text/csv"`
 }
 
 type rqRawReaderIn struct {
+	geta.Conditional
 	Body io.Reader `body:"text/csv"`
 }
 
@@ -640,6 +673,9 @@ func TestRawBodyRules(t *testing.T) {
 	limits.MaxBodyBytes = 16
 	c := getatest.New(t, geta.Table{Routes: []geta.Entry{
 		{Path: "/opt", Route: post(func(_ context.Context, in *rqRawOptIn) (*rqRawOut, error) {
+			if err := in.Check("", time.Time{}); err != nil {
+				return nil, err
+			}
 			if in.Body == nil {
 				return &rqRawOut{Got: "<nil>"}, nil
 			}
@@ -650,9 +686,14 @@ func TestRawBodyRules(t *testing.T) {
 			if err != nil {
 				return nil, fmt.Errorf("reading the rows: %w", err)
 			}
+			if err := in.Check("", time.Time{}); err != nil {
+				return nil, err
+			}
 			return &rqRawOut{Got: string(b)}, nil
 		})},
-		{Path: "/multi", Route: post(func(context.Context, *rqFilesIn) (*rqFilesOut, error) { return &rqFilesOut{}, nil })},
+		{Path: "/multi", Route: post(func(_ context.Context, in *rqFilesIn) (*rqFilesOut, error) {
+			return &rqFilesOut{}, in.Check("", time.Time{})
+		})},
 	}}, geta.WithLimits(limits))
 	if res := c.Content(http.MethodPost, "/opt", "text/csv", []byte("a,b")); res.Status != 200 || res.JSON[rqRawOut]().Got != "a,b" {
 		t.Fatal(res.Status, res.Text())
@@ -688,16 +729,19 @@ type rqNested struct {
 }
 
 type rqDeepIn struct {
+	geta.Conditional
 	Body rqNested `body:"json"`
 }
 
 type rqLimitFormIn struct {
+	geta.Conditional
 	Body struct {
 		Name string `form:"name"`
 	} `body:"form"`
 }
 
 type rqLimitUploadIn struct {
+	geta.Conditional
 	Body struct {
 		F geta.File `form:"f"`
 	} `body:"multipart"`
@@ -715,13 +759,13 @@ func TestOperationLimitsHoldEveryBody(t *testing.T) {
 	}
 	onDisk := -1
 	c := getatest.New(t, geta.Table{Routes: []geta.Entry{
-		{Path: "/f", Route: geta.Route{Post: geta.Op(http.StatusOK, func(context.Context, *rqLimitFormIn) (*ok, error) { return &ok{true}, nil }, geta.Doc{Limits: own})}},
-		{Path: "/d", Route: geta.Route{Post: geta.Op(http.StatusOK, func(context.Context, *rqDeepIn) (*ok, error) { return &ok{true}, nil }, geta.Doc{Limits: own})}},
-		{Path: "/m", Route: geta.Route{Post: geta.Op(http.StatusOK, func(context.Context, *rqLimitUploadIn) (*ok, error) {
+		{Path: "/f", Route: geta.Route{Post: geta.Op(http.StatusOK, checkedOK[rqLimitFormIn], geta.Doc{Limits: own})}},
+		{Path: "/d", Route: geta.Route{Post: geta.Op(http.StatusOK, checkedOK[rqDeepIn], geta.Doc{Limits: own})}},
+		{Path: "/m", Route: geta.Route{Post: geta.Op(http.StatusOK, func(ctx context.Context, in *rqLimitUploadIn) (*ok, error) {
 			onDisk = tmpEntries(dir)
-			return &ok{true}, nil
+			return checkedOK(ctx, in)
 		}, geta.Doc{Limits: own})}},
-		{Path: "/app", Route: post(func(context.Context, *rqDeepIn) (*ok, error) { return &ok{true}, nil })},
+		{Path: "/app", Route: post(checkedOK[rqDeepIn])},
 	}})
 	same(t, violations(t, c.Form(http.MethodPost, "/f", url.Values{"name": {"abcd"}})),
 		"body $.name: string length 4 exceeds the ceiling of 3 code points")
@@ -776,6 +820,7 @@ type rqDefaultsBody struct {
 }
 
 type rqDefaultsIn struct {
+	geta.Conditional
 	Body rqDefaultsBody `body:"json"`
 }
 
@@ -785,9 +830,9 @@ type rqDefaultsIn struct {
 // variant, the discriminator first or late.
 func TestDefaultsAtAnyDepth(t *testing.T) {
 	var got rqDefaultsBody
-	c := getatest.New(t, one("/d", post(func(_ context.Context, in *rqDefaultsIn) (*ok, error) {
+	c := getatest.New(t, one("/d", post(func(ctx context.Context, in *rqDefaultsIn) (*ok, error) {
 		got = in.Body
-		return &ok{true}, nil
+		return checkedOK(ctx, in)
 	})), geta.WithUnion(rqVariants))
 	describe := func(e rqDefEl) string {
 		if e.B != nil {
@@ -852,15 +897,16 @@ type rqNullMapBody struct {
 }
 
 type rqNullMapIn struct {
+	geta.Conditional
 	Body rqNullMapBody `body:"json"`
 }
 
 // A Nullable may be a map value: null, or a value, each held as sent.
 func TestNullableMapValues(t *testing.T) {
 	var got rqNullMapBody
-	c := getatest.New(t, one("/n", post(func(_ context.Context, in *rqNullMapIn) (*ok, error) {
+	c := getatest.New(t, one("/n", post(func(ctx context.Context, in *rqNullMapIn) (*ok, error) {
 		got = in.Body
-		return &ok{true}, nil
+		return checkedOK(ctx, in)
 	})))
 	if res := c.Post("/n", `{"m":{"a":null,"b":1}}`); res.Status != 200 {
 		t.Fatal(res.Status, res.Text())

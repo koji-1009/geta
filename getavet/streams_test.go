@@ -135,6 +135,7 @@ type Person struct {
 }
 
 type In struct {
+	geta.Conditional
 	Body 利用者 `+"`body:\"json\"`"+`
 }
 
@@ -146,9 +147,11 @@ type Plain struct {
 	N int `+"`json:\"n\"`"+`
 }
 
+func write[In, Result any](context.Context, *In) (*Result, error) { return nil, nil }
+
 func Build() (*geta.App, error) {
 	return geta.New(geta.Table{Routes: []geta.Entry{
-		{Path: "/a", Route: geta.Route{Post: geta.Op(http.StatusOK, func(context.Context, *In) (*Plain, error) { return nil, nil }, geta.Doc{})}},
+		{Path: "/a", Route: geta.Route{Post: geta.Op(http.StatusOK, write[In, Plain], geta.Doc{})}},
 		{Path: "/b", Route: geta.Route{Get: geta.Op(http.StatusOK, func(context.Context, *struct{}) (*Person, error) { return nil, nil }, geta.Doc{})}},
 		{Path: "/c", Route: geta.Route{Get: geta.Op(http.StatusOK, func(context.Context, *struct{}) (*Box[struct{ N int `+"`json:\"n\"`"+` }], error) { return nil, nil }, geta.Doc{})}},
 		{Path: "/e", Route: geta.Route{Get: geta.Op(http.StatusOK, func(context.Context, *struct{}) (*Box[[]Plain], error) { return nil, nil }, geta.Doc{})}},

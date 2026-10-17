@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 	"unicode/utf8"
 	"uuid"
 )
@@ -167,6 +168,7 @@ type uuidMember struct {
 }
 
 type uuidParam struct {
+	Conditional
 	ID uuid.UUID `query:"id"`
 }
 
@@ -187,7 +189,12 @@ func TestABackstopNoUUIDFitsIsRefused(t *testing.T) {
 		t.Errorf("written only: %v", err)
 	}
 	short.MaxStringLength = 36
-	h := func(context.Context, *bodyOf[uuidMember]) (*struct{}, error) { return &struct{}{}, nil }
+	h := func(_ context.Context, in *bodyOf[uuidMember]) (*struct{}, error) {
+		if err := in.Check("", time.Time{}); err != nil {
+			return nil, err
+		}
+		return &struct{}{}, nil
+	}
 	app, err := New(Table{Routes: []Entry{{Path: "/x", Route: Route{Post: Op(http.StatusOK, h, Doc{})}}}}, WithLimits(short))
 	if err != nil {
 		t.Fatal(err)

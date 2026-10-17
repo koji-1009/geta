@@ -88,8 +88,9 @@ func Build() (*geta.App, error) {
 	}}, geta.WithOpenAPI(geta.OpenAPI32))
 }
 `)
-	tail := "but the input embeds neither geta.Conditional nor geta.RequireConditional, " +
-		"so geta would evaluate its preconditions against none; embed one and call Check with the current validators"
+	tail := "so a client may send its tag in If-Match, " +
+		"but the input embeds none of geta.Conditional, geta.RequireConditional, geta.RequireAbsent, so the operation takes no precondition and answers it 400; " +
+		"embed geta.Conditional and call Check with the current validators"
 	checkSame(t, diagnostics, built, []string{
 		"the route's GET declares a validator (its output's ETag header field), " + tail,
 		"the route's GET declares a validator (its output's last-modified header field), " + tail,

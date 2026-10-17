@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/koji-1009/geta"
 )
@@ -22,6 +23,7 @@ func postJSON(t *testing.T, a *geta.App, body string) *httptest.ResponseRecorder
 type jsonIface interface{ MarshalJSON() ([]byte, error) }
 
 type jsonIfaceIn struct {
+	geta.Conditional
 	Body struct {
 		V jsonIface `json:"v"`
 	} `body:"json"`
@@ -47,13 +49,19 @@ type namedBytesBody struct {
 }
 
 type namedBytesIn struct {
+	geta.Conditional
 	Body namedBytesBody `body:"json"`
 }
 
 // A slice of a named byte type is an array of numbers, as v2 reads and
 // writes it; a []byte is base64.
 func TestANamedByteSliceIsAnArray(t *testing.T) {
-	a := accepts(t, one("/x", post(func(_ context.Context, in *namedBytesIn) (*namedBytesBody, error) { return &in.Body, nil })))
+	a := accepts(t, one("/x", post(func(_ context.Context, in *namedBytesIn) (*namedBytesBody, error) {
+		if err := in.Check("", time.Time{}); err != nil {
+			return nil, err
+		}
+		return &in.Body, nil
+	})))
 	props := at(t, doc(t, a), "components", "schemas", "namedBytesBody", "properties")
 	if got := compact(t, at(t, props, "data")); got != `{"items":{"maximum":255,"minimum":0,"type":"integer"},"type":"array"}` {
 		t.Error(got)
@@ -149,12 +157,18 @@ type uintBody struct {
 }
 
 type uintIn struct {
+	geta.Conditional
 	Body uintBody `body:"json"`
 }
 
 // uint and uint64 are documented below 2^64, exclusively, and held there.
 func TestUint64IsDocumentedBelowTwoToThe64(t *testing.T) {
-	a := accepts(t, one("/x", post(func(context.Context, *uintIn) (*ok, error) { return &ok{true}, nil })))
+	a := accepts(t, one("/x", post(func(_ context.Context, in *uintIn) (*ok, error) {
+		if err := in.Check("", time.Time{}); err != nil {
+			return nil, err
+		}
+		return &ok{true}, nil
+	})))
 	// The document's text, since a float64 would round 2^64's digits.
 	raw := strings.Join(strings.Fields(string(a.OpenAPI())), "")
 	for _, want := range []string{
@@ -181,6 +195,7 @@ func (w wideNum) MarshalJSON() ([]byte, error)  { return []byte(w.s), nil }
 func (w *wideNum) UnmarshalJSON(p []byte) error { w.s = string(p); return nil }
 
 type wideIn struct {
+	geta.Conditional
 	Body struct {
 		N wideNum `json:"n"`
 	} `body:"json"`
@@ -204,7 +219,12 @@ func TestADeclaredNumberNeedNotFitAFloat64(t *testing.T) {
 		{"multipleOf=10", huge, 200},
 		{"multipleOf=3", huge, 400},
 	} {
-		a, err := geta.New(one("/x", post(func(context.Context, *wideIn) (*ok, error) { return &ok{true}, nil })),
+		a, err := geta.New(one("/x", post(func(_ context.Context, in *wideIn) (*ok, error) {
+			if err := in.Check("", time.Time{}); err != nil {
+				return nil, err
+			}
+			return &ok{true}, nil
+		})),
 			geta.WithSchema[wideNum]("integer", c.constraints))
 		if err != nil {
 			t.Fatal(err)

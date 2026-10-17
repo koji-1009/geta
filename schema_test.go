@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/koji-1009/geta"
 	"github.com/koji-1009/geta/internal/vet"
@@ -27,6 +28,7 @@ func TestRejectsSchemaTagOnEmbeddedStruct(t *testing.T) {
 		Age  int `json:"age"`
 	}
 	type in struct {
+		geta.Conditional
 		B body `body:"json"`
 	}
 	rejects(t, one("/x", geta.Route{Post: geta.Op(http.StatusOK, func(context.Context, *in) (*ok, error) { return nil, nil }, geta.Doc{})}),
@@ -184,8 +186,12 @@ func TestSchemaBoundsKeepTheIntegerRange(t *testing.T) {
 		Plain  int32  `json:"plain" schema:"multipleOf=2"`
 	}
 	h := func(_ context.Context, in *struct {
+		geta.Conditional
 		B small `body:"json"`
 	}) (*ok, error) {
+		if err := in.Check("", time.Time{}); err != nil {
+			return nil, err
+		}
 		return &ok{true}, nil
 	}
 	a := accepts(t, one("/i", geta.Route{Post: geta.Op(http.StatusOK, h, geta.Doc{})}))
@@ -231,6 +237,7 @@ func TestSchemaBoundsKeepTheIntegerRange(t *testing.T) {
 		N int8 `json:"n" schema:"minimum=-1000,maximum=-500"`
 	}
 	rejects(t, one("/u", geta.Route{Post: geta.Op(http.StatusOK, func(_ context.Context, in *struct {
+		geta.Conditional
 		B unreachable `body:"json"`
 	}) (*ok, error) {
 		return &ok{true}, nil
@@ -281,8 +288,12 @@ func TestFloat32Range(t *testing.T) {
 		Own   float32 `json:"own" schema:"minimum=-1,maximum=1"`
 	}
 	h := func(_ context.Context, in *struct {
+		geta.Conditional
 		B small `body:"json"`
 	}) (*ok, error) {
+		if err := in.Check("", time.Time{}); err != nil {
+			return nil, err
+		}
 		return &ok{true}, nil
 	}
 	a := accepts(t, one("/f", geta.Route{Post: geta.Op(http.StatusOK, h, geta.Doc{})}))

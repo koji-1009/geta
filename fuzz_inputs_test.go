@@ -78,6 +78,7 @@ type fzQueryIn struct {
 }
 
 type fiFormIn struct {
+	geta.Conditional
 	Body fiForm `body:"form"`
 }
 
@@ -86,6 +87,7 @@ type fzDeepIn struct {
 }
 
 type fzFilterFormIn struct {
+	geta.Conditional
 	Body *fzFilter `body:"form"`
 }
 
@@ -508,7 +510,13 @@ func FuzzFormBody(f *testing.F) {
 	limits.MaxBodyBytes = fzQueryMax
 	var form *fiFormIn
 	var query *fzQueryIn
-	hf := func(_ context.Context, in *fiFormIn) (*ok, error) { form = in; return &ok{true}, nil }
+	hf := func(_ context.Context, in *fiFormIn) (*ok, error) {
+		if err := in.Check("", time.Time{}); err != nil {
+			return nil, err
+		}
+		form = in
+		return &ok{true}, nil
+	}
 	hq := func(_ context.Context, in *fzQueryIn) (*ok, error) { query = in; return &ok{true}, nil }
 	a, err := geta.New(geta.Table{Routes: []geta.Entry{
 		{Path: "/f", Route: geta.Route{Post: geta.Op(http.StatusOK, hf, geta.Doc{})}},
@@ -635,7 +643,13 @@ func TestDeepObjectAgreesWithFormPastTheCutPath(t *testing.T) {
 func fzDeepObjectAgreesWithForm(tb testing.TB) func(t *testing.T, raw string) {
 	var deep, form *fzFilter
 	hd := func(_ context.Context, in *fzDeepIn) (*ok, error) { deep = in.Filter; return &ok{true}, nil }
-	hf := func(_ context.Context, in *fzFilterFormIn) (*ok, error) { form = in.Body; return &ok{true}, nil }
+	hf := func(_ context.Context, in *fzFilterFormIn) (*ok, error) {
+		if err := in.Check("", time.Time{}); err != nil {
+			return nil, err
+		}
+		form = in.Body
+		return &ok{true}, nil
+	}
 	a, err := geta.New(geta.Table{Routes: []geta.Entry{
 		{Path: "/d", Route: get(hd)},
 		{Path: "/f", Route: geta.Route{Post: geta.Op(http.StatusOK, hf, geta.Doc{})}},
@@ -704,6 +718,7 @@ type fzUpload struct {
 }
 
 type fzUploadIn struct {
+	geta.Conditional
 	Body fzUpload `body:"multipart"`
 }
 
@@ -750,6 +765,9 @@ func fzUploadApp(f *testing.F, got **fzReceived, bodyMax int64) *geta.App {
 	limits.MaxBodyBytes = bodyMax
 	limits.MaxMultipartMemory = fzUploadMemory
 	h := func(_ context.Context, in *fzUploadIn) (*ok, error) {
+		if err := in.Check("", time.Time{}); err != nil {
+			return nil, err
+		}
 		r := &fzReceived{title: in.Body.Title, count: in.Body.Count, avatar: fzRead(in.Body.Avatar)}
 		if in.Body.Tags != nil {
 			r.tags = *in.Body.Tags

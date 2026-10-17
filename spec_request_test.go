@@ -270,6 +270,7 @@ func TestParameterPresenceAndRepetition(t *testing.T) {
 }
 
 type srQueryBodyIn struct {
+	geta.Conditional
 	Q    *string `query:"q"`
 	Body srBody  `body:"json"`
 }
@@ -279,6 +280,7 @@ type srBody struct {
 }
 
 type srNoQueryIn struct {
+	geta.Conditional
 	Body srBody `body:"json"`
 }
 
@@ -287,8 +289,8 @@ type srNoQueryIn struct {
 // none, the query string is not read.
 func TestMalformedQueryString(t *testing.T) {
 	app := accepts(t, geta.Table{Routes: []geta.Entry{
-		{Path: "/q", Route: post(func(context.Context, *srQueryBodyIn) (*ok, error) { return &ok{true}, nil })},
-		{Path: "/n", Route: post(func(context.Context, *srNoQueryIn) (*ok, error) { return &ok{true}, nil })},
+		{Path: "/q", Route: post(checkedOK[srQueryBodyIn])},
+		{Path: "/n", Route: post(checkedOK[srNoQueryIn])},
 	}})
 	send := func(target, ct, body string) *httptest.ResponseRecorder {
 		req := httptest.NewRequest(http.MethodPost, target, strings.NewReader(body))
@@ -321,14 +323,17 @@ func TestDeepObjectBareKeyIsAbsent(t *testing.T) {
 }
 
 type srRawReaderIn struct {
+	geta.Conditional
 	Body io.Reader `body:"text/csv"`
 }
 
 type srRawCSVIn struct {
+	geta.Conditional
 	Body []byte `body:"text/csv"`
 }
 
 type srRawStreamIn struct {
+	geta.Conditional
 	Body []byte `body:"text/event-stream"`
 }
 
@@ -342,13 +347,23 @@ type srRawGot struct {
 // input's raw body may be an event stream's bytes.
 func TestContentTypeAndCodingDetails(t *testing.T) {
 	c := getatest.New(t, geta.Table{Routes: []geta.Entry{
-		{Path: "/j", Route: post(func(context.Context, *srNoQueryIn) (*ok, error) { return &ok{true}, nil })},
+		{Path: "/j", Route: post(checkedOK[srNoQueryIn])},
 		{Path: "/r", Route: post(func(_ context.Context, in *srRawReaderIn) (*srRawGot, error) {
 			b, err := io.ReadAll(in.Body)
-			return &srRawGot{string(b)}, err
+			if err != nil {
+				return nil, err
+			}
+			if err := in.Check("", time.Time{}); err != nil {
+				return nil, err
+			}
+			return &srRawGot{string(b)}, nil
 		})},
-		{Path: "/c", Route: post(func(_ context.Context, in *srRawCSVIn) (*srRawGot, error) { return &srRawGot{string(in.Body)}, nil })},
-		{Path: "/s", Route: post(func(_ context.Context, in *srRawStreamIn) (*srRawGot, error) { return &srRawGot{string(in.Body)}, nil })},
+		{Path: "/c", Route: post(func(_ context.Context, in *srRawCSVIn) (*srRawGot, error) {
+			return &srRawGot{string(in.Body)}, in.Check("", time.Time{})
+		})},
+		{Path: "/s", Route: post(func(_ context.Context, in *srRawStreamIn) (*srRawGot, error) {
+			return &srRawGot{string(in.Body)}, in.Check("", time.Time{})
+		})},
 	}})
 	if res := c.With("Content-Encoding", "IDENTITY").Post("/j", `{"a":"x"}`); res.Status != 200 {
 		t.Fatal(res.Status, res.Text())
@@ -390,6 +405,7 @@ func TestContentTypeAndCodingDetails(t *testing.T) {
 }
 
 type srUploadIn struct {
+	geta.Conditional
 	N    int `query:"n"`
 	Body struct {
 		F geta.File `form:"f"`
@@ -402,7 +418,7 @@ func TestAFileGetaCannotStoreIsAnsweredAlone(t *testing.T) {
 	dir := t.TempDir()
 	l := geta.DefaultLimits
 	l.MaxMultipartMemory = 0
-	app, err := geta.New(one("/m", post(func(context.Context, *srUploadIn) (*ok, error) { return &ok{true}, nil })),
+	app, err := geta.New(one("/m", post(checkedOK[srUploadIn])),
 		geta.WithLimits(l), geta.WithLogger(quietLogger()))
 	if err != nil {
 		t.Fatal(err)
@@ -440,6 +456,7 @@ type srDeep struct {
 }
 
 type srItemIn struct {
+	geta.Conditional
 	Body srItem `body:"json"`
 }
 
@@ -461,7 +478,7 @@ func srWith(name, value string) string {
 func TestJSONBodyRulesOverHTTP(t *testing.T) {
 	l := geta.DefaultLimits
 	l.MaxItems, l.MaxDepth = 2, 3
-	app, err := geta.New(one("/i", post(func(context.Context, *srItemIn) (*ok, error) { return &ok{true}, nil })), geta.WithLimits(l))
+	app, err := geta.New(one("/i", post(checkedOK[srItemIn])), geta.WithLimits(l))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -621,6 +638,7 @@ type srCeilingIn struct {
 }
 
 type srCeilingBody struct {
+	geta.Conditional
 	Body struct {
 		S string `json:"s" schema:"pattern=^a+$"`
 	} `body:"json"`
@@ -655,7 +673,7 @@ func TestStringEnumAndPatternCeilingOverHTTP(t *testing.T) {
 	}
 	// A JSON body's string alike, on the one-pass read.
 	l.MaxBodyBytes = 1 << 20
-	jb := getatest.New(t, one("/b", post(func(context.Context, *srCeilingBody) (*ok, error) { return &ok{true}, nil })), geta.WithLimits(l))
+	jb := getatest.New(t, one("/b", post(checkedOK[srCeilingBody])), geta.WithLimits(l))
 	if res := jb.Post("/b", `{"s":"`+strings.Repeat("a", 4096)+`"}`); res.Status != 200 {
 		t.Fatal(res.Status, res.Text())
 	}
@@ -680,12 +698,14 @@ func (s srTextStruct2) MarshalText() ([]byte, error)  { return []byte(s.W), nil 
 func (s *srTextStruct2) UnmarshalText(b []byte) error { s.W = string(b); return nil }
 
 type srFormDate struct {
+	geta.Conditional
 	Body struct {
 		D geta.Date `form:"d"`
 	} `body:"form"`
 }
 
 type srFormFiles struct {
+	geta.Conditional
 	Body struct {
 		Docs []geta.File `form:"docs" schema:"minItems=2,deprecated=true"`
 	} `body:"multipart"`
@@ -724,9 +744,11 @@ func TestFormBodyRules(t *testing.T) {
 	rejects(t, one("/x", post(func(context.Context, *deprecatedFile) (*ok, error) { return nil, nil })),
 		`schema tag "deprecated=true" on a geta.File`)
 	c := getatest.New(t, geta.Table{Routes: []geta.Entry{
-		{Path: "/m", Route: post(func(context.Context, *srFormFiles) (*ok, error) { return &ok{true}, nil })},
-		{Path: "/f", Route: post(func(context.Context, *rqLimitFormIn) (*ok, error) { return &ok{true}, nil })},
-		{Path: "/d", Route: post(func(_ context.Context, in *srFormDate) (*srRawGot, error) { return &srRawGot{in.Body.D.String()}, nil })},
+		{Path: "/m", Route: post(checkedOK[srFormFiles])},
+		{Path: "/f", Route: post(checkedOK[rqLimitFormIn])},
+		{Path: "/d", Route: post(func(_ context.Context, in *srFormDate) (*srRawGot, error) {
+			return &srRawGot{in.Body.D.String()}, in.Check("", time.Time{})
+		})},
 	}})
 	// A form field of a text type is read by its UnmarshalText.
 	if res := c.Content(http.MethodPost, "/d", "application/x-www-form-urlencoded", []byte("d=2024-02-29")); res.Status != 200 ||
@@ -747,6 +769,7 @@ func TestFormBodyRules(t *testing.T) {
 }
 
 type srOpenIn struct {
+	geta.Conditional
 	Body struct {
 		F geta.File `form:"f"`
 	} `body:"multipart"`
@@ -756,7 +779,7 @@ type srOpenIn struct {
 // handler runs.
 func TestFileAPI(t *testing.T) {
 	var reads []string
-	c := getatest.New(t, one("/m", post(func(_ context.Context, in *srOpenIn) (*ok, error) {
+	c := getatest.New(t, one("/m", post(func(ctx context.Context, in *srOpenIn) (*ok, error) {
 		for range 2 {
 			rc, err := in.Body.F.Open()
 			if err != nil {
@@ -766,7 +789,7 @@ func TestFileAPI(t *testing.T) {
 			rc.Close()
 			reads = append(reads, string(b))
 		}
-		return &ok{true}, nil
+		return checkedOK(ctx, in)
 	})))
 	if res := c.Multipart(http.MethodPost, "/m", nil, getatest.FilePart{Field: "f", Filename: "a", Content: []byte("xyz")}); res.Status != 200 ||
 		fmt.Sprint(reads) != "[xyz xyz]" {
@@ -841,9 +864,9 @@ func TestARawReaderPastTheLimitReturnsMaxBytesError(t *testing.T) {
 	l := geta.DefaultLimits
 	l.MaxBodyBytes = 4
 	var readErr error
-	app, err := geta.New(one("/r", post(func(_ context.Context, in *srRawReaderIn) (*ok, error) {
+	app, err := geta.New(one("/r", post(func(ctx context.Context, in *srRawReaderIn) (*ok, error) {
 		_, readErr = io.ReadAll(in.Body)
-		return &ok{true}, nil
+		return checkedOK(ctx, in)
 	})), geta.WithLimits(l))
 	if err != nil {
 		t.Fatal(err)

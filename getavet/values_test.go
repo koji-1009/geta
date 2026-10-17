@@ -39,6 +39,7 @@ type Sound struct {
 }
 
 type SoundIn struct {
+	geta.Conditional
 	Body Sound `+"`body:\"json\"`"+`
 }
 
@@ -73,6 +74,7 @@ type Read struct {
 }
 
 type ReadIn struct {
+	geta.Conditional
 	Body Read `+"`body:\"json\"`"+`
 }
 
@@ -80,16 +82,18 @@ type Written struct {
 	Ceiling map[string]string `+"`json:\"c\" schema:\"additionalProperties.pattern=^a+$,additionalProperties.maxLength=5000\"`"+`
 }
 
+func write[In, Result any](context.Context, *In) (*Result, error) { return nil, nil }
+
 func Build() (*geta.App, error) {
 	return geta.New(geta.Table{Routes: []geta.Entry{
-		{Path: "/a", Route: geta.Route{Post: geta.Op(http.StatusOK, func(context.Context, *SoundIn) (*Sound, error) { return nil, nil }, geta.Doc{})}},
+		{Path: "/a", Route: geta.Route{Post: geta.Op(http.StatusOK, write[SoundIn, Sound], geta.Doc{})}},
 		{Path: "/m1", Route: geta.Route{Get: geta.Op(http.StatusOK, func(context.Context, *struct{}) (*M1, error) { return nil, nil }, geta.Doc{})}},
 		{Path: "/m2", Route: geta.Route{Get: geta.Op(http.StatusOK, func(context.Context, *struct{}) (*M2, error) { return nil, nil }, geta.Doc{})}},
 		{Path: "/m3", Route: geta.Route{Get: geta.Op(http.StatusOK, func(context.Context, *struct{}) (*M3, error) { return nil, nil }, geta.Doc{})}},
 		{Path: "/m4", Route: geta.Route{Get: geta.Op(http.StatusOK, func(context.Context, *struct{}) (*M4, error) { return nil, nil }, geta.Doc{})}},
 		{Path: "/m5", Route: geta.Route{Get: geta.Op(http.StatusOK, func(context.Context, *struct{}) (*M5, error) { return nil, nil }, geta.Doc{})}},
 		{Path: "/m6", Route: geta.Route{Get: geta.Op(http.StatusOK, func(context.Context, *struct{}) (*M6, error) { return nil, nil }, geta.Doc{})}},
-		{Path: "/c", Route: geta.Route{Post: geta.Op(http.StatusOK, func(context.Context, *ReadIn) (*Out, error) { return nil, nil }, geta.Doc{})}},
+		{Path: "/c", Route: geta.Route{Post: geta.Op(http.StatusOK, write[ReadIn, Out], geta.Doc{})}},
 		{Path: "/d", Route: geta.Route{Get: geta.Op(http.StatusOK, func(context.Context, *struct{}) (*Written, error) { return nil, nil }, geta.Doc{})}},
 	}}, geta.WithSchema[Money]("string", ""))
 }

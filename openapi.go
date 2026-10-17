@@ -427,16 +427,22 @@ func (c *compiledOp) document(lim *Limits, split map[string]bool) map[string]any
 		}
 		params = append(params, param)
 	}
-	// geta.ETag reads If-None-Match where the input binds none.
-	if c.etagged() && !slices.ContainsFunc(c.in.params, func(p paramPlan) bool {
-		return p.in == "header" && http.CanonicalHeaderKey(p.name) == "If-None-Match"
-	}) {
+	// The precondition fields geta, or geta.ETag, evaluates where the input
+	// does not embed Conditional (evaluated), unless the input binds the
+	// field itself.
+	for _, name := range c.evaluated() {
+		if slices.ContainsFunc(c.in.params, func(p paramPlan) bool {
+			return p.in == "header" && http.CanonicalHeaderKey(p.name) == http.CanonicalHeaderKey(name)
+		}) {
+			continue
+		}
 		params = append(params, map[string]any{
-			"name":        "If-None-Match",
+			"name":        name,
 			"in":          "header",
 			"required":    false,
-			"description": conditionalDocs["If-None-Match"] + ", read by geta.ETag",
-			"schema":      map[string]any{"type": "string"},
+			"description": selectedDocs[name],
+			// As Conditional's: held to no backstop (conditionField).
+			"schema": c.precondition.render(nil, split),
 		})
 	}
 	if len(params) > 0 {
@@ -529,6 +535,10 @@ func (c *compiledOp) responses() map[string]any {
 	if len(c.in.params) > 0 || body {
 		add(http.StatusBadRequest, "The request does not match its contract")
 	}
+	if c.in.refuses {
+		// refusedPreconditions: a write that takes no precondition.
+		add(http.StatusBadRequest, "The request carries If-Match, If-None-Match, If-Modified-Since, or If-Unmodified-Since, which this operation does not take (its input does not embed geta.Conditional)")
+	}
 	if body {
 		add(http.StatusRequestEntityTooLarge, fmt.Sprintf("The request body is larger than %d bytes (Limits.MaxBodyBytes)", c.limits.MaxBodyBytes))
 		add(http.StatusUnsupportedMediaType, "The request has content of a media type the operation does not take, or no Content-Type, or content in a content coding (Content-Encoding)")
@@ -575,32 +585,32 @@ func (c *compiledOp) responses() map[string]any {
 		case c.in.absent:
 			add(http.StatusPreconditionRequired, `The request carries no If-None-Match: *, which this operation requires: it creates its target only where it has no current representation (RFC 6585 section 3, RFC 9110 section 13.1.2)`)
 		}
-	} else if c.selecting {
-		// geta, or geta.ETag, evaluates them against the validators the
-		// response carries (selected). geta.ETag lists its own 304 and 400.
+	} else if fields := c.evaluated(); len(fields) > 0 {
+		// geta, or geta.ETag, evaluates them against what the handler
+		// answered (selected). geta.ETag lists its own 304 and 400.
 		const against = ", against the validators the response carries (its input does not embed geta.Conditional)"
 		if c.answering {
-			if slices.Contains(c.successes(), http.StatusOK) {
-				add(http.StatusNotModified, "The representation has not changed: If-None-Match, or If-Modified-Since"+against)
+			if c.method == http.MethodGet && slices.Contains(c.successes(), http.StatusOK) {
+				reason := "The representation has not changed: If-None-Match"
+				if slices.Contains(fields, "If-Modified-Since") {
+					reason += ", or If-Modified-Since"
+				}
+				add(http.StatusNotModified, reason+against)
 			}
 			add(http.StatusBadRequest, `If-Match or If-None-Match is neither "*" nor a list of one or more entity tags`)
 		} else {
 			add(http.StatusBadRequest, `If-Match is neither "*" nor a list of one or more entity tags`)
 		}
-		add(http.StatusPreconditionFailed, "A precondition failed: If-Match, or If-Unmodified-Since"+against)
-	} else if !c.options {
-		// geta evaluates the preconditions itself (unvalidated): the operation
-		// has no entity tag for If-Match to name, and If-None-Match: * finds a
-		// current representation.
-		const declares = "; the operation declares no validator (its input does not embed geta.Conditional)"
-		if c.method == http.MethodGet {
-			if c.notModified() {
-				add(http.StatusNotModified, "If-None-Match: *"+declares)
-			}
-			add(http.StatusPreconditionFailed, "A precondition failed: If-Match other than *"+declares)
-		} else {
-			add(http.StatusPreconditionFailed, "A precondition failed: If-Match other than *, or If-None-Match: *"+declares)
+		reason := "A precondition failed: If-Match"
+		switch {
+		case c.method == MethodQuery && slices.Contains(fields, "If-Unmodified-Since"):
+			reason += ", If-Unmodified-Since, or If-None-Match"
+		case c.method == MethodQuery:
+			reason += ", or If-None-Match"
+		case slices.Contains(fields, "If-Unmodified-Since"):
+			reason += ", or If-Unmodified-Since"
 		}
+		add(http.StatusPreconditionFailed, reason+against)
 	}
 	if sp, ok := c.out.special.(interface{ answers() []answer }); ok && c.out.kind == outSpecial {
 		for _, an := range sp.answers() {
@@ -674,32 +684,53 @@ func (c *compiledOp) responses() map[string]any {
 	ownHeaders := func(r map[string]any, status int) {
 		// Optional: a failure row or a middleware may answer the same status
 		// without them.
-		state := func(name, description string) {
+		stateSchema := func(name, description string, schema map[string]any) bool {
 			headers, _ := r["headers"].(map[string]any)
 			if _, has := headers[headerKey(headers, name)]; has {
-				return
+				return false
 			}
 			// A row's headers may be shared; r gets its own.
 			headers = maps.Clone(headers)
 			if headers == nil {
 				headers = map[string]any{}
 			}
-			headers[name] = map[string]any{"description": description, "required": false, "schema": map[string]any{"type": "string"}}
+			headers[name] = map[string]any{"description": description, "required": false, "schema": schema}
 			r["headers"] = headers
+			return true
+		}
+		state := func(name, description string) {
+			stateSchema(name, description, map[string]any{"type": "string"})
+		}
+		// A 304 carries the header fields of the 200 among Content-Location,
+		// Date, ETag, Vary, Cache-Control, and Expires (RFC 9110 §15.4.5):
+		// those the output declares, typed as on the 200.
+		carry := func() {
+			for _, h := range c.notModifiedDeclared() {
+				description := "The " + h.name + " the 200 would carry (RFC 9110 section 15.4.5)"
+				switch http.CanonicalHeaderKey(h.name) {
+				case "Etag":
+					description = "The entity tag the 200 would carry, when it carries one"
+				case "Last-Modified":
+					description = "The modification date the 200 would carry, when it carries no entity tag"
+				}
+				if stateSchema(h.name, description, h.use.document(nil)) {
+					c.headers[status] = append(c.headers[status], responseHeader{name: h.name, c: h.c, use: h.use})
+				}
+			}
+			if sp, ok := c.out.special.(interface{ notModified() http.Header }); ok && c.out.kind == outSpecial {
+				for _, name := range slices.Sorted(maps.Keys(sp.notModified())) {
+					v := sp.notModified()[name]
+					stateSchema(name, "As the stream sends it (RFC 9110 section 15.4.5)", map[string]any{"type": "string", "const": strings.Join(v, ", ")})
+				}
+			}
 		}
 		switch {
 		case status == http.StatusNotModified && c.in.cond != nil:
+			carry()
 			state("ETag", "The entity tag given to Conditional.Check, when one was")
 			state("Last-Modified", "The modification date given to Conditional.Check, an HTTP-date, when no entity tag was")
-		case status == http.StatusNotModified && c.answering:
-			for _, h := range c.out.headers {
-				switch http.CanonicalHeaderKey(h.name) {
-				case "Etag":
-					state("ETag", "The entity tag the 200 would carry, when it carries one")
-				case "Last-Modified":
-					state("Last-Modified", "The modification date the 200 would carry, when it carries no entity tag")
-				}
-			}
+		case status == http.StatusNotModified && c.selecting:
+			carry()
 		case status == http.StatusUpgradeRequired && upgrade:
 			state("Upgrade", "The protocol to switch to, sent with geta's own 426")
 			state("Connection", "upgrade, sent with geta's own 426")

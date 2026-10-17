@@ -36,6 +36,22 @@ import (
 // handler that answers any other status (a missing target's 404) is answered
 // as it is, since the preconditions are ignored there (RFC 9110 §13.2.1).
 //
+// A 304 carries the header fields a 200 would among Content-Location, Date,
+// ETag, Vary, Cache-Control, and Expires (RFC 9110 §15.4.5 "MUST"). The
+// handler returns the output it would answer with the error Check returned,
+// its header fields set and its body left out, and geta sends those fields
+// on the 304:
+//
+//	if err := in.Check(tag, time.Time{}); err != nil {
+//		return &Tagged{ETag: tag, CacheControl: "max-age=60"}, err
+//	}
+//
+// The output is read only for a 304; returned beside any other error, it is
+// not used. Where the output type declares one of these fields other than
+// ETag, a 304 returned without the output is a defect, a logged 500. Without
+// the output's ETag, the 304 carries the entity tag given to Check, or else
+// the modification date.
+//
 // A client sets the fields it sends: Conditional{IfMatch: new(`"v1"`)}.
 //
 // Check reads the request's method, which geta records when it binds the
@@ -56,8 +72,10 @@ type Conditional struct {
 	method string // the request's, set when geta binds the input
 	// verdict records what Check and CheckAbsent answered
 	// (compiledOp.unchecked). geta sets it when it binds the input; a copy
-	// of the Conditional shares it, so a check on the copy counts.
+	// of the Conditional shares it, so a check on the copy counts. It points
+	// at bound, so binding allocates nothing more.
 	verdict *verdict
+	bound   verdict
 }
 
 // verdict is what the handler's calls of Check and CheckAbsent answered.
@@ -159,6 +177,31 @@ type PreconditionError struct {
 	detail   string
 	etag     string
 	modified time.Time
+	// carry holds the header fields of the 200 a 304 carries
+	// (notModifiedFields), set by geta before it answers the 304.
+	carry http.Header
+}
+
+// notModifiedFields are the header fields a 304 carries where a 200 to the
+// same request would: "Content-Location, Date, ETag, and Vary",
+// "Cache-Control and Expires" (RFC 9110 §15.4.5). Last-Modified goes with
+// them only where there is no ETag (§15.4.5: "Last-Modified might be useful
+// if the response does not have an ETag field").
+var notModifiedFields = []string{"Content-Location", "Date", "ETag", "Vary", "Cache-Control", "Expires"}
+
+// notModifiedOf returns the header fields of h a 304 carries
+// (notModifiedFields, and Last-Modified), or nil for none.
+func notModifiedOf(h http.Header) http.Header {
+	var out http.Header
+	for _, name := range append(notModifiedFields, "Last-Modified") {
+		if v := h.Values(name); len(v) > 0 {
+			if out == nil {
+				out = http.Header{}
+			}
+			out[http.CanonicalHeaderKey(name)] = v
+		}
+	}
+	return out
 }
 
 func (e *PreconditionError) Error() string {
@@ -168,15 +211,23 @@ func (e *PreconditionError) Error() string {
 // Status returns the status geta answers: 304, 400, 412, or 428.
 func (e *PreconditionError) Status() int { return e.status }
 
-// write answers e. A 304 carries the entity tag, or else the modification
-// date (RFC 9110 §15.4.5); other statuses are problems.
+// write answers e. A 304 carries the header fields of the 200 it stands for
+// (carry), and the entity tag, or else the modification date (RFC 9110
+// §15.4.5); other statuses are problems.
 func (e *PreconditionError) write(w http.ResponseWriter, r *http.Request) {
 	switch e.status {
 	case http.StatusNotModified:
 		h := w.Header()
-		if e.etag != "" {
+		for k, v := range e.carry {
+			h[k] = v
+		}
+		if e.etag != "" && h.Get("ETag") == "" {
 			h.Set("ETag", e.etag)
-		} else if !e.modified.IsZero() {
+		}
+		switch {
+		case h.Get("ETag") != "":
+			h.Del("Last-Modified")
+		case h.Get("Last-Modified") == "" && !e.modified.IsZero():
 			h.Set("Last-Modified", e.modified.UTC().Format(http.TimeFormat))
 		}
 		w.WriteHeader(http.StatusNotModified)
@@ -402,49 +453,22 @@ func (c *Conditional) check(exists bool, etag string, modified time.Time) error 
 	return nil
 }
 
-// unvalidated evaluates the preconditions of a request to an operation whose
-// input does not embed [Conditional], and returns the refusal, or nil to go
-// on. Such an operation declares no validator, so geta evaluates them itself,
-// before the request content is processed (RFC 9110 §13.2.1), against a
-// current representation with no entity tag and no modification date:
+// selects reports whether c is a GET or QUERY whose input does not embed
+// Conditional. Both are safe (RFC 9110 §9.2.1), so the handler runs before
+// the preconditions are evaluated, and they are evaluated against what it
+// answers (selected): its status, and the validators its response carries,
+// as the RFC's "the entity tag of the selected representation" (§13.1.1) is
+// the one the response sends. The handler's own answers come first: "A
+// server MUST ignore all received preconditions if its response to the same
+// request without those conditions ... would have been a status code other
+// than a 2xx" (§13.2.1), such as a missing target's 404. geta.ETag evaluates
+// them for a GET it tags, whose tag it alone knows; geta, before writing,
+// for any other.
 //
-//   - If-Match other than "*" fails, 412: no listed tag matches a
-//     representation that has none (§13.1.1). "*" holds; a handler that
-//     finds no target answers its own 404, which takes precedence.
-//   - If-None-Match "*" fails: 304 on a GET or HEAD, 412 otherwise
-//     (§13.1.2). Any other value holds. A GET or HEAD is answered 304 only
-//     where a 200 would be (§15.4.5): on a GET whose successes hold none, it
-//     is not evaluated, nor on one geta.ETag tags, which reads it once the
-//     handler has answered (notModified).
-//   - If-Modified-Since and If-Unmodified-Since are ignored: there is no
-//     modification date (§13.1.3, §13.1.4).
-//
-// A value that is not a list of entity tags is evaluated as the RFC says of
-// any other value: If-Match fails and If-None-Match holds.
-//
-// A GET or HEAD to a GET that declares a validator through its output or
-// geta.ETag (selecting) is not evaluated here: its preconditions are
-// evaluated once the handler has answered, against the validators the
-// response carries (selected).
-func (c *compiledOp) unvalidated(r *http.Request) *PreconditionError {
-	safe := r.Method == http.MethodGet || r.Method == http.MethodHead
-	if safe && c.selecting {
-		return nil
-	}
-	if v := r.Header.Values("If-Match"); len(v) > 0 && !starred(v) {
-		return &PreconditionError{status: http.StatusPreconditionFailed, field: "If-Match",
-			detail: "failed: the operation declares no entity tag"}
-	}
-	if v := r.Header.Values("If-None-Match"); len(v) > 0 && starred(v) {
-		switch {
-		case !safe:
-			return &PreconditionError{status: http.StatusPreconditionFailed, field: "If-None-Match",
-				detail: "failed: it matches the current representation"}
-		case c.notModified():
-			return &PreconditionError{status: http.StatusNotModified, field: "If-None-Match", detail: "matches the current representation"}
-		}
-	}
-	return nil
+// A write evaluates them in its handler, by Check, where its input embeds
+// Conditional, and takes none otherwise (refusesPreconditions).
+func (c *compiledOp) selects() bool {
+	return !c.options && (c.method == http.MethodGet || c.method == MethodQuery) && c.in.cond == nil
 }
 
 // validator returns what c, a GET, declares of its representation's
@@ -461,21 +485,138 @@ func (c *compiledOp) validator() vet.Validator {
 	return v
 }
 
-// selects reports whether c is a GET whose input does not embed Conditional
-// but which declares a validator through its output (an ETag or
-// Last-Modified header field) or geta.ETag. A GET is safe (RFC 9110
-// §9.2.1), so its handler may run before the preconditions are evaluated:
-// geta evaluates them against the validators its response carries
-// (selected), as the RFC's "the entity tag of the selected representation"
-// (§13.1.1) is the one the GET sends. geta.ETag evaluates them for a GET it
-// tags, whose tag it alone knows; geta, before writing, for any other.
-func (c *compiledOp) selects() bool {
-	if c.options || c.method != http.MethodGet || c.in.cond != nil {
+// preconditionFields are the four precondition header fields of RFC 9110
+// §13.1, which Conditional binds.
+var preconditionFields = []string{"If-Match", "If-None-Match", "If-Modified-Since", "If-Unmodified-Since"}
+
+// refusesPreconditions reports whether c is a write whose input embeds no
+// Conditional: it takes no precondition, and geta refuses a request that
+// carries one (refusedPreconditions). GET and QUERY evaluate theirs once
+// the handler has answered (selects); OPTIONS ignores them (§13.2.1).
+func (c *compiledOp) refusesPreconditions() bool {
+	if c.options || c.in.cond != nil {
 		return false
 	}
-	v := c.validator()
-	return v.Header != "" || v.Chain
+	switch c.method {
+	case http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete:
+		return true
+	}
+	return false
 }
+
+// refusedPreconditions returns a violation for each precondition field r
+// carries, for an operation that takes none (refusesPreconditions). The
+// operation declares none of them, so a request carrying one does not match
+// its contract: a 400, part of the normal request checks that come before
+// any precondition is evaluated (RFC 9110 §13.2.1). Nothing is written, and
+// a client is never told 412 for a target that does not exist.
+func refusedPreconditions(r *http.Request) []Violation {
+	var errs []Violation
+	for _, name := range preconditionFields {
+		if _, sent := r.Header[name]; sent {
+			errs = append(errs, Violation{In: "header", Path: name, Message: notTaken})
+		}
+	}
+	return errs
+}
+
+// notTaken says why a precondition field sent to an operation that takes
+// none is refused.
+const notTaken = "is not taken: this operation takes no precondition (its input does not embed geta.Conditional)"
+
+// lastModifiedField reports whether c's output declares a Last-Modified
+// header field, the modification date the preconditions are evaluated
+// against where the input does not embed Conditional.
+func (c *compiledOp) lastModifiedField() bool {
+	return c.out != nil && slices.ContainsFunc(c.out.headers, func(h headerOut) bool {
+		return http.CanonicalHeaderKey(h.name) == "Last-Modified"
+	})
+}
+
+// evaluated returns the precondition fields geta reads on c, whose input
+// does not embed Conditional (selects), in RFC 9110 §13.2.2's order: none
+// where c answers no 2xx (an upgrade's 101), whose preconditions are always
+// ignored (§13.2.1); If-Match and If-None-Match otherwise; If-Unmodified-
+// Since, and on a GET If-Modified-Since, only where the output declares a
+// Last-Modified header field: without a modification date both are ignored
+// (§13.1.3, §13.1.4).
+func (c *compiledOp) evaluated() []string {
+	if !c.selecting || !slices.ContainsFunc(c.successes(), func(s int) bool { return s >= 200 && s <= 299 }) {
+		return nil
+	}
+	fields := []string{"If-Match"}
+	dated := c.lastModifiedField()
+	if dated {
+		fields = append(fields, "If-Unmodified-Since")
+	}
+	fields = append(fields, "If-None-Match")
+	if dated && c.method == http.MethodGet {
+		fields = append(fields, "If-Modified-Since")
+	}
+	return fields
+}
+
+// selectedDocs describes the precondition fields geta evaluates on an
+// operation whose input does not embed Conditional (evaluated).
+var selectedDocs = map[string]string{
+	"If-Match":            `"*" or a list of one or more entity tags (RFC 9110 §13.1.1), compared strongly with the ETag the response carries; a failed match answers 412. Evaluated once the handler has answered, and only on a 2xx: the handler's own answers, such as a 404, come first (§13.2.1)`,
+	"If-None-Match":       `"*" or a list of one or more entity tags (RFC 9110 §13.1.2), compared weakly with the ETag the response carries; a match answers 304 in place of a 200 to a GET or HEAD, and 412 otherwise. Evaluated once the handler has answered, and only on a 2xx (§13.2.1)`,
+	"If-Modified-Since":   "An HTTP-date (RFC 9110 §13.1.3), read on a GET or HEAD without If-None-Match, against the Last-Modified the response carries; an unmodified representation answers 304 in place of a 200. A value that is not one HTTP-date is ignored",
+	"If-Unmodified-Since": "An HTTP-date (RFC 9110 §13.1.4), read without If-Match, against the Last-Modified the response carries; a representation modified since answers 412. A value that is not one HTTP-date is ignored",
+}
+
+// notModifiedHeaders returns the header fields the 304 carries in place of
+// out, the output c's handler answered (notModifiedFields): those its
+// envelope sets, or the Cache-Control a stream sends. An envelope header
+// that cannot be written is the error the 200 would have met.
+func (c *compiledOp) notModifiedHeaders(out any) (http.Header, error) {
+	switch c.out.kind {
+	case outEnvelope:
+		h := http.Header{}
+		if err := c.out.setHeaders(h, reflect.ValueOf(out).Elem()); err != nil {
+			return nil, err
+		}
+		return notModifiedOf(h), nil
+	case outSpecial:
+		if sp, ok := c.out.special.(interface{ notModified() http.Header }); ok {
+			return sp.notModified(), nil
+		}
+	}
+	return nil, nil
+}
+
+// notModifiedDeclared returns the header fields c's output declares that a
+// 304 carries, Last-Modified among them, by their declared names, in
+// declaration order.
+func (c *compiledOp) notModifiedDeclared() []headerOut {
+	if c.out == nil || c.out.kind != outEnvelope {
+		return nil
+	}
+	var hs []headerOut
+	for _, h := range c.out.headers {
+		k := http.CanonicalHeaderKey(h.name)
+		if k == "Last-Modified" || slices.ContainsFunc(notModifiedFields, func(n string) bool { return http.CanonicalHeaderKey(n) == k }) {
+			hs = append(hs, h)
+		}
+	}
+	return hs
+}
+
+// needsOutput reports whether a 304 Check returns on c must come with the
+// output: the output declares a field the 304 carries that Check cannot
+// supply (anything but ETag and Last-Modified).
+func (c *compiledOp) needsOutput() bool {
+	for _, h := range c.notModifiedDeclared() {
+		if k := http.CanonicalHeaderKey(h.name); k != "Etag" && k != "Last-Modified" {
+			return true
+		}
+	}
+	return false
+}
+
+// errNotModifiedOutput is a 304 from Check returned without the output whose
+// header fields it carries.
+var errNotModifiedOutput = errors.New("geta: Conditional.Check answered 304, but the handler returned no output: the output declares header fields a 304 carries (RFC 9110 §15.4.5); return the output with the error")
 
 // selected evaluates the preconditions of a GET or HEAD r against the
 // response its operation answers: its status, its entity tag ("" for none),
@@ -531,13 +672,6 @@ func selectingAt(r *http.Request) bool {
 	}
 	op := rc.app.byMatch[rc.match]
 	return op != nil && op.selecting
-}
-
-// notModified reports whether geta answers 304 itself to If-None-Match: * on
-// an operation whose input does not embed Conditional: a GET that answers
-// 200 and that geta.ETag does not tag.
-func (c *compiledOp) notModified() bool {
-	return c.method == http.MethodGet && !c.options && slices.Contains(c.successes(), http.StatusOK) && !c.etagged()
 }
 
 // starred reports whether a precondition field's lines are "*" alone.

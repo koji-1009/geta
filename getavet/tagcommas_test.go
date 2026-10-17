@@ -30,6 +30,7 @@ type Sound struct {
 }
 
 type SoundIn struct {
+	geta.Conditional
 	Body Sound `+"`body:\"json\"`"+`
 }
 
@@ -49,9 +50,11 @@ type Headers struct {
 	Doubled *string `+"`header:\"X-D\" schema:\"minLength=1,,maxLength=2\"`"+`
 }
 
+func write[In, Result any](context.Context, *In) (*Result, error) { return nil, nil }
+
 func Build() (*geta.App, error) {
 	return geta.New(geta.Table{Routes: []geta.Entry{
-		{Path: "/a", Route: geta.Route{Post: geta.Op(http.StatusOK, func(context.Context, *SoundIn) (*Sound, error) { return nil, nil }, geta.Doc{})}},
+		{Path: "/a", Route: geta.Route{Post: geta.Op(http.StatusOK, write[SoundIn, Sound], geta.Doc{})}},
 		{Path: "/s", Route: geta.Route{Get: geta.Op(http.StatusOK, func(context.Context, *struct{}) (*Spaced, error) { return nil, nil }, geta.Doc{})}},
 		{Path: "/k", Route: geta.Route{Get: geta.Op(http.StatusOK, func(context.Context, *struct{}) (*SpacedKeys, error) { return nil, nil }, geta.Doc{})}},
 		{Path: "/p", Route: geta.Route{Get: geta.Op(http.StatusOK, func(context.Context, *Params) (*Out, error) { return nil, nil }, geta.Doc{})}},

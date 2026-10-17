@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/koji-1009/geta"
 	"github.com/koji-1009/geta/getatest"
@@ -121,7 +122,22 @@ func TestAMalformedQueryBesideADeepObjectIs400(t *testing.T) {
 }
 
 type crossRawIn struct {
+	geta.Conditional
 	Body []byte `body:"text/plain"`
+}
+
+// crossUploadIn is uploadIn of a write that binds no validator.
+type crossUploadIn struct {
+	geta.Conditional
+	Body upload `body:"multipart"`
+}
+
+// crossEcho is echoUpload for a write whose target has no validators.
+func crossEcho(ctx context.Context, in *crossUploadIn) (*echoed, error) {
+	if err := in.Check("", time.Time{}); err != nil {
+		return nil, err
+	}
+	return echoUpload(ctx, &uploadIn{Body: in.Body})
 }
 
 // A raw body in a content coding is the coding's 415: its detail names the
@@ -132,13 +148,16 @@ func TestCodedRawAndMultipartContentIsTheCodings415(t *testing.T) {
 	ran := false
 	h := func(_ context.Context, in *crossRawIn) (*ok, error) {
 		ran = true
+		if err := in.Check("", time.Time{}); err != nil {
+			return nil, err
+		}
 		return &ok{true}, nil
 	}
 	limits := geta.DefaultLimits
 	limits.MaxBodyBytes = 8
 	c := getatest.New(t, geta.Table{Routes: []geta.Entry{
 		{Path: "/r", Route: geta.Route{Post: geta.Op(http.StatusOK, h, geta.Doc{}), Patch: geta.Op(http.StatusOK, h, geta.Doc{})}},
-		{Path: "/m", Route: geta.Route{Post: geta.Op(http.StatusOK, echoUpload, geta.Doc{})}},
+		{Path: "/m", Route: geta.Route{Post: geta.Op(http.StatusOK, crossEcho, geta.Doc{})}},
 	}}, geta.WithLimits(limits))
 	coded := c.With("Content-Encoding", "gzip").With("Content-Type", "text/plain")
 	const detail = `Content-Encoding "gzip" is not supported`
@@ -214,6 +233,7 @@ func TestCeilingAndBackstopRefusalsOfARequestsValue(t *testing.T) {
 	wide := geta.DefaultLimits
 	wide.MaxStringLength = 100000
 	form := func(context.Context, *struct {
+		geta.Conditional
 		Body struct {
 			S string `form:"s" schema:"pattern=^a+$,maxLength=5000"`
 		} `body:"form"`
@@ -250,6 +270,7 @@ func TestCeilingAndBackstopRefusalsOfARequestsValue(t *testing.T) {
 		t.Errorf("a default within a declared maxLength: %v", err)
 	}
 	body := func(context.Context, *struct {
+		geta.Conditional
 		Body struct {
 			V ownString `json:"v"`
 		} `body:"json"`
@@ -268,10 +289,14 @@ func TestCeilingAndBackstopRefusalsOfARequestsValue(t *testing.T) {
 // A float form field binds a JSON number and refuses other text.
 func TestAFloatFormFieldBindsANumber(t *testing.T) {
 	h := func(_ context.Context, in *struct {
+		geta.Conditional
 		Body struct {
 			F float64 `form:"f"`
 		} `body:"form"`
 	}) (*echoed, error) {
+		if err := in.Check("", time.Time{}); err != nil {
+			return nil, err
+		}
 		return &echoed{Got: strconv.FormatFloat(in.Body.F, 'g', -1, 64)}, nil
 	}
 	c := getatest.New(t, one("/x", geta.Route{Post: geta.Op(http.StatusOK, h, geta.Doc{})}))
@@ -290,10 +315,10 @@ func TestMultipartMemoryBoundsTheTotal(t *testing.T) {
 	limits := geta.DefaultLimits
 	limits.MaxMultipartMemory = 6
 	held := -1
-	h := func(ctx context.Context, in *uploadIn) (*echoed, error) {
+	h := func(ctx context.Context, in *crossUploadIn) (*echoed, error) {
 		entries, _ := os.ReadDir(dir)
 		held = len(entries)
-		return echoUpload(ctx, in)
+		return crossEcho(ctx, in)
 	}
 	c := getatest.New(t, one("/m", geta.Route{Post: geta.Op(http.StatusOK, h, geta.Doc{})}), geta.WithLimits(limits))
 	got(t, c.Multipart(http.MethodPost, "/m", url.Values{"title": {"t"}},
@@ -314,10 +339,10 @@ func TestMultipartMemoryBoundary(t *testing.T) {
 		limits := geta.DefaultLimits
 		limits.MaxMultipartMemory = 6
 		held := -1
-		h := func(ctx context.Context, in *uploadIn) (*echoed, error) {
+		h := func(ctx context.Context, in *crossUploadIn) (*echoed, error) {
 			entries, _ := os.ReadDir(dir)
 			held = len(entries)
-			return echoUpload(ctx, in)
+			return crossEcho(ctx, in)
 		}
 		c := getatest.New(t, one("/m", geta.Route{Post: geta.Op(http.StatusOK, h, geta.Doc{})}), geta.WithLimits(limits))
 		got(t, c.Multipart(http.MethodPost, "/m", url.Values{"title": {"t"}},
@@ -484,8 +509,8 @@ func TestMatchedFollowsAMethodRewriteFromTheNextGate(t *testing.T) {
 	a := accepts(t, geta.Table{
 		Root: geta.Scope{methodOverride, matchedAs(&mu, &seen, "before"), gate(), matchedAs(&mu, &seen, "after")},
 		Routes: []geta.Entry{{Path: "/items", Route: geta.Route{
-			Post:   geta.Op(http.StatusOK, okHandler, geta.Doc{}),
-			Delete: geta.OpNoBody(http.StatusNoContent, func(context.Context, *empty) error { return nil }, geta.Doc{}),
+			Post:   geta.Op(http.StatusOK, writeHandler, geta.Doc{}),
+			Delete: geta.OpNoBody(http.StatusNoContent, writeNoBody, geta.Doc{}),
 		}}},
 	})
 	rec := do(t, a, http.MethodPost, "/items", "X-HTTP-Method-Override", "DELETE", "Authorization", "Bearer ok")
@@ -545,8 +570,12 @@ type splitOuter struct {
 // would differ on.
 func TestAComponentSplitsWhereOnlyWhatItReachesDiffers(t *testing.T) {
 	h := func(_ context.Context, in *struct {
+		geta.Conditional
 		Body splitOuter `body:"json"`
 	}) (*splitOuter, error) {
+		if err := in.Check("", time.Time{}); err != nil {
+			return nil, err
+		}
 		return &in.Body, nil
 	}
 	m := doc(t, accepts(t, one("/x", geta.Route{Post: geta.Op(http.StatusOK, h, geta.Doc{})})))

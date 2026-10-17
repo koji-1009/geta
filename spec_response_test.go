@@ -327,7 +327,7 @@ func TestEnvelopeFieldRefusals(t *testing.T) {
 // refused: a 205 beside a body, a listed status that is no 2xx or 3xx, a
 // status field that carries another tag, or a schema or doc tag.
 func TestStatusRefusals(t *testing.T) {
-	rejects(t, one("/x", geta.Route{Post: geta.Op(http.StatusResetContent, okHandler, geta.Doc{})}), "success status 205 takes no body")
+	rejects(t, one("/x", geta.Route{Post: geta.Op(http.StatusResetContent, writeHandler, geta.Doc{})}), "success status 205 takes no body")
 	type notFound struct {
 		Status int `status:"200|404"`
 	}
@@ -410,16 +410,16 @@ type unused struct {
 }
 
 func TestRedirectsCarryALocation(t *testing.T) {
-	noBody := func(context.Context, *empty) error { return nil }
+	noBody := writeNoBody
 	rejects(t, one("/x", geta.Route{Post: geta.OpNoBody(http.StatusSeeOther, noBody, geta.Doc{})}),
 		"POST /x", "success status 303 is a redirect, but geta.OpNoBody sets no Location; use geta.Op")
-	rejects(t, one("/x", geta.Route{Post: geta.Op(http.StatusMovedPermanently, okHandler, geta.Doc{})}),
+	rejects(t, one("/x", geta.Route{Post: geta.Op(http.StatusMovedPermanently, writeHandler, geta.Doc{})}),
 		"success status 301 is a redirect, but the output geta_test.ok has no Location header field")
-	rejects(t, one("/x", geta.Route{Post: geta.Op(http.StatusPermanentRedirect, func(context.Context, *empty) (*seeOtherNoLocation, error) { return nil, nil }, geta.Doc{})}),
+	rejects(t, one("/x", geta.Route{Post: geta.Op(http.StatusPermanentRedirect, func(context.Context, *write) (*seeOtherNoLocation, error) { return nil, nil }, geta.Doc{})}),
 		"success status 308 is a redirect", "the output geta_test.seeOtherNoLocation has no Location header field")
 	rejects(t, one("/x", get(func(context.Context, *empty) (*maybeMoved, error) { return nil, nil })),
 		"the output's status field declares 307, a redirect, but the output geta_test.maybeMoved has no Location header field")
-	rejects(t, one("/x", geta.Route{Post: geta.Op(http.StatusFound, func(context.Context, *empty) (*numericLocation, error) { return nil, nil }, geta.Doc{})}),
+	rejects(t, one("/x", geta.Route{Post: geta.Op(http.StatusFound, func(context.Context, *write) (*numericLocation, error) { return nil, nil }, geta.Doc{})}),
 		"success status 302 is a redirect, but the output geta_test.numericLocation's Location header field Location has type int, not a string or text type")
 	rejects(t, one("/x", geta.Route{Post: geta.OpNoBody(http.StatusUseProxy, noBody, geta.Doc{})}),
 		"success status 305 is deprecated")
@@ -431,11 +431,11 @@ func TestRedirectsCarryALocation(t *testing.T) {
 		`status tag "200|306": 306 is unused`)
 	// 300 MAY carry a Location: any output answers it.
 	accepts(t, one("/x", geta.Route{Post: geta.OpNoBody(http.StatusMultipleChoices, noBody, geta.Doc{})}))
-	accepts(t, one("/x", geta.Route{Post: geta.Op(http.StatusMultipleChoices, okHandler, geta.Doc{})}))
+	accepts(t, one("/x", geta.Route{Post: geta.Op(http.StatusMultipleChoices, writeHandler, geta.Doc{})}))
 	// A Location of a text type, spelled in any case, optional, or embedded.
-	accepts(t, one("/x", geta.Route{Post: geta.Op(http.StatusSeeOther, func(context.Context, *empty) (*textLocation, error) { return nil, nil }, geta.Doc{})}))
-	accepts(t, one("/x", geta.Route{Post: geta.Op(http.StatusCreated, func(context.Context, *empty) (*lowerLocation, error) { return nil, nil }, geta.Doc{})}))
-	accepts(t, one("/x", geta.Route{Post: geta.Op(http.StatusTemporaryRedirect, func(context.Context, *empty) (*embeddedLocation, error) { return nil, nil }, geta.Doc{})}))
+	accepts(t, one("/x", geta.Route{Post: geta.Op(http.StatusSeeOther, func(context.Context, *write) (*textLocation, error) { return nil, nil }, geta.Doc{})}))
+	accepts(t, one("/x", geta.Route{Post: geta.Op(http.StatusCreated, func(context.Context, *write) (*lowerLocation, error) { return nil, nil }, geta.Doc{})}))
+	accepts(t, one("/x", geta.Route{Post: geta.Op(http.StatusTemporaryRedirect, func(context.Context, *write) (*embeddedLocation, error) { return nil, nil }, geta.Doc{})}))
 }
 
 type chooseIn struct {
@@ -448,10 +448,10 @@ type chooseIn struct {
 func TestARedirectWithoutALocationIsADefect(t *testing.T) {
 	where := "/there"
 	c := getatest.New(t, geta.Table{Routes: []geta.Entry{
-		{Path: "/empty", Route: geta.Route{Post: geta.Op(http.StatusSeeOther, func(context.Context, *empty) (*embeddedLocation, error) {
+		{Path: "/empty", Route: geta.Route{Post: geta.Op(http.StatusSeeOther, func(context.Context, *write) (*embeddedLocation, error) {
 			return &embeddedLocation{}, nil
 		}, geta.Doc{})}},
-		{Path: "/text", Route: geta.Route{Post: geta.Op(http.StatusSeeOther, func(context.Context, *empty) (*textLocation, error) {
+		{Path: "/text", Route: geta.Route{Post: geta.Op(http.StatusSeeOther, func(context.Context, *write) (*textLocation, error) {
 			return &textLocation{}, nil
 		}, geta.Doc{})}},
 		{Path: "/choose", Route: geta.Route{Get: geta.Op(http.StatusCreated, func(_ context.Context, in *chooseIn) (*lowerLocation, error) {
@@ -642,7 +642,11 @@ func TestEveryProblemHasOneShape(t *testing.T) {
 // the route template.
 func TestAnUnmatchedErrorIsLoggedWithItsOperation(t *testing.T) {
 	log, buf := logger()
-	h := func(context.Context, *idIn) (*ok, error) { return nil, fmt.Errorf("query: %w", errNotFound) }
+	type putIn struct {
+		geta.Conditional
+		idIn
+	}
+	h := func(context.Context, *putIn) (*ok, error) { return nil, fmt.Errorf("query: %w", errNotFound) }
 	a, err := geta.New(one("/items/{id}", geta.Route{Put: geta.Op(http.StatusOK, h, geta.Doc{})}), geta.WithLogger(log))
 	if err != nil {
 		t.Fatal(err)
@@ -681,6 +685,7 @@ type rsRefusedBody struct {
 }
 
 type rsRefusedIn struct {
+	geta.Conditional
 	ID    string        `path:"id"`
 	Limit int           `query:"limit" schema:"maximum=10"`
 	Body  rsRefusedBody `body:"json"`

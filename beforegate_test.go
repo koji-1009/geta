@@ -46,7 +46,7 @@ func once() geta.Scope {
 
 func limitedTable(root geta.Scope) geta.Table {
 	return geta.Table{Root: root, Routes: []geta.Entry{
-		{Path: "/login", Route: geta.Route{Post: geta.Op(http.StatusOK, okHandler, geta.Doc{Security: []geta.Scheme{}, BeforeGate: once()})}},
+		{Path: "/login", Route: geta.Route{Post: geta.Op(http.StatusOK, writeHandler, geta.Doc{Security: []geta.Scheme{}, BeforeGate: once()})}},
 		{Path: "/secret", Route: geta.Route{Get: geta.Op(http.StatusOK, okHandler, geta.Doc{BeforeGate: once()})}},
 		{Path: "/me", Route: geta.Route{Get: geta.Op(http.StatusOK, okHandler, geta.Doc{})}},
 	}}

@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/koji-1009/geta"
 )
@@ -172,6 +173,7 @@ type (
 		Kids geta.Nullable[aeNKids] `json:"kids,omitzero"`
 	}
 	aeKidsIn struct {
+		geta.Conditional
 		Body aeKids `body:"json"`
 	}
 )
@@ -227,7 +229,12 @@ func TestTypesHoldingThemselvesThroughANamedStructAreTakenInAnyOrder(t *testing.
 
 // A body of such a type is read at depth, its slice made first.
 func TestBodiesOfTypesHoldingThemselvesAreReadAtDepth(t *testing.T) {
-	a := accepts(t, one("/t", post(func(_ context.Context, in *aeKidsIn) (*aeKids, error) { return &in.Body, nil })))
+	a := accepts(t, one("/t", post(func(_ context.Context, in *aeKidsIn) (*aeKids, error) {
+		if err := in.Check("", time.Time{}); err != nil {
+			return nil, err
+		}
+		return &in.Body, nil
+	})))
 	body := `[]`
 	for i := range 12 {
 		body = `[{"name":"n` + itoa(i) + `","kids":` + body + `},{"name":"leaf","kids":[]}]`

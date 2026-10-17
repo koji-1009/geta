@@ -217,6 +217,7 @@ type lowerString struct {
 
 // lowerStringBody reads a lowerString, whose schema then states the backstop.
 type lowerStringBody struct {
+	Conditional
 	B lowerString `body:"json"`
 }
 
@@ -237,6 +238,7 @@ type lowerItemsCapped struct {
 }
 
 type lowerParams struct {
+	Conditional
 	Q   string `query:"q" schema:"minLength=11"`
 	IDs []int  `query:"id" schema:"minItems=3"`
 }
@@ -253,14 +255,18 @@ type lowerDeclared struct {
 
 // bodyOf reads a T as its body.
 type bodyOf[T any] struct {
+	Conditional
 	B T `body:"json"`
 }
+
+// condOnly reads nothing: a write's input that binds only its preconditions.
+type condOnly struct{ Conditional }
 
 // readOnly reads a T as its body and answers nothing.
 func readOnly[T any](opts ...Option) (*App, error) { return newWith[bodyOf[T], struct{}](opts...) }
 
 // writtenOnly answers a T and reads nothing.
-func writtenOnly[T any](opts ...Option) (*App, error) { return newWith[struct{}, T](opts...) }
+func writtenOnly[T any](opts ...Option) (*App, error) { return newWith[condOnly, T](opts...) }
 
 // geta.New refuses a declared lower bound that the backstop, which a
 // request's schema states as the upper bound where none is declared, leaves no
@@ -360,6 +366,7 @@ func TestLowerBoundsPastTheBackstopAreRefused(t *testing.T) {
 	refused(err, pat)
 	accepted(writtenOnly[patternLong]())
 	type patternLongParam struct {
+		Conditional
 		Q string `query:"q" schema:"pattern=a,minLength=4097"`
 	}
 	_, err = newWith[patternLongParam, struct{}](WithLimits(wide))
@@ -373,6 +380,7 @@ func TestLowerBoundsPastTheBackstopAreRefused(t *testing.T) {
 		S string `json:"s" schema:"enum=a|bbbbbbbb,maxLength=8"`
 	}
 	type enumLongParam struct {
+		Conditional
 		Q string `query:"q" schema:"enum=a|bbbbbbbb"`
 	}
 	seven := DefaultLimits

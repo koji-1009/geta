@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/koji-1009/geta"
 	"github.com/koji-1009/geta/getatest"
@@ -43,6 +44,7 @@ type signup struct {
 }
 
 type signupIn struct {
+	geta.Conditional
 	Invite *Email `query:"invite"`
 	From   *Email `header:"X-From"`
 	Body   signup `body:"json"`
@@ -55,6 +57,9 @@ type signupOut struct {
 
 func signupApp(got **signupIn) geta.Table {
 	h := func(_ context.Context, in *signupIn) (*signupOut, error) {
+		if err := in.Check("", time.Time{}); err != nil {
+			return nil, err
+		}
 		*got = in
 		return &signupOut{Contact: in.Body.Email, Body: in.Body}, nil
 	}
@@ -177,6 +182,7 @@ func (d *day) UnmarshalText(b []byte) error {
 }
 
 type dayIn struct {
+	geta.Conditional
 	On   day     `query:"on"`
 	Body *dayOut `body:"json"`
 }
@@ -190,6 +196,9 @@ type dayOut struct {
 func TestAnApplicationTypeMayCarryAFormatGetaChecks(t *testing.T) {
 	var got *dayIn
 	app := accepts(t, one("/d", geta.Route{Post: geta.Op(http.StatusOK, func(_ context.Context, in *dayIn) (*dayOut, error) {
+		if err := in.Check("", time.Time{}); err != nil {
+			return nil, err
+		}
 		got = in
 		return &dayOut{On: in.On}, nil
 	}, geta.Doc{})}))

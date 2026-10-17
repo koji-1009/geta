@@ -156,16 +156,20 @@ func TestDerivedOperationIDs(t *testing.T) {
 	m := doc(t, accepts(t, geta.Table{Routes: []geta.Entry{
 		{Path: "/", Route: get(okHandler)},
 		{Path: "/users/by-role/{role}", Route: get(func(context.Context, *roleIn) (*ok, error) { return nil, nil })},
-		{Path: "/a_b/c2", Route: geta.Route{Post: geta.Op(http.StatusOK, okHandler, geta.Doc{})}},
+		{Path: "/a_b/c2", Route: geta.Route{Post: geta.Op(http.StatusOK, writeHandler, geta.Doc{})}},
 		{Path: "/a/b", Route: get(okHandler)},
-		{Path: "/a-b", Route: get(okHandler)},
-		{Path: "/a.b", Route: get(okHandler)},
+		{Path: "/c-d", Route: get(okHandler)},
+		{Path: "/openapi.json", Route: get(okHandler)},
+		{Path: "/x~y..z", Route: get(okHandler)},
 	}}))
+	// An identifier as code generators take one: letters, digits, and '_',
+	// in lower camel case; a run of any other character starts a word.
 	for _, c := range [][3]string{
 		{"/", "get", "getRoot"}, {"/", "options", "optionsRoot"},
-		{"/users/by-role/{role}", "get", "getUsersBy-roleByRole"},
+		{"/users/by-role/{role}", "get", "getUsersByRoleByRole"},
 		{"/a_b/c2", "post", "postA_bC2"},
-		{"/a/b", "get", "getAB"}, {"/a-b", "get", "getA-b"}, {"/a.b", "get", "getA.b"},
+		{"/a/b", "get", "getAB"}, {"/c-d", "get", "getCD"},
+		{"/openapi.json", "get", "getOpenapiJson"}, {"/x~y..z", "get", "getXYZ"},
 	} {
 		if got := at(t, m, "paths", c[0], c[1], "operationId"); got != c[2] {
 			t.Errorf("%s %s: %v, want %s", c[1], c[0], got, c[2])
@@ -305,6 +309,16 @@ func TestOneTextIsListedOnce(t *testing.T) {
 	}
 }
 
+type specBodyIn struct {
+	geta.Conditional
+	Body item `body:"json"`
+}
+
+type specOptionalBodyIn struct {
+	geta.Conditional
+	Body *item `body:"json"`
+}
+
 type specModeIn struct {
 	Mode string `header:"X-Mode" schema:"default=fast"`
 }
@@ -313,8 +327,8 @@ type specModeIn struct {
 // default is not required.
 func TestRequiredFollowsThePointerAndTheDefault(t *testing.T) {
 	m := doc(t, accepts(t, geta.Table{Routes: []geta.Entry{
-		{Path: "/r", Route: geta.Route{Post: geta.Op(http.StatusOK, func(context.Context, *bodyIn) (*ok, error) { return nil, nil }, geta.Doc{})}},
-		{Path: "/o", Route: geta.Route{Post: geta.Op(http.StatusOK, func(context.Context, *optionalBodyIn) (*ok, error) { return nil, nil }, geta.Doc{})}},
+		{Path: "/r", Route: geta.Route{Post: geta.Op(http.StatusOK, func(context.Context, *specBodyIn) (*ok, error) { return nil, nil }, geta.Doc{})}},
+		{Path: "/o", Route: geta.Route{Post: geta.Op(http.StatusOK, func(context.Context, *specOptionalBodyIn) (*ok, error) { return nil, nil }, geta.Doc{})}},
 		{Path: "/h", Route: get(func(context.Context, *specModeIn) (*ok, error) { return nil, nil })},
 	}}))
 	if got := at(t, m, "paths", "/r", "post", "requestBody", "required"); got != true {
@@ -394,12 +408,11 @@ func TestBuiltInMiddlewareAnswersAreDocumented(t *testing.T) {
 // options ones among them; each operation's types; and the JSON options that
 // read and write its sealed types, which are its unions'.
 func TestAppIntrospection(t *testing.T) {
-	del := func(context.Context, *empty) error { return nil }
 	app, err := geta.New(geta.Table{Routes: []geta.Entry{
 		{Path: "/b", Route: get(okHandler)},
 		{Path: "/a", Route: geta.Route{
 			Post:   geta.Op(http.StatusOK, echoDrawing, geta.Doc{}),
-			Delete: geta.OpNoBody(http.StatusNoContent, del, geta.Doc{}),
+			Delete: geta.OpNoBody(http.StatusNoContent, writeNoBody, geta.Doc{}),
 		}},
 	}}, geta.WithUnion(shapes))
 	if err != nil {
@@ -411,7 +424,7 @@ func TestAppIntrospection(t *testing.T) {
 	if in, out, ok := app.Types(http.MethodPost, "/a"); !ok || in != reflect.TypeFor[drawingIn]() || out != reflect.TypeFor[drawing]() {
 		t.Error("POST /a:", in, out, ok)
 	}
-	if in, out, ok := app.Types(http.MethodDelete, "/a"); !ok || in != reflect.TypeFor[empty]() || out != nil {
+	if in, out, ok := app.Types(http.MethodDelete, "/a"); !ok || in != reflect.TypeFor[write]() || out != nil {
 		t.Error("DELETE /a:", in, out, ok)
 	}
 	if _, _, ok := app.Types(http.MethodGet, "/a"); ok {

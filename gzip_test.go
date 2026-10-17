@@ -35,7 +35,7 @@ func TestGzip(t *testing.T) {
 	a := accepts(t, withRoot(geta.Table{Routes: []geta.Entry{
 		{Path: "/big", Route: get(textHandler(big))},
 		{Path: "/small", Route: get(textHandler("small"))},
-		{Path: "/none", Route: geta.Route{Delete: geta.OpNoBody(http.StatusNoContent, func(context.Context, *empty) error { return nil }, geta.Doc{})}},
+		{Path: "/none", Route: geta.Route{Delete: geta.OpNoBody(http.StatusNoContent, writeNoBody, geta.Doc{})}},
 	}}, geta.Gzip()))
 	compressed := func(r *httptest.ResponseRecorder) bool { return r.Header().Get("Content-Encoding") == "gzip" }
 	varies := func(r *httptest.ResponseRecorder) bool {

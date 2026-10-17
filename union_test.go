@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/koji-1009/geta"
 	"github.com/koji-1009/geta/getatest"
@@ -40,6 +41,7 @@ type drawing struct {
 }
 
 type drawingIn struct {
+	geta.Conditional
 	Body drawing `body:"json"`
 }
 
@@ -47,13 +49,21 @@ func drawingApp(t testing.TB, h func(context.Context, *drawingIn) (*drawing, err
 	return getatest.New(t, one("/d", geta.Route{Post: geta.Op(http.StatusOK, h, geta.Doc{})}), geta.WithUnion(shapes))
 }
 
-func echoDrawing(ctx context.Context, in *drawingIn) (*drawing, error) { return &in.Body, nil }
+func echoDrawing(ctx context.Context, in *drawingIn) (*drawing, error) {
+	if err := in.Check("", time.Time{}); err != nil {
+		return nil, err
+	}
+	return &in.Body, nil
+}
 
 // A sealed type is read into the variant its discriminator selects, written
 // back as that variant, and documented as oneOf with a mapping.
 func TestSealedTypeRoundTrip(t *testing.T) {
 	var got drawing
 	c := drawingApp(t, func(ctx context.Context, in *drawingIn) (*drawing, error) {
+		if err := in.Check("", time.Time{}); err != nil {
+			return nil, err
+		}
 		got = in.Body
 		return &in.Body, nil
 	})
@@ -131,14 +141,22 @@ func TestSealedTypeOutputDefects(t *testing.T) {
 		"nil element":        {Main: circle{Kind: "circle"}, Others: []shape{nil}},
 		"nested wrong tag":   {Main: square{Kind: "square", Inner: square{Kind: "circle"}}, Others: []shape{}},
 	} {
-		c := drawingApp(t, func(context.Context, *drawingIn) (*drawing, error) { return &out, nil })
+		c := drawingApp(t, func(_ context.Context, in *drawingIn) (*drawing, error) {
+			if err := in.Check("", time.Time{}); err != nil {
+				return nil, err
+			}
+			return &out, nil
+		})
 		res := c.Post("/d", `{"main":{"kind":"circle","radius":1},"others":[]}`)
 		if res.Status != 500 || strings.Contains(res.Text(), "circle") {
 			t.Errorf("%s: %d %s", name, res.Status, res.Body)
 		}
 	}
 	// An optional sealed member left nil is omitted.
-	c := drawingApp(t, func(context.Context, *drawingIn) (*drawing, error) {
+	c := drawingApp(t, func(_ context.Context, in *drawingIn) (*drawing, error) {
+		if err := in.Check("", time.Time{}); err != nil {
+			return nil, err
+		}
 		return &drawing{Main: square{Kind: "square", Side: 1}, Others: []shape{}}, nil
 	})
 	if res := c.Post("/d", `{"main":{"kind":"circle","radius":1},"others":[]}`); res.Text() != `{"main":{"kind":"square","side":1},"others":[]}` {
@@ -227,9 +245,15 @@ func TestSealedKeepsItsVariants(t *testing.T) {
 	u := geta.Sealed[sqShape]("kind", vs...)
 	vs[1] = geta.Case[sqTri]("tri")
 	type in struct {
+		geta.Conditional
 		Body sqShape `body:"json"`
 	}
-	app := newApp(t, geta.Table{Routes: []geta.Entry{{Path: "/x", Route: post(func(context.Context, *in) (*ok, error) { return &ok{true}, nil })}}},
+	app := newApp(t, geta.Table{Routes: []geta.Entry{{Path: "/x", Route: post(func(_ context.Context, in *in) (*ok, error) {
+		if err := in.Check("", time.Time{}); err != nil {
+			return nil, err
+		}
+		return &ok{true}, nil
+	})}}},
 		geta.WithUnion(u))
 	if strings.Contains(string(app.OpenAPI()), "sqTri") {
 		t.Error("the document lists a variant set after Sealed returned")
@@ -338,6 +362,7 @@ type fzPicture struct {
 }
 
 type fzPictureIn struct {
+	geta.Conditional
 	Body fzPicture `body:"json"`
 }
 
@@ -389,6 +414,9 @@ func FuzzSealed(f *testing.F) {
 	limits.MaxBodyBytes = 256
 	limits.MaxDepth = 16
 	app, err := geta.New(one("/s", geta.Route{Post: geta.Op(http.StatusOK, func(_ context.Context, in *fzPictureIn) (*fzPicture, error) {
+		if err := in.Check("", time.Time{}); err != nil {
+			return nil, err
+		}
 		got = &in.Body
 		return &in.Body, nil
 	}, geta.Doc{})}), geta.WithUnion(fzShapes), geta.WithLimits(limits))
